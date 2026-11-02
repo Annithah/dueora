@@ -58,3 +58,11 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - **Invites** are tied to the invited email: a signed-in user with a different email can't redeem the link. Accepting via the emailed link also marks the address verified.
 - **Uploads** are checked by magic bytes (not the client's MIME type), capped at 5 MB, and stored privately. Workspace logos are the one public file type, served from `/api/v1/public/logos/:orgId` so emails can show them.
 - **Mobile:** the email-verification step is required for new sign-ups who create a workspace (as in the prototype). Invited users skip it, because accepting the emailed invite proves the address.
+
+## D9 — Scheduling and status rules (Phase 4)
+- **A part-paid cycle past its due date is OVERDUE**, not PARTIALLY_PAID: it's the more urgent fact. The API always returns `paidMinor` and `remainingMinor`, so the UI can still say "$120 of $240 paid".
+- **Overdue obligations don't roll forward on their own.** The cycle stays open until it's paid (or archived), so an unpaid renewal never silently disappears. Paying advances exactly one cycle (Phase 5).
+- **Weekly follow-ups** continue after the last configured after-due offset (default −7 → −14, −21, …). If an obligation has no after-due offsets, no follow-ups are sent.
+- **Anchor day** defaults to the day of the next due date. Sending `anchorDay: 31` explicitly gives "last day of the month" behaviour.
+- **Status filtering is done in memory** after computing status for "today", because status depends on the workspace's local date. A workspace has hundreds of obligations at most, and the query is capped at 5,000 rows.
+- **Deleting an obligation with payment history is refused** (409); archiving keeps the history, as the brief requires.

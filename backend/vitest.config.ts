@@ -12,6 +12,10 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/generated/**'],
+      // The scheduling engine must stay exhaustively tested (brief: > 95%).
+      thresholds: {
+        'src/domain/schedule.ts': { statements: 95, branches: 95, functions: 95, lines: 95 },
+      },
     },
   },
 });

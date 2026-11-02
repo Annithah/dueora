@@ -86,4 +86,47 @@ Codes expire after 15 minutes and lock after 5 wrong attempts.
 | GET | `/public/invites/preview?token=` | `{ organization: { name, logoUrl }, invitedBy, email, role, expiresAt }`; 410 if invalid/expired |
 | GET | `/public/logos/:orgId` | Workspace logo image (used in emails and the app header) |
 
-_Obligations, payments, notifications, dashboard and reports are documented as they are built (Phases 4–7)._
+## Obligations — `/obligations` 🔒 (workspace)
+
+An obligation is something you pay repeatedly (or once). Its **current cycle** ends on `nextDueDate`.
+Every response includes the computed `paymentStatus` for "today" in the workspace's timezone:
+`UPCOMING` · `DUE_SOON` (≤ 7 days) · `DUE_TODAY` · `OVERDUE` · `PARTIALLY_PAID` · `PAID` · `ARCHIVED`,
+plus `daysUntilDue`, `paidMinor` and `remainingMinor` for the current cycle, `cycleLengthDays`,
+`frequencyLabel` ("Quarterly"), and `icon` (the obligation's own icon, or its category's).
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/obligations` | member (EMPLOYEE: assigned only) | Query: `q`, `status` (comma list, e.g. `OVERDUE,DUE_SOON`; `ARCHIVED` for archived), `platformId`, `categoryId`, `departmentId`, `assignedToMe=true`, `page`, `pageSize` (≤ 200). Sorted by next due date. → `{ items, page, pageSize, total }` |
+| POST | `/obligations` | ADMIN, FINANCE, DEPARTMENT (own department) | Body below. `nextDueDate` defaults to `startDate`; `anchorDay` defaults to its day; `reminderOffsets` to the workspace defaults. |
+| GET | `/obligations/:id` | can view | Adds `reminders` (current cycle plan with `sent` flags, weekly follow-ups once overdue), `history` (latest 10 payments) and `attachments`. |
+| PATCH | `/obligations/:id` | can manage | Any create field. Changing `nextDueDate` re-anchors unless `anchorDay` is sent. |
+| POST | `/obligations/:id/archive` · `/unarchive` | can manage | Archived items stop reminders and leave the default list. |
+| DELETE | `/obligations/:id` | ADMIN, FINANCE | 409 `HAS_HISTORY` if payments exist — archive instead. |
+
+Create body:
+
+```json
+{
+  "name": "Hosting", "provider": "AWS", "description": null, "icon": "cloud",
+  "amountMinor": 152300, "currency": "USD",
+  "frequencyUnit": "MONTH", "frequencyInterval": 3,
+  "startDate": "2026-10-20", "nextDueDate": "2027-01-20", "anchorDay": 20,
+  "reminderOffsets": [30, 14, 7, 3, 1, 0, -1, -3, -7],
+  "platformId": "…", "categoryId": "…", "departmentId": null, "assigneeUserId": "…"
+}
+```
+
+Frequencies: weekly (`WEEK`,1), every N weeks (`WEEK`,N), monthly (`MONTH`,1), quarterly (`MONTH`,3),
+every 6 months (`MONTH`,6), yearly (`YEAR`,1), custom (any unit × N), one-time (`ONCE`).
+Month-end anchors are kept: anchor 31 → 31 Jan, 28/29 Feb, 31 Mar, 30 Apr …
+
+## Platforms & categories 🔒 (workspace)
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/platforms` | member | With `obligationCount` |
+| POST · PATCH /:id · DELETE /:id | `/platforms` | ADMIN, FINANCE, DEPARTMENT | `{ name, color: "#RRGGBB" }`. Deleting keeps the obligations (ungrouped). |
+| GET | `/categories` | member | 8 built-in (`isDefault: true`) + this workspace's custom ones |
+| POST · PATCH /:id · DELETE /:id | `/categories` | ADMIN, FINANCE, DEPARTMENT | `{ name, icon, color }`. Built-ins can't be changed; in-use categories can't be deleted (409). |
+
+_Payments, notifications, dashboard and reports are documented as they are built (Phases 5–7)._

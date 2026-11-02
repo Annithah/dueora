@@ -89,3 +89,69 @@ describe('cross-organization isolation', () => {
     expect(await ctx.db.membership.findFirst({ where: { userId: aliceA.userId, organizationId: orgB } })).toBeNull();
   });
 });
+
+describe('cross-organization isolation: obligations, platforms, categories', () => {
+  let bObligationId: string;
+  let bPlatformId: string;
+  let bCategoryId: string;
+
+  beforeAll(async () => {
+    const b = client(app, bobB, orgB);
+    const cats = await b.get('/api/v1/categories');
+    bPlatformId = (await b.post('/api/v1/platforms').send({ name: 'B-Platform' })).body.id;
+    bCategoryId = (await b.post('/api/v1/categories').send({ name: 'B-Only', icon: 'tag', color: '#111111' })).body.id;
+    const created = await b.post('/api/v1/obligations').send({
+      name: 'B secret hosting',
+      provider: 'B Corp',
+      amountMinor: 99900,
+      currency: 'USD',
+      frequencyUnit: 'YEAR',
+      startDate: '2026-12-01',
+      categoryId: cats.body[0].id,
+      platformId: bPlatformId,
+    });
+    expect(created.status).toBe(201);
+    bObligationId = created.body.id;
+  });
+
+  it("org A never sees org B's obligations, platforms or custom categories", async () => {
+    const a = client(app, aliceA, orgA);
+    expect((await a.get('/api/v1/obligations')).body.total).toBe(0);
+    expect((await a.get('/api/v1/obligations').query({ platformId: bPlatformId })).body.total).toBe(0);
+    expect((await a.get('/api/v1/platforms')).body).toEqual([]);
+    const cats = await a.get('/api/v1/categories');
+    expect(cats.body.some((c: { id: string }) => c.id === bCategoryId)).toBe(false);
+  });
+
+  it.each([
+    ['get', ''],
+    ['patch', ''],
+    ['post', '/archive'],
+    ['post', '/unarchive'],
+    ['delete', ''],
+  ] as const)("org A cannot %s org B's obligation%s", async (method, suffix) => {
+    const res = await client(app, aliceA, orgA)[method](`/api/v1/obligations/${bObligationId}${suffix}`).send({ name: 'Hijacked' });
+    expect(res.status).toBe(404);
+  });
+
+  it("org A cannot edit or delete org B's platform or category", async () => {
+    const a = client(app, aliceA, orgA);
+    expect((await a.patch(`/api/v1/platforms/${bPlatformId}`).send({ name: 'Mine' })).status).toBe(404);
+    expect((await a.delete(`/api/v1/platforms/${bPlatformId}`)).status).toBe(404);
+    expect((await a.patch(`/api/v1/categories/${bCategoryId}`).send({ name: 'Mine' })).status).toBe(404);
+    expect((await a.delete(`/api/v1/categories/${bCategoryId}`)).status).toBe(404);
+  });
+
+  it("org A cannot attach org B's platform or category to its own obligation", async () => {
+    const a = client(app, aliceA, orgA);
+    const cats = await a.get('/api/v1/categories');
+    const body = { name: 'X', provider: 'Y', amountMinor: 100, currency: 'USD', frequencyUnit: 'MONTH', startDate: '2026-12-01' };
+    expect((await a.post('/api/v1/obligations').send({ ...body, categoryId: bCategoryId })).status).toBe(400);
+    expect((await a.post('/api/v1/obligations').send({ ...body, categoryId: cats.body[0].id, platformId: bPlatformId })).status).toBe(400);
+  });
+
+  it("org B's obligation is untouched", async () => {
+    const o = await ctx.db.obligation.findUniqueOrThrow({ where: { id: bObligationId } });
+    expect(o).toMatchObject({ name: 'B secret hosting', status: 'ACTIVE', organizationId: orgB });
+  });
+});

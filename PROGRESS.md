@@ -34,10 +34,10 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 4 — Obligations and scheduling engine
-- [ ] CRUD obligations, platforms, categories; archive/unarchive
-- [ ] `domain/schedule.ts`: nextDueDate, computeStatus, reminderDates (org timezone)
-- [ ] Exhaustive engine tests (>95% coverage)
-- [ ] Lint / type-check / tests pass, commit
+- [x] CRUD obligations, platforms, categories; archive/unarchive
+- [x] `domain/schedule.ts`: nextDueDate, computeStatus, reminderDates (org timezone)
+- [x] Exhaustive engine tests (>95% coverage)
+- [x] Lint / type-check / tests pass, commit
 
 ## Phase 5 — Payments and history
 - [ ] Record full/partial payment with receipt upload
@@ -110,3 +110,10 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - **Permissions:** pure role module + middleware; per-role tests; **cross-organization isolation tests** (non-members get 404 on every workspace route, foreign ids are never found through your own workspace).
 - **Mobile:** login, sign-up, forgot/reset password, email verification, workspace setup (type, name, logo, currency, timezone), invite team, invite deep link (`dueora://invite?token=`) for signed-in and signed-out users, log out.
 - `docs/API.md` started. Tests: backend 125, mobile 108.
+
+### Phase 4 — Obligations and scheduling engine ✅
+- `backend/src/domain/schedule.ts`: pure calendar maths on ISO dates — `nextDueDate` / `previousDueDate` for weekly, every N weeks, monthly, quarterly, 6-monthly, yearly, custom and one-time; month-end anchors (31 → Feb 28/29 → Mar 31) and leap years; `todayIn` / `localTimeIn` for any IANA timezone; `computeStatus` (UPCOMING, DUE_SOON ≤ 7 days, DUE_TODAY, OVERDUE, PARTIALLY_PAID, PAID, ARCHIVED); `reminderDates`, full `reminderSchedule` with weekly overdue follow-ups, `reminderDueOn`, and `mostRecentMissedReminder` for catch-up.
+- **52 engine tests, 100% statement/branch/function/line coverage**, enforced by a ≥ 95% threshold in `vitest.config.ts`.
+- Obligations API: list (status computed in the workspace timezone, filters, search, pagination, employee scoping), create/edit with workspace-scoped reference checks and department rules, detail (reminder plan, history, attachments), archive/unarchive, delete only without history.
+- Platforms and categories CRUD (built-ins protected, in-use categories protected).
+- Integration tests on the seeded Kigali Today workspace (27) + isolation tests extended to obligations/platforms/categories.
