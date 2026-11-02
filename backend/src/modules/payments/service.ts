@@ -7,12 +7,10 @@ import { AppError, badRequest, forbidden, notFound } from '../../http/errors.js'
 import { actorOf, orgIdOf } from '../../http/middleware/auth.js';
 import { loadObligation, orgToday, viewsFor } from '../obligations/service.js';
 import { obligationInclude } from '../obligations/view.js';
+import { notifyPaymentRecorded } from '../../notifications/paymentRecorded.js';
 import { audit } from '../workspaces/service.js';
 
 import { reconcileCycle, type CycleChange } from './cycle.js';
-
-/** Hook for side effects after a payment is recorded (notifications, Phase 6). */
-export type PaymentRecordedListener = (ctx: AppContext, event: PaymentRecordedEvent) => Promise<void>;
 
 export interface PaymentRecordedEvent {
   organizationId: string;
@@ -23,11 +21,6 @@ export interface PaymentRecordedEvent {
   currency: string;
   cycleDueDate: string;
   change: CycleChange;
-}
-
-const listeners: PaymentRecordedListener[] = [];
-export function onPaymentRecorded(listener: PaymentRecordedListener): void {
-  listeners.push(listener);
 }
 
 export interface RecordInput {
@@ -129,12 +122,11 @@ export async function recordPayment(ctx: AppContext, req: Request, obligationId:
     cycleDueDate,
     change,
   };
-  for (const listener of listeners) {
-    try {
-      await listener(ctx, event);
-    } catch (err) {
-      ctx.logger.error({ err, paymentId: payment.id }, 'payment listener failed');
-    }
+  try {
+    await notifyPaymentRecorded(ctx, event);
+  } catch (err) {
+    // The payment is saved; a notification problem must not fail the request.
+    ctx.logger.error({ err, paymentId: payment.id }, 'Payment-recorded notification failed');
   }
 
   return result(ctx, req, payment.id, obligationId, change);

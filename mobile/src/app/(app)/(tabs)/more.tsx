@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { LogOut } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { Bell, LogOut } from 'lucide-react-native';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlannedScreen } from '@/components/layout/PlannedScreen';
@@ -15,6 +16,14 @@ export default function MoreTab() {
     <Screen edges={['top']}>
       <PageHeader eyebrow="Workspace" title="More" />
       <PlannedScreen title="More" illustration="team" />
+      <Card padding={0} style={{ overflow: 'hidden' }}>
+        <ListItem
+          title="Notifications"
+          subtitle="Push, email, digest and quiet hours"
+          icon={<Bell size={19} color={colors.primaryStrong} />}
+          onPress={() => router.push('/settings/notifications')}
+        />
+      </Card>
       <Card padding={0} style={{ overflow: 'hidden' }}>
         <ListItem
           title="Log out"

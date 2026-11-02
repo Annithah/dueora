@@ -7,6 +7,8 @@ export default defineConfig({
     // Native SQLite + one DB file per test file: run files in parallel forks.
     pool: 'forks',
     testTimeout: 20000,
+    // Seeding hashes passwords with argon2; give setup room while the year simulation runs in parallel.
+    hookTimeout: 60000,
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
     coverage: {
       provider: 'v8',

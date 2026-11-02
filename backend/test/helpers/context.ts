@@ -3,9 +3,11 @@ import { copyFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { loadEnv } from '../../src/config/env.js';
+import { testDbDir } from '../globalSetup.js';
 import type { AppContext, Clock } from '../../src/context.js';
 import { createDb } from '../../src/db/client.js';
 import { createLogger } from '../../src/lib/logger.js';
+import { FakePushProvider } from '../../src/notifications/push.js';
 import { MemoryMailer } from '../../src/services/mailer.js';
 import { MemoryStorage } from '../../src/services/storage.js';
 
@@ -26,12 +28,15 @@ export class FakeClock implements Clock {
   }
 }
 
-export type TestContext = AppContext & { clock: FakeClock; mailer: MemoryMailer; storage: MemoryStorage };
+export type TestContext = AppContext & { clock: FakeClock; mailer: MemoryMailer; storage: MemoryStorage; push: FakePushProvider };
 
 /** Fresh, migrated SQLite database + context for one test file. */
-export function createTestContext(overrides: Partial<Omit<AppContext, 'clock'>> = {}): TestContext {
-  const template = path.resolve('test/.tmp/template.db');
-  const file = path.resolve(`test/.tmp/${randomUUID()}.db`);
+export function createTestContext(
+  overrides: Partial<Omit<AppContext, 'clock'>> = {},
+  envOverrides: Record<string, string> = {},
+): TestContext {
+  const template = path.join(testDbDir(), 'template.db');
+  const file = path.join(testDbDir(), `${randomUUID()}.db`);
   copyFileSync(template, file);
   const env = loadEnv({
     ...process.env,
@@ -39,6 +44,7 @@ export function createTestContext(overrides: Partial<Omit<AppContext, 'clock'>> 
     DATABASE_URL: `file:${file.split(path.sep).join('/')}`,
     JWT_ACCESS_SECRET: 'test-secret-test-secret-test-secret-123456',
     LOG_LEVEL: 'silent',
+    ...envOverrides,
   });
   return {
     env,
@@ -48,5 +54,6 @@ export function createTestContext(overrides: Partial<Omit<AppContext, 'clock'>> 
     clock: new FakeClock(),
     mailer: new MemoryMailer(),
     storage: new MemoryStorage(),
+    push: new FakePushProvider(),
   };
 }

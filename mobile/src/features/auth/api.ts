@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { api, type Tokens } from '@/api';
+import { unregisterDevice } from '@/features/notifications/push';
 import { useSession } from '@/state/session';
 
 export type Role = 'ADMIN' | 'FINANCE' | 'DEPARTMENT' | 'EMPLOYEE';
@@ -110,6 +111,7 @@ export function useResetPassword() {
 
 /** Revoke the refresh token server-side (best effort), then clear everything locally. */
 export async function signOut(queryClient: QueryClient) {
+  await unregisterDevice();
   const tokens = useSession.getState().tokens;
   if (tokens?.refreshToken) {
     try {

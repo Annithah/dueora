@@ -47,15 +47,15 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 6 — Notifications
-- [ ] `docs/NOTIFICATIONS.md`
-- [ ] Scheduler (15-min cron, org-local reminder hour, catch-up, quiet hours)
-- [ ] Dedupe keys with unique constraint (insert-then-send)
-- [ ] Recipients resolution + mutes/channel prefs
-- [ ] Digest grouping (>3 reminders)
-- [ ] Push (expo-server-sdk, receipts, token deactivation, retries) + email (Resend) + IN_APP
-- [ ] Mobile: permission flow, token registration, Android channels, deep links, foreground toast, settings
-- [ ] Year-long fake-clock simulation test
-- [ ] Lint / type-check / tests pass, commit
+- [x] `docs/NOTIFICATIONS.md`
+- [x] Scheduler (15-min cron, org-local reminder hour, catch-up, quiet hours)
+- [x] Dedupe keys with unique constraint (insert-then-send)
+- [x] Recipients resolution + mutes/channel prefs
+- [x] Digest grouping (>3 reminders)
+- [x] Push (expo-server-sdk, receipts, token deactivation, retries) + email (Resend) + IN_APP
+- [x] Mobile: permission flow, token registration, Android channels, deep links, foreground toast, settings
+- [x] Year-long fake-clock simulation test
+- [x] Lint / type-check / tests pass, commit
 
 ## Phase 7 — Screens, dashboard, calendar, reports
 - [ ] Onboarding, auth, workspace setup
@@ -125,3 +125,14 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - History endpoint: search (case-insensitive on SQLite and Postgres), date range, category, provider, platform, method, pagination, per-currency totals; employees see only their assignments.
 - Receipts and contracts: upload (magic-byte checked, 5 MB), download with safe headers, delete (files removed from storage with their payment).
 - 25 payment tests, including role and cross-workspace isolation checks. Backend total: 238.
+
+### Phase 6 — Notifications ✅
+- `docs/NOTIFICATIONS.md` describes the whole design.
+- **Scheduler and planner:** each workspace's day is claimed atomically (`OrgReminderRun`) once its local time reaches `reminderHour`. One reminder per obligation per run (the latest due since the previous run, which also covers catch-up). Weekly overdue follow-ups. Recipients are the assignee, ADMIN, FINANCE and the department's officers, minus mutes. Digest above 3 reminders. Quiet hours delay sending.
+- **No duplicates:** deterministic unique `dedupeKey`, insert-then-send, idempotent delivery jobs, and a re-check right before sending (paid/archived/muted messages are cancelled).
+- **Delivery:** Expo push (chunks, tickets, receipts after ~15 min, `DeviceNotRegistered` deactivation, retries with backoff up to 5 attempts, email fallback). Resend email (branded reminder, digest and payment-recorded templates with status badge and "Open in DueOra"). Every notification is also stored in-app.
+- **Database-backed job queue** with atomic claims, backoff, stale-lock recovery, singleton keys and pruning. Worker process (`npm run worker`) or in-API (`RUN_WORKER_IN_API=true`).
+- **API:** inbox with unread count, read/read-all, preferences, mute/unmute, device registration, test notification.
+- **Mobile:** permission explainer screen (shown after the first obligation), token registration on start/sign-in and removal on logout, Android `reminders`/`overdue` channels, tap-to-open deep links, foreground toasts, unread badge, Notification settings (push/email/digest toggles, reminder time, quiet hours, default reminders, "Send test notification"), `eas.json` profiles, `app.config.ts` for FCM, FCM setup steps in `docs/DEPLOYMENT.md`.
+- **Tests:** 15 queue/format tests, 18 notification behaviour tests, and the **year-long simulation**: 15-minute ticks from 2 Nov 2026 to 1 Nov 2027, with payments, a mute, an archive, a 6-day worker outage, a timezone move and two racing schedulers. It is checked against an independent oracle (14 assertions, about 3 minutes).
+- SQLite now runs in WAL mode (API and worker can share the dev database) and test databases live in the OS temp folder, which made the suite about 15× faster.

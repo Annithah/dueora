@@ -155,4 +155,25 @@ PDF, PNG, JPG, WebP or HEIC, ≤ 5 MB, type checked by content. Stored privately
 | GET | `/attachments/:id` | can view the obligation | Download (`Content-Disposition: attachment`) |
 | DELETE | `/attachments/:id` | can manage the obligation | |
 
-_Notifications, dashboard and reports are documented as they are built (Phases 6–7)._
+## Notifications 🔒
+
+Design: see `docs/NOTIFICATIONS.md`. Everything below except `/devices` is per workspace (`X-Org-Id`).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/notifications` | The Alerts inbox (in-app channel), newest first. Query: `unreadOnly=true`, `page`, `pageSize`. → `{ items: [{ id, type, title, body, data, obligationId, cycleDueDate, offsetDays, readAt, createdAt }], total, unreadCount }` |
+| POST | `/notifications/:id/read` | 204 |
+| POST | `/notifications/read-all` | `{ updated }` |
+| GET · PATCH | `/notifications/preferences` | `{ pushEnabled, emailEnabled, digestEnabled, mutedObligationIds }` |
+| POST | `/obligations/:id/mute` · `/unmute` | Stop/resume reminders for one obligation (for you only) |
+| POST | `/notifications/test` | Sends "🔔 Test from DueOra" now (push if you have a device, else email). Rate-limited. → `{ queued, channel, devices }` |
+| POST | `/devices` | `{ expoPushToken, platform: ios\|android\|web }` — register/refresh this phone (moves to you if another user had it) |
+| DELETE | `/devices` | `{ expoPushToken }` — on logout |
+
+Workspace-level timing lives on the workspace: `reminderHour`, `quietHoursStart`, `quietHoursEnd`,
+`defaultReminderOffsets` (`PATCH /workspaces/current`, admin).
+
+Notification `type`s: `REMINDER` · `DUE_TODAY` · `OVERDUE` · `PAYMENT_RECORDED` · `DIGEST` · `SYSTEM`.
+Push payloads carry `data.url` (`dueora://payments/:id`), `obligationId`, `notificationId`, `type`.
+
+_Dashboard and reports are documented as they are built (Phase 7)._

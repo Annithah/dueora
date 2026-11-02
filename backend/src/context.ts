@@ -1,6 +1,7 @@
 import type { Env } from './config/env.js';
 import type { Db } from './db/client.js';
 import type { Logger } from './lib/logger.js';
+import type { PushProvider } from './notifications/push.js';
 import type { Mailer } from './services/mailer.js';
 import type { Storage } from './services/storage.js';
 
@@ -19,4 +20,5 @@ export interface AppContext {
   clock: Clock;
   mailer: Mailer;
   storage: Storage;
+  push: PushProvider;
 }

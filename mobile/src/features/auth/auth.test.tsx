@@ -11,25 +11,39 @@ import { loginSchema, resetSchema, signupSchema } from './schemas';
 describe('auth schemas', () => {
   it('trims emails and enforces password length', () => {
     expect(loginSchema.parse({ email: '  a@b.co ', password: 'x' }).email).toBe('a@b.co');
-    expect(signupSchema.safeParse({ name: 'A', email: 'a@b.co', password: 'short' }).success).toBe(false);
-    expect(signupSchema.safeParse({ name: ' ', email: 'a@b.co', password: 'long-enough' }).success).toBe(false);
-    expect(resetSchema.safeParse({ code: '12345', newPassword: 'long-enough' }).success).toBe(false);
-    expect(resetSchema.safeParse({ code: '123456', newPassword: 'long-enough' }).success).toBe(true);
+    expect(signupSchema.safeParse({ name: 'A', email: 'a@b.co', password: 'short' }).success).toBe(
+      false,
+    );
+    expect(
+      signupSchema.safeParse({ name: ' ', email: 'a@b.co', password: 'long-enough' }).success,
+    ).toBe(false);
+    expect(resetSchema.safeParse({ code: '12345', newPassword: 'long-enough' }).success).toBe(
+      false,
+    );
+    expect(resetSchema.safeParse({ code: '123456', newPassword: 'long-enough' }).success).toBe(
+      true,
+    );
   });
 });
 
 describe('applyApiError', () => {
   it('maps validation details onto fields', () => {
     const setError = jest.fn();
-    const err = new ApiError(400, 'VALIDATION_ERROR', 'Some fields are invalid', [{ path: 'email', message: 'Taken' }]);
+    const err = new ApiError(400, 'VALIDATION_ERROR', 'Some fields are invalid', [
+      { path: 'email', message: 'Taken' },
+    ]);
     expect(applyApiError(err, setError, ['email', 'password'] as const)).toBeNull();
     expect(setError).toHaveBeenCalledWith('email', { type: 'server', message: 'Taken' });
   });
 
   it('returns other API errors as a form message', () => {
     const err = new ApiError(401, 'UNAUTHORIZED', 'Email or password is incorrect');
-    expect(applyApiError(err, jest.fn(), ['email'] as const)).toBe('Email or password is incorrect');
-    expect(applyApiError(new Error('boom'), jest.fn(), ['email'] as const)).toMatch(/Something went wrong/);
+    expect(applyApiError(err, jest.fn(), ['email'] as const)).toBe(
+      'Email or password is incorrect',
+    );
+    expect(applyApiError(new Error('boom'), jest.fn(), ['email'] as const)).toMatch(
+      /Something went wrong/,
+    );
   });
 });
 

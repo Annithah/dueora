@@ -6,6 +6,7 @@ import { catalogRouter } from '../modules/catalog/routes.js';
 import { obligationsRouter } from '../modules/obligations/routes.js';
 import { paymentsRouter } from '../modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../modules/workspaces/routes.js';
+import { notificationsRouter } from '../notifications/routes.js';
 
 /** Versioned API: everything lives under /api/v1. */
 export function apiRouter(ctx: AppContext): Router {
@@ -21,6 +22,7 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/obligations', obligationsRouter(ctx));
   router.use('/', catalogRouter(ctx));
   router.use('/', paymentsRouter(ctx));
+  router.use('/', notificationsRouter(ctx));
   router.use('/public', publicRouter(ctx));
 
   return router;

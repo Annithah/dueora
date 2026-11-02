@@ -75,3 +75,14 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - **Payment dates can't be in the future**; payment currency must equal the obligation's currency.
 - **Receipts are uploaded in a second request** after the payment is created. A failed upload never loses the payment, and the app can retry it.
 - **Text search runs in application code** over the workspace's obligations, because `contains` is case-sensitive on Postgres but not on SQLite (Prisma's `mode: 'insensitive'` isn't available for SQLite).
+
+## D11 — Notifications (Phase 6)
+- **Email channel policy:** email goes out for *key moments* (7 days before, the due date, the first overdue reminder) and as the fallback whenever a user has no active push device. Sending every reminder by email *and* push would be spam; the user can still turn email off entirely. Digests always include one email.
+- **Payment-recorded notices** go to ADMIN and FINANCE (not the person who recorded it) in-app and by push. No email, to keep inboxes calm.
+- **Planning runs on every worker cycle** (≈5 s) rather than through a queued "cron" job. It's exactly-once per workspace-day thanks to the `OrgReminderRun` unique claim, so it's safe with any number of workers, and reminders go out within seconds of the reminder hour. Receipt checks and pruning run once per 15-minute slot.
+- **Catch-up window** starts at the previous run's local date. A brand-new workspace starts from yesterday, so it never receives a burst of historic reminders on day one.
+- **Quiet hours** use the workspace's wall clock. The end instant is computed from the current UTC offset, so a DST change *inside* a quiet window can shift delivery by an hour. That's acceptable, and it's documented here.
+- **Attempts are counted on the notification**, not the job, so a resend triggered by a failed receipt can't loop forever (max 5).
+- **SQLite tuning:** WAL journal mode + `synchronous=NORMAL` + 10 s busy timeout, so the API and worker processes can share the development database. Test databases are created in the OS temp folder, because the project lives in a synced OneDrive folder and fsyncs there were about 50× slower.
+- **expo-server-sdk 8 requires Node ≥ 22.12**, so the production Docker image uses Node 22.
+- **Push in development:** `registerDevice` quietly does nothing until an EAS project id exists (`eas init`), so the app runs fine without push credentials.
