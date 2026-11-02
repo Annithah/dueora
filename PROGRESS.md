@@ -58,15 +58,15 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 7 — Screens, dashboard, calendar, reports
-- [ ] Onboarding, auth, workspace setup
-- [ ] Dashboard (aggregated endpoint)
-- [ ] Payments list, add/edit, detail, record-payment sheet
-- [ ] Calendar
-- [ ] Alerts
-- [ ] History, Reports (PDF/Excel export)
-- [ ] Team, Profile, Company, Categories, Notification settings, Security, Dark mode, Help
-- [ ] Skeletons, empty/error states, offline banner, query persistence
-- [ ] Lint / type-check / tests pass, commit
+- [x] Onboarding, auth, workspace setup
+- [x] Dashboard (aggregated endpoint)
+- [x] Payments list, add/edit, detail, record-payment sheet
+- [x] Calendar
+- [x] Alerts
+- [x] History, Reports (PDF/Excel export)
+- [x] Team, Profile, Company, Categories, Notification settings, Security, Dark mode, Help
+- [x] Skeletons, empty/error states, offline banner, query persistence
+- [x] Lint / type-check / tests pass, commit
 
 ## Phase 8 — Testing, hardening, deployment
 - [ ] Integration tests for every route (roles + isolation)
@@ -137,6 +137,16 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - **Tests:** 15 queue/format tests, 18 notification behaviour tests, and the **year-long simulation**: 15-minute ticks from 2 Nov 2026 to 1 Nov 2027, with payments, a mute, an archive, a 6-day worker outage, a timezone move and two racing schedulers. It is checked against an independent oracle (14 assertions, about 3 minutes).
 - SQLite now runs in WAL mode (API and worker can share the dev database) and test databases live in the OS temp folder, which made the suite about 15× faster.
 
-### Phase 7 — in progress
-- ✅ Backend: aggregated `GET /dashboard` (overdue / due this week / due this month / paid this month per currency + converted total, needs attention, next 30 days, 12-month trend, category split), `GET /calendar` (projected and paid cycles), `GET /reports` (monthly/annual: committed, paid, outstanding, overdue, by category, 12-month forecast) with PDF (pdfkit) and Excel (exceljs) export. Decimal-based currency conversion using workspace exchange rates. 15 tests.
-- ⏳ Remaining: mobile screens (dashboard, payments list, add/edit form, payment detail, record-payment sheet + success, calendar, alerts, history, reports with share sheet, team, profile, company, categories, security/biometric, help), skeleton/empty/error states, offline banner, query persistence.
+### Phase 7 — Screens, dashboard, calendar, reports ✅
+- **Backend:** one aggregated `GET /dashboard`; `GET /calendar` (projected, open and paid cycles); `GET /reports` (monthly and annual: committed, paid, outstanding, overdue, by category, 12-month forecast); PDF (pdfkit) and Excel (exceljs) export. Currency conversion uses decimal maths with the workspace's exchange rates, and currencies without a rate are flagged rather than guessed.
+- **Mobile, every prototype screen wired to the API:**
+  - **Home:** greeting, company avatar, unread bell, workspace switcher, summary cards per currency plus a converted total, needs attention, quick actions, 12-month bar chart, category donut, next-30-days timeline, pull-to-refresh.
+  - **Payments:** search, status chips, grouped by project.
+  - **Add/Edit payment:** the five-section form, with frequency presets and custom intervals, reminder chips, assignee and department, inline project creation and contract attachments. The notification explainer appears after the first payment.
+  - **Payment detail:** hero, countdown ring, renewal details, reminder schedule with sent ticks, history timeline, attachments that open in the share sheet, and mute/archive/delete options.
+  - **Record payment:** full or partial, date, method, reference, receipt by file or camera, notes. Then the Lottie success screen.
+  - **Calendar** (day/week/month/year with status dots) and **Alerts** (Today / This week / Earlier, mark read, unread badge, offline banner).
+  - **History** (search, date range, category and project filters, month totals) and **Reports** (monthly/annual, forecast line, donut, export PDF/Excel via the share sheet).
+  - **Settings:** Team & roles (members, role and department changes, removal, invites, departments), Profile, Company info (logo, currency, timezone, exchange rates, delete workspace), Categories & projects, Security (change password, biometric lock), Notifications, Help, and dark mode.
+- **States:** every list has skeletons, illustrated empty states, retryable error states and an offline banner. TanStack Query data is saved to device storage (7 days), so the app opens instantly and works read-only offline.
+- **Tests:** backend 15 new (insights), mobile 122 total. Android bundle export and expo-doctor 20/20.

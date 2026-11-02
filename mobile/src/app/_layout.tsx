@@ -2,18 +2,29 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { QueryClientProvider } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { createQueryClient } from '@/api/queryClient';
 import { ToastHost } from '@/components/ui';
+import { AppLock } from '@/components/layout/AppLock';
+import { usePreferences } from '@/state/preferences';
 import { useSession } from '@/state/session';
 import { ThemeProvider, useTheme } from '@/theme';
 import { appFonts } from '@/theme/fonts';
 
 void SplashScreen.preventAutoHideAsync();
+
+/** Cached query data survives restarts: the app opens instantly and works read-only offline. */
+const persister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'dueora.query-cache',
+  throttleTime: 2000,
+});
 
 function RootNavigator() {
   const { colors, scheme } = useTheme();
@@ -38,6 +49,7 @@ function RootNavigator() {
         </Stack.Protected>
       </Stack>
       <ToastHost />
+      {signedIn ? <AppLock /> : null}
     </>
   );
 }
@@ -47,12 +59,15 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(appFonts);
   const status = useSession((s) => s.status);
   const hydrate = useSession((s) => s.hydrate);
+  const hydratePrefs = usePreferences((s) => s.hydrate);
+  const prefsReady = usePreferences((s) => s.hydrated);
 
   useEffect(() => {
     void hydrate();
-  }, [hydrate]);
+    void hydratePrefs();
+  }, [hydrate, hydratePrefs]);
 
-  const ready = (fontsLoaded || !!fontError) && status !== 'loading';
+  const ready = (fontsLoaded || !!fontError) && status !== 'loading' && prefsReady;
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync();
   }, [ready]);
@@ -62,11 +77,14 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{ persister, maxAge: 7 * 24 * 60 * 60 * 1000, buster: 'v1' }}
+        >
           <ThemeProvider>
             <RootNavigator />
           </ThemeProvider>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

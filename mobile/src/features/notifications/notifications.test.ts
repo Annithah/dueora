@@ -1,11 +1,19 @@
 import { routeForNotification } from './push';
-import { describeOffsets, hourLabel, isChoiceSelected, REMINDER_CHOICES, toggleChoice } from './reminderOptions';
+import {
+  describeOffsets,
+  hourLabel,
+  isChoiceSelected,
+  REMINDER_CHOICES,
+  toggleChoice,
+} from './reminderOptions';
 
 describe('reminder choices', () => {
   const defaults = [30, 14, 7, 3, 1, 0, -1, -3, -7];
 
   it('describes the workspace defaults', () => {
-    expect(describeOffsets(defaults)).toBe('1 month, 2 weeks, 1 week, 3 days, 1 day, On due date, After due date');
+    expect(describeOffsets(defaults)).toBe(
+      '1 month, 2 weeks, 1 week, 3 days, 1 day, On due date, After due date',
+    );
     expect(describeOffsets([14, 7, 1])).toBe('2 weeks, 1 week, 1 day');
     expect(describeOffsets([])).toBe('No reminders');
   });

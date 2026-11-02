@@ -86,3 +86,13 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - **SQLite tuning:** WAL journal mode + `synchronous=NORMAL` + 10 s busy timeout, so the API and worker processes can share the development database. Test databases are created in the OS temp folder, because the project lives in a synced OneDrive folder and fsyncs there were about 50× slower.
 - **expo-server-sdk 8 requires Node ≥ 22.12**, so the production Docker image uses Node 22.
 - **Push in development:** `registerDevice` quietly does nothing until an EAS project id exists (`eas init`), so the app runs fine without push credentials.
+
+## D12 — Screens and client data (Phase 7)
+- **Charts are drawn with react-native-svg** (bar, smooth line, donut) instead of react-native-gifted-charts. That matches the prototype's simple charts exactly, avoids another native-adjacent dependency on RN 0.88, and keeps them accessible: each chart has a spoken summary.
+- **The calendar is a custom grid** rather than react-native-calendars, for the prototype's look (Monday-first, status dots, teal selected day) and for consistent Day/Week/Month/Year views. Date maths uses date-fns.
+- **Offline:** TanStack Query's cache is persisted to AsyncStorage for 7 days, and cleared on sign-out. Offline is read-only; mutations need a connection.
+- **Dashboard totals** show per-currency amounts. The big number on a summary card is the single currency when there's one, otherwise the converted total in the workspace's default currency.
+- **Biometric lock is a device setting** (stored locally, not in the account). It locks on launch and after 30 s in the background.
+- **The "Record" quick action** opens the Payments list, since a payment has to be chosen first. Recording itself lives on the payment detail screen, as in the prototype.
+- **Reports and Team** appear in More only for roles that can use them (Reports: Admin/Finance; Team: everyone except Employees).
+- **Protected file downloads** (receipts, report exports) go through expo-file-system with the bearer token, then the system share sheet. A cheap authenticated call first makes sure the token is fresh.
