@@ -3,6 +3,7 @@ import { Router } from 'express';
 import type { AppContext } from '../context.js';
 import { authRouter, meRouter } from '../modules/auth/routes.js';
 import { catalogRouter } from '../modules/catalog/routes.js';
+import { insightsRouter } from '../modules/insights/routes.js';
 import { obligationsRouter } from '../modules/obligations/routes.js';
 import { paymentsRouter } from '../modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../modules/workspaces/routes.js';
@@ -23,6 +24,7 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/', catalogRouter(ctx));
   router.use('/', paymentsRouter(ctx));
   router.use('/', notificationsRouter(ctx));
+  router.use('/', insightsRouter(ctx));
   router.use('/public', publicRouter(ctx));
 
   return router;
