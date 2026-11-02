@@ -23,6 +23,11 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "dueora"
+    "scheme": "dueora",
+    "plugins": [
+      "expo-font",
+      "@react-native-community/datetimepicker",
+      "expo-asset"
+    ]
   }
 }

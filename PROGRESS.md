@@ -5,18 +5,18 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 ## Phase 0 — Foundation
 - [x] Repo structure (`mobile/`, `backend/`, `docs/`, `design/`)
 - [x] Root README (description + setup)
-- [~] `docs/requirements.md` present — waiting for the owner to add it (and `design/` screenshots)
+- [x] `docs/requirements.md` present (written from the brief — DECISIONS.md D5)
 - [x] ESLint, Prettier, TypeScript (strict) configs for both apps
 - [x] `.editorconfig`, `.gitignore`, `.env.example` (both apps)
 - [x] `docker-compose.yml` with Postgres 16 (for production parity; dev uses SQLite — see DECISIONS.md)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 1 — Design implementation foundation
-- [ ] Study `design/` screenshots, write `docs/UI_MAP.md`
-- [ ] Theme tokens (light/dark), typography (Plus Jakarta Sans)
-- [ ] UI components: Button, Input, Select, DatePicker field, Chip, StatusBadge, Card, ListItem, BottomSheet, EmptyState, Skeleton, Avatar, CategoryIcon, AmountText, Countdown ring, Toast
-- [ ] Illustrations (onboarding, empty states) and Lottie assets (success)
-- [ ] Lint / type-check / tests pass, commit
+- [x] Study `design/` screenshots, write `docs/UI_MAP.md`
+- [x] Theme tokens (light/dark), typography (Plus Jakarta Sans)
+- [x] UI components: Button, Input, Select, DatePicker field, Chip, StatusBadge, Card, ListItem, BottomSheet, EmptyState, Skeleton, Avatar, CategoryIcon, AmountText, Countdown ring, Toast
+- [x] Illustrations (onboarding, empty states) and Lottie assets (success)
+- [x] Lint / type-check / tests pass, commit
 
 ## Phase 2 — Project setup
 - [ ] Expo Router: tabs (Home, Payments, Calendar, Alerts, More) + floating "+", auth stack, onboarding stack
@@ -86,3 +86,12 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - Root: README, `.editorconfig`, `.prettierrc.json`, `.gitattributes` (LF), `.gitignore`, `docker-compose.yml` (Postgres 16, optional), `npm run check` to run everything.
 - Deviations from the brief are recorded in DECISIONS.md: SQLite for dev/tests (D1), a DB-backed job queue instead of pg-boss (D2), pinned tool versions (D3).
 - Open: `docs/requirements.md` and `design/` screenshots not yet provided.
+
+### Phase 1 — Design implementation foundation ✅
+- Captured all 40 prototype screens into `design/` (plus the prototype stylesheet as the exact spec) and wrote `docs/UI_MAP.md`: every screen, its route, components and navigation.
+- `mobile/src/theme`: one token file (palette, light/dark schemes, 8pt spacing, radii, elevation, motion, type scale), status styles (icon + label for every status), category badge visuals, `ThemeProvider` with system/light/dark preference, Plus Jakarta Sans font map.
+- `mobile/src/components/ui`: Text, Button, IconButton, Input, Select (bottom-sheet picker), DatePickerField, Chip, StatusBadge (pulses when overdue), Card, ListItem, BottomSheet, EmptyState, Skeleton/SkeletonList, Avatar (initials, stable colours), CategoryIcon, AmountText, CountdownRing (animated SVG), Toast (store + host), Segmented, Switch, SectionHeader, Logo, SuccessCheck.
+- Original SVG illustration set (11 scenes: onboarding ×3, empty payments, all caught up, empty calendar, no results, offline, error, notifications, team) and a hand-built Lottie success animation (`assets/lottie/success-check.json`).
+- Money helpers on integer minor units (`formatMoney`, `parseMoneyInput`) and date-only helpers.
+- Tests: 94 passing — includes a WCAG contrast test over both palettes (which caught four badge tones below 4.5:1; fixed), money/date formatting and component behaviour. `expo-doctor` 20/20.
+- Respects reduced-motion for every animation; all touch targets ≥ 44px; icon-only buttons require an accessibility label.
