@@ -1,0 +1,6 @@
+dist
+coverage
+node_modules
+src/generated
+uploads
+*.db

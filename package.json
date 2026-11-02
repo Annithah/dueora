@@ -1,0 +1,13 @@
+{
+  "name": "dueora",
+  "private": true,
+  "description": "DueOra — Your dues, on time. Recurring payments & renewals tracker.",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix mobile install",
+    "lint": "npm --prefix backend run lint && npm --prefix mobile run lint",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix mobile run typecheck",
+    "test": "npm --prefix backend test && npm --prefix mobile test",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "format": "npm --prefix backend run format && npm --prefix mobile run format"
+  }
+}

@@ -1,0 +1,24 @@
+# Optional local Postgres 16 for production-parity testing.
+# Day-to-day development uses SQLite (see DECISIONS.md); this is here for when
+# Docker is available and you want to run the backend against Postgres locally.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dueora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dueora
+      POSTGRES_PASSWORD: dueora
+      POSTGRES_DB: dueora
+    ports:
+      - '5432:5432'
+    volumes:
+      - dueora-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dueora -d dueora']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dueora-pgdata:

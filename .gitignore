@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.key
+*.jks
+*.mobileprovision
+google-services.json
+service-account*.json
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Backend
+backend/src/generated/
+backend/uploads/
+backend/*.db
+backend/*.db-journal
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Expo / React Native
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/expo-env.d.ts
+mobile/android/
+mobile/ios/
+.metro-health-check*
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
