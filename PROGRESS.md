@@ -40,11 +40,11 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 5 — Payments and history
-- [ ] Record full/partial payment with receipt upload
-- [ ] Cycle completion → advance nextDueDate / COMPLETED
-- [ ] Edit/delete payment (ADMIN/FINANCE) + recalculation + AuditLog
-- [ ] History endpoint: search, filters, pagination
-- [ ] Lint / type-check / tests pass, commit
+- [x] Record full/partial payment with receipt upload
+- [x] Cycle completion → advance nextDueDate / COMPLETED
+- [x] Edit/delete payment (ADMIN/FINANCE) + recalculation + AuditLog
+- [x] History endpoint: search, filters, pagination
+- [x] Lint / type-check / tests pass, commit
 
 ## Phase 6 — Notifications
 - [ ] `docs/NOTIFICATIONS.md`
@@ -117,3 +117,11 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - Obligations API: list (status computed in the workspace timezone, filters, search, pagination, employee scoping), create/edit with workspace-scoped reference checks and department rules, detail (reminder plan, history, attachments), archive/unarchive, delete only without history.
 - Platforms and categories CRUD (built-ins protected, in-use categories protected).
 - Integration tests on the seeded Kigali Today workspace (27) + isolation tests extended to obligations/platforms/categories.
+
+### Phase 5 — Payments and history ✅
+- Record full or partial payments against the current cycle (amount defaults to the remaining balance, date defaults to today in the workspace timezone, currency must match).
+- Cycle completion advances `nextDueDate` by exactly one cycle (month-end anchors respected); one-time obligations become COMPLETED. The advance is a conditional update, so concurrent payments can't double-advance (tested).
+- Edit/delete (ADMIN/FINANCE) recalculates: a cycle closes when it's fully paid and reopens when the payment that closed it is reduced or removed. Never more than the adjacent cycle. Before/after values go to the AuditLog.
+- History endpoint: search (case-insensitive on SQLite and Postgres), date range, category, provider, platform, method, pagination, per-currency totals; employees see only their assignments.
+- Receipts and contracts: upload (magic-byte checked, 5 MB), download with safe headers, delete (files removed from storage with their payment).
+- 25 payment tests, including role and cross-workspace isolation checks. Backend total: 238.

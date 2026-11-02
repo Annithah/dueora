@@ -66,3 +66,12 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - **Anchor day** defaults to the day of the next due date. Sending `anchorDay: 31` explicitly gives "last day of the month" behaviour.
 - **Status filtering is done in memory** after computing status for "today", because status depends on the workspace's local date. A workspace has hundreds of obligations at most, and the query is capped at 5,000 rows.
 - **Deleting an obligation with payment history is refused** (409); archiving keeps the history, as the brief requires.
+
+## D10 — Payments (Phase 5)
+- **Payments always attach to the open cycle.** To record an older missed cycle, record it now: it closes the open (oldest unpaid) cycle first, which is the order bills are actually settled in.
+- **Default amount = remaining balance** for the cycle, so "Full payment" in the app needs no maths.
+- **Overpaying is allowed** (prices change); the cycle simply closes.
+- **Recalculation after edit/delete only ever reopens the cycle immediately before the open one**, and only if the edited/deleted payment belonged to it and nothing has been paid on the open cycle. This undoes a mistaken "paid" without rewinding history further.
+- **Payment dates can't be in the future**; payment currency must equal the obligation's currency.
+- **Receipts are uploaded in a second request** after the payment is created. A failed upload never loses the payment, and the app can retry it.
+- **Text search runs in application code** over the workspace's obligations, because `contains` is case-sensitive on Postgres but not on SQLite (Prisma's `mode: 'insensitive'` isn't available for SQLite).

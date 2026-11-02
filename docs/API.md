@@ -129,4 +129,30 @@ Month-end anchors are kept: anchor 31 → 31 Jan, 28/29 Feb, 31 Mar, 30 Apr …
 | GET | `/categories` | member | 8 built-in (`isDefault: true`) + this workspace's custom ones |
 | POST · PATCH /:id · DELETE /:id | `/categories` | ADMIN, FINANCE, DEPARTMENT | `{ name, icon, color }`. Built-ins can't be changed; in-use categories can't be deleted (409). |
 
-_Payments, notifications, dashboard and reports are documented as they are built (Phases 5–7)._
+## Payments 🔒 (workspace)
+
+A payment always belongs to the obligation's **current cycle** (`cycleDueDate` = the obligation's
+`nextDueDate` when it was recorded). When the cycle's total reaches the amount due, the cycle closes
+and `nextDueDate` advances by one cycle (one-time obligations become `COMPLETED`). Partial payments
+leave the cycle open. History is never deleted when a new cycle begins.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| POST | `/obligations/:id/payments` | ADMIN, FINANCE, DEPARTMENT (own dept) | `{ method: MOBILE_MONEY\|BANK_TRANSFER\|CARD\|CASH\|OTHER, amountMinor? (default: remaining), paidOn? (default: today; not in the future), reference?, notes?, currency? (must match) }` → `{ payment, obligation, cycleCompleted, cycleReopened }` |
+| GET | `/payments` | member (EMPLOYEE: assigned only) | History, newest first. Query: `q` (obligation, provider, platform or reference), `from`, `to`, `categoryId`, `platformId`, `provider`, `obligationId`, `method`, `page`, `pageSize`. → `{ items, total, page, pageSize, totals: [{ currency, amountMinor, count }] }` |
+| GET | `/payments/:id` | can view | |
+| PATCH | `/payments/:id` | ADMIN, FINANCE | `{ amountMinor?, paidOn?, method?, reference?, notes? }` — recalculates the cycle (may close or reopen it); audit-logged with before/after |
+| DELETE | `/payments/:id` | ADMIN, FINANCE | Removes receipts too; may reopen the cycle it had closed; audit-logged. → `{ obligation, cycleReopened }` |
+
+## Attachments 🔒 (workspace)
+
+PDF, PNG, JPG, WebP or HEIC, ≤ 5 MB, type checked by content. Stored privately.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| POST | `/payments/:id/attachments` | can record on the obligation | multipart `file` — receipts |
+| POST | `/obligations/:id/attachments` | can manage the obligation | multipart `file` — contracts, invoices |
+| GET | `/attachments/:id` | can view the obligation | Download (`Content-Disposition: attachment`) |
+| DELETE | `/attachments/:id` | can manage the obligation | |
+
+_Notifications, dashboard and reports are documented as they are built (Phases 6–7)._
