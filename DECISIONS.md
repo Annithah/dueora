@@ -96,3 +96,12 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - **The "Record" quick action** opens the Payments list, since a payment has to be chosen first. Recording itself lives on the payment detail screen, as in the prototype.
 - **Reports and Team** appear in More only for roles that can use them (Reports: Admin/Finance; Team: everyone except Employees).
 - **Protected file downloads** (receipts, report exports) go through expo-file-system with the bearer token, then the system share sheet. A cheap authenticated call first makes sure the token is fresh.
+
+## D13 — Hardening and deployment (Phase 8)
+- **Route-level security sweep:** `backend/test/security.test.ts` lists every registered route and checks: no token → 401, forged token → 401, a signed-in user of another workspace → 404. New routes are covered automatically.
+- **Production database:** `npm run db:pg:migration` derives `prisma/postgres/schema.prisma` from the SQLite schema and writes the matching Postgres migration offline (`prisma migrate diff`, no database needed). A test fails if the two schemas drift. The Docker image generates the Postgres client and runs `prisma migrate deploy` on start. `prisma` moved to runtime dependencies for that reason.
+- **Hosting recommendation:** one always-on container (API + worker) on Railway Hobby (≈ $5/mo) with Railway Postgres, or Render Starter + Postgres Basic (≈ $13/mo, `render.yaml`). Free tiers that sleep, and auto-suspending free databases, are rejected because reminders must fire on time.
+- **Additional indexes:** `PaymentRecord(organizationId, cycleDueDate)` for calendar/reports and `Notification(userId, organizationId, channel, readAt)` for unread counts.
+- **App icons and splash** are rendered from the brand mark by `mobile/scripts/generate-icons.mjs` (resvg), so they stay consistent with the in-app logo. The monochrome layer doubles as the white Android notification icon.
+- **Bundle check:** the exported Android bundle was scanned for server secrets; only `EXPO_PUBLIC_API_URL` is present.
+- **Not verified locally:** the Docker image (Docker isn't installed on the build machine) and push delivery on a physical device (needs the Expo/Firebase accounts). The compiled server (`node dist/server.js`) was run and checked; the Dockerfile only adds the Postgres client generation and `migrate deploy` on top of that.

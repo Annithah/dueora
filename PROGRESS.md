@@ -69,13 +69,13 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 8 — Testing, hardening, deployment
-- [ ] Integration tests for every route (roles + isolation)
-- [ ] Mobile component tests + `docs/QA_CHECKLIST.md`
-- [ ] Security pass
-- [ ] Performance: indexes, pagination, aggregated dashboard
-- [ ] Dockerfile, Render/Railway config, eas.json
-- [ ] `docs/DEPLOYMENT.md`
-- [ ] Final README + summary
+- [x] Integration tests for every route (roles + isolation)
+- [x] Mobile component tests + `docs/QA_CHECKLIST.md`
+- [x] Security pass
+- [x] Performance: indexes, pagination, aggregated dashboard
+- [x] Dockerfile, Render/Railway config, eas.json
+- [x] `docs/DEPLOYMENT.md`
+- [x] Final README + summary
 
 ## Phase summaries
 
@@ -150,3 +150,11 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
   - **Settings:** Team & roles (members, role and department changes, removal, invites, departments), Profile, Company info (logo, currency, timezone, exchange rates, delete workspace), Categories & projects, Security (change password, biometric lock), Notifications, Help, and dark mode.
 - **States:** every list has skeletons, illustrated empty states, retryable error states and an offline banner. TanStack Query data is saved to device storage (7 days), so the app opens instantly and works read-only offline.
 - **Tests:** backend 15 new (insights), mobile 122 total. Android bundle export and expo-doctor 20/20.
+
+### Phase 8 — Testing, hardening and deployment ✅
+- **Security sweep over every route** (185 checks): 401 without or with a forged token, 404 for other workspaces on every workspace-scoped route, victim data unchanged. Rate limiting on credential routes proven. 1 MB JSON limit (413), 5 MB upload limit with type sniffing, no stack traces in errors, helmet headers (HSTS, CSP, frame options), HTTPS-only API URL in production (enforced by both API and app), no secrets in the mobile bundle (scanned).
+- **Performance:** indexes on organizationId/nextDueDate/status/dedupeKey plus two new ones; paginated lists; one aggregated dashboard endpoint; per-tick worker cost cut from 230 ms to about 4 ms.
+- **Production database:** generated Postgres schema and migration, a sync test, Postgres client generation in Docker.
+- **Deployment:** multi-stage `backend/Dockerfile` (Node 22, migrations on start, healthcheck), `.dockerignore`, `render.yaml`, `backend/railway.json`, `eas.json` (development, preview APK, production AAB), DueOra icons and splash, Android/iOS permission strings.
+- **Docs:** `docs/DEPLOYMENT.md` (full step-by-step), `docs/QA_CHECKLIST.md`, `docs/API.md` completed, README.
+- **Final test counts:** backend 499 (including the 185-check security sweep and the year simulation), mobile 122. `expo-doctor` 20/20, Android bundle exports.

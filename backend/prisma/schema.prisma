@@ -327,6 +327,7 @@ model PaymentRecord {
 
   @@index([obligationId, cycleDueDate])
   @@index([organizationId, paidOn])
+  @@index([organizationId, cycleDueDate])
 }
 
 model Attachment {
@@ -424,6 +425,7 @@ model Notification {
   obligation   Obligation?  @relation(fields: [obligationId], references: [id], onDelete: Cascade)
 
   @@index([userId, organizationId, channel, createdAt])
+  @@index([userId, organizationId, channel, readAt])
   @@index([status, channel, sendAfter])
   @@index([obligationId, cycleDueDate])
 }

@@ -176,4 +176,16 @@ Workspace-level timing lives on the workspace: `reminderHour`, `quietHoursStart`
 Notification `type`s: `REMINDER` · `DUE_TODAY` · `OVERDUE` · `PAYMENT_RECORDED` · `DIGEST` · `SYSTEM`.
 Push payloads carry `data.url` (`dueora://payments/:id`), `obligationId`, `notificationId`, `type`.
 
-_Dashboard and reports are documented as they are built (Phase 7)._
+## Dashboard, calendar, reports 🔒 (workspace)
+
+Money blocks look like `{ count, totals: [{ currency, amountMinor }], converted: { currency, amountMinor } }`:
+per-currency totals plus one total converted to the workspace's default currency with its exchange rates.
+Currencies without a rate are left out of `converted` and listed in `missingRates`. Employees see only
+their assigned obligations.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/dashboard` | member | One call for Home: `today`, `localHour`, `summary` (`overdue`, `dueThisWeek`, `dueThisMonth`, `paidThisMonth` + `changePercent`), `needsAttention` (top 5, most urgent first) + `needsAttentionCount`, `next30Days` timeline, `spending` (12 months, converted), `byCategory` (last 12 months, with `share` %), `counts`, `missingRates` |
+| GET | `/calendar?from=&to=` | member | ≤ 400 days. `events: [{ date, obligationId, name, provider, icon, platform, amountMinor, currency, status, kind: paid\|current\|future }]` — paid cycles from history, the open cycle, and projected future cycles |
+| GET | `/reports?period=month\|year&year=&month=` | ADMIN, FINANCE | `totals` (`committed`, `paid`, `outstanding`, `overdue`), `byCategory`, `months` (paid vs still due), `forecast` (next 12 months), `overdue`, `outstanding`, `payments` |
+| GET | `/reports/export?format=pdf\|xlsx&period=…` | ADMIN, FINANCE | File download (`Content-Disposition: attachment`). PDF: branded summary + tables. Excel: Summary, Payments, Outstanding, Forecast sheets with numeric amounts |

@@ -25,7 +25,11 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "worker": "tsx src/worker.ts",
-    "start:worker": "node dist/worker.js"
+    "start:worker": "node dist/worker.js",
+    "db:pg:migration": "node scripts/postgres-migration.mjs",
+    "db:pg:generate": "cross-env PRISMA_SCHEMA=prisma/postgres/schema.prisma prisma generate",
+    "db:pg:deploy": "cross-env PRISMA_SCHEMA=prisma/postgres/schema.prisma PRISMA_MIGRATIONS=prisma/postgres/migrations prisma migrate deploy",
+    "start:prod": "prisma migrate deploy && node dist/server.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -38,12 +42,12 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "@vitest/coverage-v8": "^5.0.5",
+    "cross-env": "^10.1.0",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.14.0",
     "pino-pretty": "^13.2.0",
     "prettier": "^3.9.10",
-    "prisma": "^7.10.1",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",
@@ -76,6 +80,7 @@
     "pg": "^8.23.1",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
+    "prisma": "^7.10.1",
     "zod": "^4.6.7"
   }
 }

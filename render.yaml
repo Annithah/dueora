@@ -1,0 +1,55 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# One always-on Starter instance runs the API *and* the reminder worker
+# (RUN_WORKER_IN_API=true), plus a managed Postgres. Free instances sleep, which
+# would silently stop reminders — so this uses paid, always-on plans.
+services:
+  - type: web
+    name: dueora-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RUN_WORKER_IN_API
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dueora-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: API_BASE_URL
+        sync: false # e.g. https://dueora-api.onrender.com
+      - key: APP_URL
+        value: dueora://
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false # e.g. DueOra <reminders@yourdomain.com>
+      - key: EXPO_ACCESS_TOKEN
+        sync: false
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: S3_ENDPOINT
+        sync: false # https://<accountid>.r2.cloudflarestorage.com
+      - key: S3_REGION
+        value: auto
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+
+databases:
+  - name: dueora-db
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"

@@ -18,5 +18,7 @@ export default tseslint.config(
       'no-console': 'warn',
     },
   },
+  // Command-line scripts talk to the terminal.
+  { files: ['scripts/**'], languageOptions: { globals: globals.node }, rules: { 'no-console': 'off' } },
   prettier,
 );
