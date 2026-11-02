@@ -19,11 +19,11 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 2 — Project setup
-- [ ] Expo Router: tabs (Home, Payments, Calendar, Alerts, More) + floating "+", auth stack, onboarding stack
-- [ ] Express skeleton: zod env config, error handler, request logging, `/health`, `/api/v1`
-- [ ] Prisma schema, first migration, seed script
-- [ ] Mobile API client (token refresh) + TanStack Query provider
-- [ ] Lint / type-check / tests pass, commit
+- [x] Expo Router: tabs (Home, Payments, Calendar, Alerts, More) + floating "+", auth stack, onboarding stack
+- [x] Express skeleton: zod env config, error handler, request logging, `/health`, `/api/v1`
+- [x] Prisma schema, first migration, seed script
+- [x] Mobile API client (token refresh) + TanStack Query provider
+- [x] Lint / type-check / tests pass, commit
 
 ## Phase 3 — Auth, workspaces, roles
 - [ ] Register, login, logout, refresh, forgot/reset password, email verification, profile update
@@ -95,3 +95,10 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - Money helpers on integer minor units (`formatMoney`, `parseMoneyInput`) and date-only helpers.
 - Tests: 94 passing — includes a WCAG contrast test over both palettes (which caught four badge tones below 4.5:1; fixed), money/date formatting and component behaviour. `expo-doctor` 20/20.
 - Respects reduced-motion for every animation; all touch targets ≥ 44px; icon-only buttons require an accessibility label.
+
+### Phase 2 — Project setup ✅
+- **Backend:** Express 5 app factory with injected context (env, db, logger, clock), zod-validated env (`https` enforced in production), helmet, CORS, rate limiting, pino request logging with request ids, JSON error handler (validation / Prisma / malformed JSON), `/health` with a DB round-trip, versioned `/api/v1`.
+- **Database:** full Prisma 7 schema (brief model + supporting tables, D6), first migration, SQLite via driver adapter (Postgres adapter ready for production).
+- **Seed:** `npm run db:seed` loads "Kigali Today Ltd" — 4 users (Admin, Finance, Department, Employee), 2 platforms, 2 departments, the 6 obligations from the brief plus monthly, weekly, quarterly, 6-monthly and one-time items, payment history (incl. a partial payment) and an RWF→USD exchange rate.
+- **Mobile:** Expo Router with protected groups, welcome/splash and 3-slide onboarding (built), auth stack, tab layout with custom tab bar + floating "+", placeholder screens for later phases; API client with single-flight token refresh, SecureStore session store, TanStack Query provider; Plus Jakarta Sans loaded at startup.
+- **Tests:** backend 15 (health, env, seed), mobile 104 (+ API client). Android bundle export succeeds.

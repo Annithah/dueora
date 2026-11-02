@@ -1,0 +1,480 @@
+// DueOra data model.
+//
+// Conventions (see DECISIONS.md D1 and D6):
+// - Calendar dates without time (due dates, paid-on) are ISO strings "YYYY-MM-DD".
+//   They sort correctly as text and can never be shifted by a timezone.
+// - Money is an integer in the currency's smallest unit (amountMinor). Never floats.
+// - Every business table carries organizationId; services always filter by it.
+// - Json columns have no DB default (Prisma emits invalid SQLite for them); the
+//   application always sets them (see src/db/defaults.ts).
+// - This file targets SQLite for development/tests. scripts/postgres-schema.ts derives
+//   the production (PostgreSQL) schema from it.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum OrgType {
+  COMPANY
+  PERSONAL
+}
+
+enum Role {
+  ADMIN
+  FINANCE
+  DEPARTMENT
+  EMPLOYEE
+}
+
+enum FrequencyUnit {
+  WEEK
+  MONTH
+  YEAR
+  ONCE
+}
+
+enum ObligationStatus {
+  ACTIVE
+  ARCHIVED
+  COMPLETED
+}
+
+enum PaymentMethod {
+  MOBILE_MONEY
+  BANK_TRANSFER
+  CARD
+  CASH
+  OTHER
+}
+
+enum NotificationType {
+  REMINDER
+  DUE_TODAY
+  OVERDUE
+  PAYMENT_RECORDED
+  DIGEST
+  SYSTEM
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+}
+
+enum EmailTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  phone           String?
+  passwordHash    String
+  avatarUrl       String?
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  memberships        Membership[]
+  refreshTokens      RefreshToken[]
+  emailTokens        EmailToken[]
+  deviceTokens       DeviceToken[]
+  notificationPrefs  NotificationPreference[]
+  notifications      Notification[]
+  assigned           Obligation[]             @relation("ObligationAssignee")
+  createdObligations Obligation[]             @relation("ObligationCreator")
+  recordedPayments   PaymentRecord[]
+  auditLogs          AuditLog[]
+  invitesSent        Invite[]
+}
+
+model Organization {
+  id                     String   @id @default(cuid())
+  name                   String
+  type                   OrgType  @default(COMPANY)
+  logoUrl                String?
+  defaultCurrency        String   @default("USD")
+  /// IANA timezone; "today" for this org is always computed here.
+  timezone               String   @default("Africa/Kigali")
+  /// Local hour (0–23) at which daily reminders go out.
+  reminderHour           Int      @default(9)
+  /// Quiet hours as minutes after local midnight (e.g. 1320 = 22:00). Both null = no quiet hours.
+  quietHoursStart        Int?
+  quietHoursEnd          Int?
+  /// Default reminder offsets in days (JSON int[]; negative = after due date).
+  defaultReminderOffsets Json
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  memberships       Membership[]
+  departments       Department[]
+  platforms         Platform[]
+  categories        Category[]
+  obligations       Obligation[]
+  attachments       Attachment[]
+  notifications     Notification[]
+  notificationPrefs NotificationPreference[]
+  auditLogs         AuditLog[]
+  invites           Invite[]
+  exchangeRates     ExchangeRate[]
+  reminderRuns      OrgReminderRun[]
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role     @default(EMPLOYEE)
+  departmentId   String?
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+}
+
+model Department {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  Membership[]
+  obligations  Obligation[]
+  invites      Invite[]
+
+  @@unique([organizationId, name])
+}
+
+model Invite {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  role           Role      @default(EMPLOYEE)
+  departmentId   String?
+  /// SHA-256 of the invite token sent by email.
+  tokenHash      String    @unique
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  invitedBy    User         @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, email])
+}
+
+model RefreshToken {
+  id           String    @id @default(cuid())
+  userId       String
+  /// SHA-256 of the opaque refresh token; the raw token is never stored.
+  tokenHash    String    @unique
+  /// All rotations of one login share a family; reuse of a rotated token revokes the family.
+  familyId     String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model EmailToken {
+  id        String            @id @default(cuid())
+  userId    String
+  purpose   EmailTokenPurpose
+  /// SHA-256 of the 6-digit code.
+  codeHash  String
+  attempts  Int               @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+}
+
+model Platform {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  color          String   @default("#0F5C5C")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligations  Obligation[]
+
+  @@unique([organizationId, name])
+}
+
+model Category {
+  id             String   @id @default(cuid())
+  /// Null for the built-in defaults shared by every organization.
+  organizationId String?
+  name           String
+  icon           String
+  color          String
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligations  Obligation[]
+
+  @@unique([organizationId, name])
+}
+
+model Obligation {
+  id                String           @id @default(cuid())
+  organizationId    String
+  platformId        String?
+  categoryId        String
+  departmentId      String?
+  assigneeUserId    String?
+  name              String
+  provider          String
+  description       String?
+  /// Optional icon key overriding the category's (e.g. "globe" for a domain under Hosting & domains).
+  icon              String?
+  amountMinor       Int
+  currency          String
+  frequencyUnit     FrequencyUnit
+  frequencyInterval Int              @default(1)
+  /// Day of month (1–31) the schedule is anchored to, so month-end dates recover (31 → 28 → 31).
+  anchorDay         Int
+  /// "YYYY-MM-DD"
+  startDate         String
+  /// "YYYY-MM-DD" — due date of the current (open) cycle.
+  nextDueDate       String
+  /// JSON int[] of days relative to the due date (negative = after).
+  reminderOffsets   Json
+  status            ObligationStatus @default(ACTIVE)
+  createdById       String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  platform      Platform?       @relation(fields: [platformId], references: [id], onDelete: SetNull)
+  category      Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  department    Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignee      User?           @relation("ObligationAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  createdBy     User            @relation("ObligationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  payments      PaymentRecord[]
+  attachments   Attachment[]
+  notifications Notification[]
+
+  @@index([organizationId, status, nextDueDate])
+  @@index([organizationId, nextDueDate])
+  @@index([organizationId, platformId])
+  @@index([assigneeUserId])
+}
+
+model PaymentRecord {
+  id             String        @id @default(cuid())
+  /// Denormalised for org-scoped queries and isolation checks.
+  organizationId String
+  obligationId   String
+  /// "YYYY-MM-DD" — which cycle this payment belongs to.
+  cycleDueDate   String
+  amountMinor    Int
+  currency       String
+  /// "YYYY-MM-DD"
+  paidOn         String
+  method         PaymentMethod
+  reference      String?
+  notes          String?
+  recordedById   String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  obligation  Obligation   @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  recordedBy  User         @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+  attachments Attachment[]
+
+  @@index([obligationId, cycleDueDate])
+  @@index([organizationId, paidOn])
+}
+
+model Attachment {
+  id              String   @id @default(cuid())
+  organizationId  String
+  obligationId    String?
+  paymentRecordId String?
+  fileKey         String   @unique
+  fileName        String
+  mimeType        String
+  size            Int
+  uploadedById    String
+  createdAt       DateTime @default(now())
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  obligation    Obligation?    @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  paymentRecord PaymentRecord? @relation(fields: [paymentRecordId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([obligationId])
+  @@index([paymentRecordId])
+}
+
+model ExchangeRate {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// 1 unit of `fromCurrency` = `rate` units of the org's default currency.
+  fromCurrency   String
+  rate           Decimal
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, fromCurrency])
+}
+
+model DeviceToken {
+  id            String   @id @default(cuid())
+  userId        String
+  expoPushToken String   @unique
+  platform      String
+  lastSeenAt    DateTime @default(now())
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+}
+
+model NotificationPreference {
+  userId             String
+  organizationId     String
+  pushEnabled        Boolean  @default(true)
+  emailEnabled       Boolean  @default(true)
+  digestEnabled      Boolean  @default(true)
+  /// JSON string[] of obligation ids the user muted.
+  mutedObligationIds Json
+  updatedAt          DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, organizationId])
+}
+
+model Notification {
+  id             String              @id @default(cuid())
+  organizationId String
+  userId         String
+  obligationId   String?
+  type           NotificationType
+  title          String
+  body           String
+  data           Json
+  /// "YYYY-MM-DD"
+  cycleDueDate   String?
+  offsetDays     Int?
+  channel        NotificationChannel
+  status         NotificationStatus  @default(PENDING)
+  /// orgId:obligationId:cycleDueDate:offsetDays:userId:channel — unique so a reminder can never be sent twice.
+  dedupeKey      String              @unique
+  attempts       Int                 @default(0)
+  error          String?
+  /// Not delivered before this instant (quiet hours).
+  sendAfter      DateTime?
+  /// Expo push ticket id, used to fetch the delivery receipt.
+  pushTicketId   String?
+  readAt         DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime            @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  obligation   Obligation?  @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, organizationId, channel, createdAt])
+  @@index([status, channel, sendAfter])
+  @@index([obligationId, cycleDueDate])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  action         String
+  entity         String
+  entityId       String
+  meta           Json
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([entity, entityId])
+}
+
+/// Marks that an organization's reminders were processed for a local date.
+/// The unique constraint makes the claim atomic across workers.
+model OrgReminderRun {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Org-local "YYYY-MM-DD".
+  localDate      String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, localDate])
+}
+
+/// Database-backed job queue (DECISIONS.md D2).
+model Job {
+  id           String    @id @default(cuid())
+  queue        String
+  payload      Json
+  status       JobStatus @default(PENDING)
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(5)
+  runAt        DateTime  @default(now())
+  lockedAt     DateTime?
+  lockedBy     String?
+  lastError    String?
+  /// Optional idempotency key: a second enqueue with the same key is ignored.
+  singletonKey String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([queue, status, runAt])
+}

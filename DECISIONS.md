@@ -30,3 +30,17 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - **Minimum text size 11px.** The prototype uses 7–10px labels (fine on a desktop mock-up, too small on a phone). The app keeps the hierarchy but enforces ≥ 11px and honours OS font scaling.
 - **Status colours: two tones.** The brief's colours (Paid `#22A06B`, Upcoming `#3B82F6`, Due soon `#F59E0B`, Due today `#EA580C`, Overdue `#DC2626`, Partially paid `#7C3AED`) are used for dots, icons, charts and swatches. Badge *text* on soft backgrounds uses the prototype's darker tones (`#157A53`, `#2469CF`, `#A35900`, `#BB4109`, `#C82020`, `#6D36CC` — the prototype's tones, nudged darker where needed) so it passes 4.5:1 contrast; `src/theme/contrast.test.ts` enforces this.
 - The prototype's "Design system" entry in the More menu is a designer showcase; in the app that slot becomes "Notification settings".
+
+## D6 — Schema details (Phase 2)
+- **Dates without time are `YYYY-MM-DD` strings** (`startDate`, `nextDueDate`, `cycleDueDate`, `paidOn`). They sort correctly as text, range filters are simple string comparisons, and no timezone can shift a due date. Validated with zod at the API boundary.
+- **JSON columns have no database default.** Prisma 7 emits invalid SQL for `@default` on SQLite `Json` columns, so the application always sets `reminderOffsets`, `mutedObligationIds`, `data`, `meta` and `payload` explicitly.
+- **`Obligation.icon` (optional)** overrides the category icon, so a domain can show a blue globe and hosting a teal server while both sit under "Hosting & domains".
+- **Additions beyond the brief's model**, all needed by the features it describes: `Invite`, `RefreshToken` (hashed, rotation family), `EmailToken` (hashed 6-digit codes), `ExchangeRate` (org-defined rate for converted dashboard totals; `Decimal`), `OrgReminderRun` (atomic "today's reminders processed" claim per org), `Job` (queue, D2), `Notification.sendAfter` (quiet hours) and `Notification.pushTicketId` (receipt checks), `PaymentRecord.organizationId` (denormalised for scoping).
+- **Prisma 7 driver adapters:** `better-sqlite3` for `file:` URLs, `pg` for `postgres://` URLs, chosen at runtime in `src/db/client.ts`.
+- **Demo seed password** comes from `SEED_ADMIN_PASSWORD`; if unset, a random one is generated and printed (no credentials in the repo).
+
+## D7 — Mobile navigation (Phase 2)
+- Expo Router with `Stack.Protected` guards: signed-out users see welcome → onboarding → auth; signed-in users see the `(app)` group (tabs + modals). `src/app/index.tsx` redirects to the right place.
+- Custom tab bar matching the prototype (raised teal "+" between Payments and Calendar, unread badge on Alerts), built on `expo-router/tabs`.
+- Tokens are stored with `expo-secure-store` (Keychain/Keystore). The API client refreshes once on 401 with a single shared refresh, then retries; a rejected refresh signs the user out.
+- Release builds refuse a non-https `EXPO_PUBLIC_API_URL`.

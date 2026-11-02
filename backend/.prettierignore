@@ -4,3 +4,4 @@ node_modules
 src/generated
 uploads
 *.db
+test/.tmp
