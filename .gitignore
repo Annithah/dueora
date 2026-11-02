@@ -25,6 +25,10 @@ backend/src/generated/
 backend/uploads/
 backend/*.db
 backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm
+*.db-wal
+*.db-shm
 backend/prisma/*.db
 backend/prisma/*.db-journal
 
