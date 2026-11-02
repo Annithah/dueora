@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import { secureStorage as SecureStore } from '@/lib/secureStorage';
 import { create } from 'zustand';
 
 import type { Tokens } from '@/api/client';

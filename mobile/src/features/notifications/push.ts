@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
-import * as SecureStore from 'expo-secure-store';
+import { secureStorage as SecureStore } from '@/lib/secureStorage';
 import { Platform } from 'react-native';
 
 import { api } from '@/api';

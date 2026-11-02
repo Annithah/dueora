@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 
 import { toast } from '@/components/ui';
 import { useSession } from '@/state/session';
@@ -14,7 +15,7 @@ import {
   routeForNotification,
 } from './push';
 
-configureForegroundHandling();
+if (Platform.OS !== 'web') configureForegroundHandling();
 
 /**
  * Mounted once inside the signed-in app:
@@ -22,7 +23,7 @@ configureForegroundHandling();
  * - opens the right screen when a notification is tapped
  * - shows foreground notifications as an in-app toast and refreshes the inbox
  */
-export function usePushSetup(): void {
+function useNativePushSetup(): void {
   const queryClient = useQueryClient();
   const orgId = useSession((s) => s.activeOrgId);
   const lastResponse = Notifications.useLastNotificationResponse();
@@ -58,3 +59,7 @@ export function usePushSetup(): void {
     return () => sub.remove();
   }, [queryClient, orgId]);
 }
+
+/** Push isn't available in the web preview, so it gets a no-op. */
+export const usePushSetup: () => void =
+  Platform.OS === 'web' ? () => undefined : useNativePushSetup;

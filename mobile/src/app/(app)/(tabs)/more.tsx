@@ -42,7 +42,7 @@ export default function MoreTab() {
   const setTheme = usePreferences((s) => s.setTheme);
   const role = me.data?.workspaces.find((w) => w.id === orgId)?.role;
 
-  const items: Item[] = [
+  const allItems: Item[] = [
     { icon: UserRound, title: 'Profile', subtitle: 'Your details and password', href: '/profile' },
     {
       icon: Building2,
@@ -89,7 +89,8 @@ export default function MoreTab() {
       subtitle: 'Password and biometric lock',
       href: '/settings/security',
     },
-  ].filter((i) => !i.roles || (role && i.roles.includes(role)));
+  ];
+  const items = allItems.filter((i) => !i.roles || (role && i.roles.includes(role)));
 
   return (
     <Screen edges={['top']} contentStyle={{ gap: 18, paddingBottom: 32 }}>
