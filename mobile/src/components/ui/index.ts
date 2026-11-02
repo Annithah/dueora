@@ -22,3 +22,7 @@ export { Switch, type SwitchProps } from './Switch';
 export { Text, type TextProps, type TextTone } from './Text';
 export { ToastHost } from './Toast';
 export { toast, useToastStore, type ToastMessage, type ToastTone } from './toastStore';
+export { ChoiceCard, type ChoiceCardProps } from './ChoiceCard';
+export { CodeInput, type CodeInputProps } from './CodeInput';
+export { FormMessage } from './FormMessage';
+export { PasswordInput } from './PasswordInput';

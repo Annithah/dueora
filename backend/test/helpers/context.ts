@@ -6,6 +6,8 @@ import { loadEnv } from '../../src/config/env.js';
 import type { AppContext, Clock } from '../../src/context.js';
 import { createDb } from '../../src/db/client.js';
 import { createLogger } from '../../src/lib/logger.js';
+import { MemoryMailer } from '../../src/services/mailer.js';
+import { MemoryStorage } from '../../src/services/storage.js';
 
 /** A clock tests can move: `clock.set('2026-11-02T07:00:00Z')`, `clock.advance(ms)`. */
 export class FakeClock implements Clock {
@@ -24,7 +26,7 @@ export class FakeClock implements Clock {
   }
 }
 
-export type TestContext = AppContext & { clock: FakeClock };
+export type TestContext = AppContext & { clock: FakeClock; mailer: MemoryMailer; storage: MemoryStorage };
 
 /** Fresh, migrated SQLite database + context for one test file. */
 export function createTestContext(overrides: Partial<Omit<AppContext, 'clock'>> = {}): TestContext {
@@ -44,5 +46,7 @@ export function createTestContext(overrides: Partial<Omit<AppContext, 'clock'>> 
     logger: createLogger('silent'),
     ...overrides,
     clock: new FakeClock(),
+    mailer: new MemoryMailer(),
+    storage: new MemoryStorage(),
   };
 }

@@ -27,6 +27,7 @@ function RootNavigator() {
         screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}
       >
         <Stack.Screen name="index" />
+        <Stack.Screen name="invite" />
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
           <Stack.Screen name="onboarding" />

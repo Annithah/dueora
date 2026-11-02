@@ -26,12 +26,12 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - [x] Lint / type-check / tests pass, commit
 
 ## Phase 3 — Auth, workspaces, roles
-- [ ] Register, login, logout, refresh, forgot/reset password, email verification, profile update
-- [ ] Workspaces: create, update info/logo, switch
-- [ ] Invites, roles, departments, remove members
-- [ ] Role permissions (ADMIN / FINANCE / DEPARTMENT / EMPLOYEE)
-- [ ] Cross-organization isolation tests
-- [ ] Lint / type-check / tests pass, commit
+- [x] Register, login, logout, refresh, forgot/reset password, email verification, profile update
+- [x] Workspaces: create, update info/logo, switch
+- [x] Invites, roles, departments, remove members
+- [x] Role permissions (ADMIN / FINANCE / DEPARTMENT / EMPLOYEE)
+- [x] Cross-organization isolation tests
+- [x] Lint / type-check / tests pass, commit
 
 ## Phase 4 — Obligations and scheduling engine
 - [ ] CRUD obligations, platforms, categories; archive/unarchive
@@ -102,3 +102,11 @@ Legend: `[x]` done · `[ ]` to do · `[~]` partially done / blocked (see note)
 - **Seed:** `npm run db:seed` loads "Kigali Today Ltd" — 4 users (Admin, Finance, Department, Employee), 2 platforms, 2 departments, the 6 obligations from the brief plus monthly, weekly, quarterly, 6-monthly and one-time items, payment history (incl. a partial payment) and an RWF→USD exchange rate.
 - **Mobile:** Expo Router with protected groups, welcome/splash and 3-slide onboarding (built), auth stack, tab layout with custom tab bar + floating "+", placeholder screens for later phases; API client with single-flight token refresh, SecureStore session store, TanStack Query provider; Plus Jakarta Sans loaded at startup.
 - **Tests:** backend 15 (health, env, seed), mobile 104 (+ API client). Android bundle export succeeds.
+
+### Phase 3 — Auth, workspaces, roles ✅
+- **Auth API:** register, login, logout, refresh (rotating, reuse detection), email verification and password reset with 6-digit emailed codes, profile update, change password; per-IP+email rate limits on credential routes; argon2id hashing.
+- **Workspaces API:** create (Company/Personal), update company info, reminder hour, quiet hours and default offsets, logo upload (magic-byte checked, 5 MB), exchange rates, delete with name confirmation; departments; members (change role/department, remove, leave, last-admin guard); invites (email link, preview, accept, revoke, 7-day expiry, email-bound); audit log entries.
+- **Services:** mailer (Resend in production, log in development, memory in tests) with branded mobile-friendly HTML templates; private storage (local disk / S3-compatible R2).
+- **Permissions:** pure role module + middleware; per-role tests; **cross-organization isolation tests** (non-members get 404 on every workspace route, foreign ids are never found through your own workspace).
+- **Mobile:** login, sign-up, forgot/reset password, email verification, workspace setup (type, name, logo, currency, timezone), invite team, invite deep link (`dueora://invite?token=`) for signed-in and signed-out users, log out.
+- `docs/API.md` started. Tests: backend 125, mobile 108.

@@ -1,14 +1,21 @@
 import { Router } from 'express';
 
 import type { AppContext } from '../context.js';
+import { authRouter, meRouter } from '../modules/auth/routes.js';
+import { publicRouter, workspacesRouter } from '../modules/workspaces/routes.js';
 
-/** Versioned API: everything lives under /api/v1. Feature routers are mounted here. */
-export function apiRouter(_ctx: AppContext): Router {
+/** Versioned API: everything lives under /api/v1. */
+export function apiRouter(ctx: AppContext): Router {
   const router = Router();
 
   router.get('/', (_req, res) => {
     res.json({ name: 'DueOra API', version: 'v1' });
   });
+
+  router.use('/auth', authRouter(ctx));
+  router.use('/me', meRouter(ctx));
+  router.use('/workspaces', workspacesRouter(ctx));
+  router.use('/public', publicRouter(ctx));
 
   return router;
 }

@@ -51,7 +51,11 @@ describe('createApiClient', () => {
 
   it('maps API errors to ApiError', async () => {
     const { api } = setup(() => json(403, { error: { code: 'FORBIDDEN', message: 'Nope' } }));
-    await expect(api.get('/team')).rejects.toMatchObject({ status: 403, code: 'FORBIDDEN', message: 'Nope' });
+    await expect(api.get('/team')).rejects.toMatchObject({
+      status: 403,
+      code: 'FORBIDDEN',
+      message: 'Nope',
+    });
   });
 
   it('handles 204 No Content', async () => {
@@ -61,11 +65,18 @@ describe('createApiClient', () => {
 
   it('refreshes once on 401 and retries with the new token', async () => {
     const { api, calls, tokens } = setup((url, init) => {
-      if (url.endsWith('/auth/refresh')) return json(200, { accessToken: 'access-2', refreshToken: 'refresh-2' });
-      return header(init, 'Authorization') === 'Bearer access-2' ? json(200, { ok: 1 }) : json(401, {});
+      if (url.endsWith('/auth/refresh'))
+        return json(200, { accessToken: 'access-2', refreshToken: 'refresh-2' });
+      return header(init, 'Authorization') === 'Bearer access-2'
+        ? json(200, { ok: 1 })
+        : json(401, {});
     });
     await expect(api.get('/me')).resolves.toEqual({ ok: 1 });
-    expect(calls.map((c) => c.url.replace('https://api.dueora.test/api/v1', ''))).toEqual(['/me', '/auth/refresh', '/me']);
+    expect(calls.map((c) => c.url.replace('https://api.dueora.test/api/v1', ''))).toEqual([
+      '/me',
+      '/auth/refresh',
+      '/me',
+    ]);
     expect(tokens()).toEqual({ accessToken: 'access-2', refreshToken: 'refresh-2' });
     // The refresh call itself never carries the (expired) access token.
     expect(header(calls[1]!.init, 'Authorization')).toBeUndefined();
@@ -79,14 +90,18 @@ describe('createApiClient', () => {
         await new Promise((r) => setTimeout(r, 10));
         return json(200, { accessToken: 'access-2', refreshToken: 'refresh-2' });
       }
-      return header(init, 'Authorization') === 'Bearer access-2' ? json(200, { ok: 1 }) : json(401, {});
+      return header(init, 'Authorization') === 'Bearer access-2'
+        ? json(200, { ok: 1 })
+        : json(401, {});
     });
     await Promise.all([api.get('/a'), api.get('/b'), api.get('/c')]);
     expect(refreshes).toBe(1);
   });
 
   it('ends the session when the refresh token is rejected', async () => {
-    const { api, onSessionExpired } = setup(() => json(401, { error: { code: 'UNAUTHORIZED', message: 'expired' } }));
+    const { api, onSessionExpired } = setup(() =>
+      json(401, { error: { code: 'UNAUTHORIZED', message: 'expired' } }),
+    );
     await expect(api.get('/me')).rejects.toBeInstanceOf(ApiError);
     expect(onSessionExpired).toHaveBeenCalledTimes(1);
   });

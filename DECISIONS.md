@@ -44,3 +44,17 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - Custom tab bar matching the prototype (raised teal "+" between Payments and Calendar, unread badge on Alerts), built on `expo-router/tabs`.
 - Tokens are stored with `expo-secure-store` (Keychain/Keystore). The API client refreshes once on 401 with a single shared refresh, then retries; a rejected refresh signs the user out.
 - Release builds refuse a non-https `EXPO_PUBLIC_API_URL`.
+
+## D8 — Auth, roles and workspaces (Phase 3)
+- **Tokens:** HS256 JWT access tokens (15 min, `jose`). Refresh tokens are opaque 256-bit random strings stored as SHA-256 hashes, valid 30 days, **rotated on every use**. Presenting an already-rotated token revokes the whole login family (theft detection). Password reset and password change sign out every session.
+- **Email codes:** 6-digit, hashed, 15-minute expiry, 5 attempts, one new code per minute. Forgot-password never reveals whether an account exists; login returns the same error for an unknown email and a wrong password (and spends the same argon2 time).
+- **Workspace selection** is a request header (`X-Org-Id`), so switching workspaces is instant and stateless. Non-members get **404**, never 403, so workspace ids can't be probed.
+- **Permissions** live in one pure module (`domain/permissions.ts`). Interpretations of the brief:
+  - Reports and audit log: ADMIN and FINANCE only. DEPARTMENT "views others" via the obligation lists, not financial reports.
+  - Platforms and custom categories: ADMIN, FINANCE and DEPARTMENT can create them, since department officers need them to file their own obligations.
+  - Recording payments follows "manage" rights: ADMIN/FINANCE on everything, DEPARTMENT on their department's obligations; EMPLOYEE is view-only.
+  - Editing/deleting a payment record: ADMIN and FINANCE only (as the brief states).
+  - A workspace always keeps at least one ADMIN. Anyone can leave a workspace; removing a member unassigns their obligations so reminders fall back to admins/finance.
+- **Invites** are tied to the invited email: a signed-in user with a different email can't redeem the link. Accepting via the emailed link also marks the address verified.
+- **Uploads** are checked by magic bytes (not the client's MIME type), capped at 5 MB, and stored privately. Workspace logos are the one public file type, served from `/api/v1/public/logos/:orgId` so emails can show them.
+- **Mobile:** the email-verification step is required for new sign-ups who create a workspace (as in the prototype). Invited users skip it, because accepting the emailed invite proves the address.
