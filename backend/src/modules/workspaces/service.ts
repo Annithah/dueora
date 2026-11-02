@@ -1,7 +1,8 @@
 import type { AppContext } from '../../context.js';
 import { DEFAULT_REMINDER_OFFSETS, ensureDefaultCategories } from '../../db/defaults.js';
 import { inviteMessage, ROLE_LABELS } from '../../emails/account.js';
-import { Prisma, type OrgType, type Role } from '../../generated/prisma/client.js';
+import type { Prisma} from '../../generated/prisma/client.js';
+import { type OrgType, type Role } from '../../generated/prisma/client.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../http/errors.js';
 import { randomToken, sha256 } from '../../lib/crypto.js';
 import { normalizeEmail } from '../auth/service.js';
