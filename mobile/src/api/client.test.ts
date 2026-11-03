@@ -123,6 +123,15 @@ describe('resolveApiUrl', () => {
     expect(resolveApiUrl('http://192.168.1.20:4000/', true)).toBe('http://192.168.1.20:4000');
   });
 
+  it('follows the dev server host when the configured LAN IP is stale', () => {
+    expect(resolveApiUrl('http://10.110.14.12:4000', true, '10.130.4.14')).toBe('http://10.130.4.14:4000');
+    expect(resolveApiUrl('http://localhost:4000', true, '192.168.1.5')).toBe('http://192.168.1.5:4000');
+    expect(resolveApiUrl(undefined, true, '192.168.1.5')).toBe('http://192.168.1.5:4000');
+    // Public / tunnel URLs and release builds are left alone.
+    expect(resolveApiUrl('https://abc.ngrok.app', true, '10.130.4.14')).toBe('https://abc.ngrok.app');
+    expect(resolveApiUrl('https://api.dueora.app', false, '10.130.4.14')).toBe('https://api.dueora.app');
+  });
+
   it('requires an https URL in release builds', () => {
     expect(() => resolveApiUrl(undefined, false)).toThrow(/not set/);
     expect(() => resolveApiUrl('http://api.dueora.app', false)).toThrow(/https/);
