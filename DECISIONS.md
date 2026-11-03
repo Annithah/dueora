@@ -105,3 +105,92 @@ The repo root is this working folder (`Monitor_App`); the GitHub remote is `Anni
 - **App icons and splash** are rendered from the brand mark by `mobile/scripts/generate-icons.mjs` (resvg), so they stay consistent with the in-app logo. The monochrome layer doubles as the white Android notification icon.
 - **Bundle check:** the exported Android bundle was scanned for server secrets; only `EXPO_PUBLIC_API_URL` is present.
 - **Not verified locally:** the Docker image (Docker isn't installed on the build machine) and push delivery on a physical device (needs the Expo/Firebase accounts). The compiled server (`node dist/server.js`) was run and checked; the Dockerfile only adds the Postgres client generation and `migrate deploy` on top of that.
+
+---
+
+# v2 brief — subscriptions, companies, USD (3 Nov 2026)
+
+The owner issued a revised brief. The existing build was reworked rather than rewritten: everything that still
+fits (auth, scheduling engine, notification pipeline, UI kit) was kept and renamed; features the brief removes
+were deleted. Where a v2 decision contradicts an earlier one, the v2 decision wins.
+
+## D14 — Database: SQLite everywhere, by the owner's choice (supersedes D1)
+**Context:** the brief asks for PostgreSQL + pg-boss. PostgreSQL 18 is installed locally, but the owner chose
+SQLite ("we are using the sqlite database").
+**Decision:**
+- SQLite in development, tests **and production** (`DATABASE_URL=file:/data/dueora.db` on a persistent disk).
+  One always-on container runs the API and the reminder worker (WAL mode lets both share the file).
+- The Postgres flavour is kept as an option: `prisma/postgres/` (schema + migrations, generated from the
+  SQLite schema and kept in sync by a test) and `docker build --build-arg DB_PROVIDER=postgres`.
+- **pg-boss is not used** (it requires Postgres). The database-backed job queue from D2 stays: atomic claims,
+  exponential backoff (max 5), stale-lock recovery, singleton keys — the same guarantees, no Redis.
+- The dev database moved to `backend/dueora.db` (fresh schema). The old `backend/dev.db` (v1 schema, demo
+  data) was left untouched on disk; it is git-ignored and can be deleted by the owner.
+
+## D15 — Roles and reports
+- Roles are ADMIN, FINANCE, VIEWER (replaces D8's four roles). Departments are gone.
+- **VIEWER can read reports and export them.** The brief says VIEWER is "read-only"; reports are read-only
+  data and viewers already see every amount on the dashboard. Writes, member management and revealing
+  subscription keys stay with ADMIN/FINANCE.
+- Companies and custom categories: ADMIN and FINANCE.
+- Any role can mute reminders for themselves (it changes nothing for others).
+
+## D16 — Companies
+- A workspace is created with a first company (named in setup; defaults to the workspace name, or "Personal").
+- `DELETE /companies/:id` deletes an unused company and **archives** one with subscriptions (`archivedAt`).
+  Archived companies are hidden from the Add form and filters but keep their subscriptions and history; they
+  can be restored. An archived company can't receive new subscriptions.
+
+## D17 — Subscription keys
+- AES-256-GCM with a random 96-bit IV per value, stored as `v1.<iv>.<tag>.<ciphertext>`. The AES key and a
+  separate HMAC key are derived from `SUBSCRIPTION_KEY_SECRET` with HKDF.
+- `subscriptionKeyHash` is an **HMAC** (not plain SHA-256) of the normalised key (upper-case, no spaces or
+  dashes), so search is exact-match only and a database dump can't be brute-forced without the secret.
+- Responses always carry the masked form; the plain value comes only from `GET /subscriptions/:id/key`
+  (ADMIN/FINANCE, `Cache-Control: no-store`, every reveal audit-logged with no value). The app fetches it with
+  a mutation, so it never lands in the persisted query cache, and re-masks it after 30 seconds.
+- Logs redact `subscriptionKey` fields and request bodies; audit entries record changed field names only.
+
+## D18 — Dates
+- New subscription: `startDate` defaults to today (workspace timezone) and the first due date **is** the start
+  date when it's today or later. A start date in the past rolls forward whole cycles to the first date on or
+  after today (`calculateNextDueDate`). One-time subscriptions keep their date even if past (still owed).
+- Editing start date or frequency re-derives the due date **only while no payment exists**; after that the
+  recorded cycles define the schedule (the user can still set the date explicitly).
+- The app mirrors the calculation (`mobile/src/lib/schedule.ts`) to show the date live; the server is the
+  source of truth. Once the user picks a date by hand, auto-calculation stops until they tap
+  "Calculate automatically".
+
+## D19 — Lists, sorting and filters
+- Subscriptions list: statuses depend on the workspace's "today", so the server loads the workspace's
+  subscriptions (capped at 5,000), computes status, filters, sorts and returns one page (default 10). That is
+  still server-side pagination from the app's point of view and keeps status filters exact.
+- Due-date sort puts COMPLETED one-time subscriptions after everything that is still due.
+- `frequency` filters by unit (weekly / monthly-quarterly / yearly / one-time) — the four buckets people think in.
+- History pages in SQL (`skip/take`) and returns `totalCents` for the active filter.
+- Search is debounced (300 ms) and runs on the server, so it covers every page, not just loaded rows.
+
+## D20 — Notifications
+- Recipients are all workspace members (minus mutes and disabled channels), replacing D11's assignee/role logic.
+- Copy labels subscriptions as "Company · Name" and always shows USD with cents.
+- Payment-recorded notices go to every member except the person who recorded it, and don't name that person
+  (no ownership in the UI). Who recorded what stays in the internal audit log.
+
+## D21 — Removed features
+Attachments/receipts, logo uploads, file storage (local/S3/R2), currencies and exchange rates, departments,
+assignees, "created by", phone and avatar on profiles, and the demo seed are gone from schema, API and app.
+The default categories (9, from the brief) are inserted by `npm run db:seed` and idempotently at server start.
+
+## D22 — Tests without demo data
+Tests build their own fixtures through the public API (`backend/test/helpers/fixture.ts`) in a throw-away
+SQLite database per file. The year-long reminder simulation runs on that fixture. Fixture names are neutral
+("Alpha News", "Beta Radio"); `npm run check:no-sample-data` scans `mobile/src` (tests excluded) for the
+brief's sample names and amounts.
+
+## D23 — OneDrive and Node 24 (environment)
+The project folder is synced by OneDrive "Files On-Demand". Node 24 on Windows reports those cloud
+placeholder files as symlinks, so Jest skipped unchanged test files and Metro failed with `EINVAL: readlink`.
+Files under `mobile/` (excluding `node_modules`) were rewritten in place to make them regular files (content
+unchanged). `mobile/node_modules` still has ~62k placeholders; rewriting them would trigger a large OneDrive
+re-upload, so that was left to the owner: mark the folder "Always keep on this device", or move the project
+outside OneDrive (recommended), or reinstall `node_modules` after pausing sync.

@@ -1,12 +1,15 @@
 import { createApp } from './app.js';
 import { env as loadEnv } from './config/env.js';
 import { createContext } from './bootstrap.js';
+import { ensureDefaultCategories } from './db/defaults.js';
 import { startWorker } from './worker.js';
 
 async function main() {
   const env = loadEnv();
   const ctx = createContext(env);
   const { logger, db } = ctx;
+  // The only data DueOra ever seeds: the built-in categories (idempotent).
+  await ensureDefaultCategories(db);
 
   const app = createApp(ctx);
   const stopWorker = env.RUN_WORKER_IN_API ? startWorker(ctx, logger) : null;
