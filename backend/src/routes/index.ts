@@ -4,7 +4,7 @@ import type { AppContext } from '../context.js';
 import { authRouter, meRouter } from '../modules/auth/routes.js';
 import { catalogRouter } from '../modules/catalog/routes.js';
 import { insightsRouter } from '../modules/insights/routes.js';
-import { obligationsRouter } from '../modules/obligations/routes.js';
+import { subscriptionsRouter } from '../modules/subscriptions/routes.js';
 import { paymentsRouter } from '../modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../modules/workspaces/routes.js';
 import { notificationsRouter } from '../notifications/routes.js';
@@ -20,7 +20,7 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/auth', authRouter(ctx));
   router.use('/me', meRouter(ctx));
   router.use('/workspaces', workspacesRouter(ctx));
-  router.use('/obligations', obligationsRouter(ctx));
+  router.use('/subscriptions', subscriptionsRouter(ctx));
   router.use('/', catalogRouter(ctx));
   router.use('/', paymentsRouter(ctx));
   router.use('/', notificationsRouter(ctx));

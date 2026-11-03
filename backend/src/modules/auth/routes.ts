@@ -19,16 +19,7 @@ const RefreshBody = z.object({ refreshToken: z.string().min(20).max(200) });
 const CodeBody = z.object({ code });
 const ForgotBody = z.object({ email });
 const ResetBody = z.object({ email, code, newPassword: password });
-const ProfileBody = z
-  .object({
-    name: z.string().trim().min(1).max(100),
-    phone: z
-      .string()
-      .trim()
-      .regex(/^\+?[0-9 ()-]{6,20}$/, 'Enter a valid phone number')
-      .nullable(),
-  })
-  .partial();
+const ProfileBody = z.object({ name: z.string().trim().min(1, 'Enter your name').max(100) }).strict();
 const ChangePasswordBody = z.object({ currentPassword: z.string().min(1).max(128), newPassword: password });
 
 export function authRouter(ctx: AppContext): Router {

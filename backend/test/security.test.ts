@@ -14,14 +14,14 @@ import { authLimiter } from '../src/http/rateLimits.js';
 import { authRouter, meRouter } from '../src/modules/auth/routes.js';
 import { catalogRouter } from '../src/modules/catalog/routes.js';
 import { insightsRouter } from '../src/modules/insights/routes.js';
-import { obligationsRouter } from '../src/modules/obligations/routes.js';
+import { subscriptionsRouter } from '../src/modules/subscriptions/routes.js';
 import { paymentsRouter } from '../src/modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../src/modules/workspaces/routes.js';
 import { notificationsRouter } from '../src/notifications/routes.js';
 
 import { client, createWorkspace, register, type Session } from './helpers/api.js';
 import { createTestContext } from './helpers/context.js';
-import { seedAndLogin, type SeededWorkspace } from './helpers/seed.js';
+import { buildFixture, type Fixture } from './helpers/fixture.js';
 
 const ctx = createTestContext({}, { ACCESS_TOKEN_TTL_MINUTES: '100000' });
 const app = createApp(ctx);
@@ -46,7 +46,7 @@ const ALL: RouteInfo[] = [
   ...routesOf('/api/v1/auth', authRouter(ctx)),
   ...routesOf('/api/v1/me', meRouter(ctx)),
   ...routesOf('/api/v1/workspaces', workspacesRouter(ctx)),
-  ...routesOf('/api/v1/obligations', obligationsRouter(ctx)),
+  ...routesOf('/api/v1/subscriptions', subscriptionsRouter(ctx)),
   ...routesOf('/api/v1', catalogRouter(ctx)),
   ...routesOf('/api/v1', paymentsRouter(ctx)),
   ...routesOf('/api/v1', notificationsRouter(ctx)),
@@ -63,7 +63,6 @@ const PUBLIC = new Set([
   'post /api/v1/auth/password/forgot',
   'post /api/v1/auth/password/reset',
   'get /api/v1/public/invites/preview',
-  'get /api/v1/public/logos/:orgId',
 ]);
 
 /** Account-level routes (signed in, but not tied to a workspace). */
@@ -81,48 +80,39 @@ const ACCOUNT = new Set([
 ]);
 
 const key = (r: RouteInfo) => `${r.method} ${r.path}`;
-let ws: SeededWorkspace;
+let fx: Fixture;
 let outsider: Session;
 let ids: Record<string, string>;
 
-/** Fill :params with real ids from the seeded workspace (the victim). */
+/** Fill :params with real ids from the fixture workspace (the victim). */
 function concrete(path: string): string {
   return path
-    .replace(':orgId', ws.organizationId)
-    .replace(/\/obligations\/:id/, `/obligations/${ids.obligation}`)
+    .replace(/\/subscriptions\/:id/, `/subscriptions/${ids.subscription}`)
     .replace(/\/payments\/:id/, `/payments/${ids.payment}`)
-    .replace(/\/attachments\/:id/, `/attachments/${ids.attachment}`)
-    .replace(/\/platforms\/:id/, `/platforms/${ids.platform}`)
+    .replace(/\/companies\/:id/, `/companies/${ids.company}`)
     .replace(/\/categories\/:id/, `/categories/${ids.category}`)
     .replace(/\/members\/:id/, `/members/${ids.member}`)
     .replace(/\/invites\/:id/, `/invites/${ids.invite}`)
-    .replace(/\/departments\/:id/, `/departments/${ids.department}`)
-    .replace(/\/notifications\/:id/, `/notifications/${ids.notification}`)
-    .replace(':currency', 'EUR');
+    .replace(/\/notifications\/:id/, `/notifications/${ids.notification}`);
 }
 
 beforeAll(async () => {
   ctx.clock.set('2026-11-02T07:00:00Z');
-  ws = await seedAndLogin(app, ctx);
-  const a = client(app, ws.sessions.anitha, ws.organizationId);
-  const pay = await a.post(`/api/v1/obligations/${ws.obligationIds.internet}/payments`).send({ method: 'CASH' });
-  const att = await a.post(`/api/v1/payments/${pay.body.payment.id}/attachments`).attach('file', Buffer.from('%PDF-1.4\n%%EOF'), 'r.pdf');
+  fx = await buildFixture(app, ctx);
+  const a = fx.as('admin');
+  const pay = await a.post(`/api/v1/subscriptions/${fx.subscriptionIds.internet}/payments`).send({ method: 'CASH' });
   const cat = await a.post('/api/v1/categories').send({ name: 'Victim cat', icon: 'tag', color: '#111111' });
-  const inv = await a.post('/api/v1/workspaces/current/invites').send({ email: 'someone@kigalitoday.com', role: 'EMPLOYEE' });
+  const inv = await a.post('/api/v1/workspaces/current/invites').send({ email: 'someone@fixture.test', role: 'VIEWER' });
   const members = await a.get('/api/v1/workspaces/current/members');
-  const depts = await a.get('/api/v1/workspaces/current/departments');
-  const platforms = await a.get('/api/v1/platforms');
   await a.post('/api/v1/notifications/test');
-  const note = await ctx.db.notification.findFirstOrThrow({ where: { organizationId: ws.organizationId } });
+  const note = await ctx.db.notification.findFirstOrThrow({ where: { workspaceId: fx.workspaceId } });
   ids = {
-    obligation: ws.obligationIds.internet!,
+    subscription: fx.subscriptionIds.internet,
     payment: pay.body.payment.id,
-    attachment: att.body.id,
+    company: fx.companies.beta,
     category: cat.body.id,
     invite: inv.body.id,
-    member: members.body.find((m: { email: string }) => m.email === 'eric@kigalitoday.com').id,
-    department: depts.body[0].id,
-    platform: platforms.body[0].id,
+    member: members.body.find((m: { role: string }) => m.role === 'VIEWER').id,
     notification: note.id,
   };
   outsider = await register(app, 'Outsider', 'outsider@security.test');
@@ -135,7 +125,7 @@ afterAll(async () => {
 
 describe('route inventory', () => {
   it('finds every route', () => {
-    expect(ALL.length).toBeGreaterThan(60);
+    expect(ALL.length).toBeGreaterThan(50);
     const unknown = [...PUBLIC, ...ACCOUNT].filter((k) => !ALL.some((r) => key(r) === k));
     expect(unknown).toEqual([]);
   });
@@ -157,17 +147,17 @@ describe("another workspace's data is never reachable", () => {
   const scoped = ALL.filter((r) => !PUBLIC.has(key(r)) && !ACCOUNT.has(key(r)));
 
   it.each(scoped.map((r) => [key(r), r] as const))('%s → 404 for an outsider using the victim workspace id', async (_k, r) => {
-    const res = await client(app, outsider, ws.organizationId)[r.method](concrete(r.path)).send({});
+    const res = await client(app, outsider, fx.workspaceId)[r.method](concrete(r.path)).send({});
     expect(res.status).toBe(404);
   });
 
   it('left every victim record untouched', async () => {
-    expect(await ctx.db.obligation.findUnique({ where: { id: ids.obligation } })).not.toBeNull();
+    expect(await ctx.db.subscription.findUnique({ where: { id: ids.subscription } })).not.toBeNull();
     expect(await ctx.db.paymentRecord.findUnique({ where: { id: ids.payment } })).not.toBeNull();
-    expect(await ctx.db.attachment.findUnique({ where: { id: ids.attachment } })).not.toBeNull();
+    expect(await ctx.db.company.findUnique({ where: { id: ids.company } })).not.toBeNull();
     expect(await ctx.db.category.findUnique({ where: { id: ids.category } })).not.toBeNull();
     expect(await ctx.db.membership.findUnique({ where: { id: ids.member } })).not.toBeNull();
-    expect((await ctx.db.organization.findUniqueOrThrow({ where: { id: ws.organizationId } })).name).toBe('Kigali Today Ltd');
+    expect((await ctx.db.workspace.findUniqueOrThrow({ where: { id: fx.workspaceId } })).name).toBe('Fixture Media');
   });
 });
 
@@ -193,7 +183,7 @@ describe('hardening', () => {
   });
 
   it('never leaks stack traces or internals', async () => {
-    const res = await request(app).get('/api/v1/obligations/x').set('Authorization', 'Bearer nope');
+    const res = await request(app).get('/api/v1/subscriptions/x').set('Authorization', 'Bearer nope');
     expect(JSON.stringify(res.body)).not.toMatch(/at \w+ \(|node_modules|prisma/i);
   });
 

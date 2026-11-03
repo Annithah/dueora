@@ -1,4 +1,4 @@
-import { addDays, nextDueDate, type FrequencyUnit } from '../../domain/schedule.js';
+import { addDays, advance, type FrequencyUnit } from '../../domain/schedule.js';
 
 export interface Projectable {
   status: string;
@@ -15,8 +15,8 @@ export interface Occurrence {
 }
 
 /**
- * Due dates of an obligation's open cycle and future cycles that fall in [from, to].
- * Archived and completed obligations have none. Capped to avoid runaway loops.
+ * Due dates of a subscription's open cycle and future cycles that fall in [from, to].
+ * Archived and completed subscriptions have none. Capped to avoid runaway loops.
  */
 export function occurrencesBetween(o: Projectable, from: string, to: string, max = 400): Occurrence[] {
   if (o.status !== 'ACTIVE') return [];
@@ -25,7 +25,7 @@ export function occurrencesBetween(o: Projectable, from: string, to: string, max
   let kind: Occurrence['kind'] = 'current';
   for (let i = 0; date && date <= to && i < max; i++) {
     if (date >= from) out.push({ date, kind });
-    date = nextDueDate(date, o.frequencyUnit, o.frequencyInterval, o.anchorDay);
+    date = advance(date, o.frequencyUnit, o.frequencyInterval, o.anchorDay);
     kind = 'future';
   }
   return out;

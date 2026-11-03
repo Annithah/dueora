@@ -9,8 +9,8 @@ import {
 } from '../domain/schedule.js';
 import { Prisma, type NotificationType } from '../generated/prisma/client.js';
 
-import { digestCopy, obligationLabel, reminderCopy } from './messages.js';
-import { createNotification, dedupeKey, paymentUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
+import { digestCopy, subscriptionLabel, reminderCopy } from './messages.js';
+import { createNotification, dedupeKey, subscriptionUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
 
 /** A user gets a digest instead of individual messages above this many reminders in one run. */
 export const DIGEST_THRESHOLD = 3;
@@ -25,7 +25,7 @@ interface OrgForReminders {
 }
 
 export interface PlannedReminder {
-  obligationId: string;
+  subscriptionId: string;
   cycleDueDate: string;
   offsetDays: number;
   type: NotificationType;
@@ -34,12 +34,12 @@ export interface PlannedReminder {
   /** Key moments also go by email: 7 days before, the due date, the first overdue reminder. */
   keyMoment: boolean;
   emailItem: {
-    obligationId: string;
+    subscriptionId: string;
     cycleDueDate: string;
     label: string;
-    provider: string;
-    amountMinor: number;
-    currency: string;
+    company: string;
+    provider: string | null;
+    amountCents: number;
     dueDate: string;
     daysUntilDue: number;
     partiallyPaid: boolean;
@@ -48,7 +48,7 @@ export interface PlannedReminder {
 }
 
 export interface RunResult {
-  organizationId: string;
+  workspaceId: string;
   localDate: string;
   since: string;
   reminders: number;
@@ -57,7 +57,7 @@ export interface RunResult {
 
 /** Check every workspace; process those whose local reminder hour has arrived today. */
 export async function runRemindersForAllOrgs(ctx: AppContext): Promise<RunResult[]> {
-  const orgs = await ctx.db.organization.findMany({
+  const orgs = await ctx.db.workspace.findMany({
     select: { id: true, name: true, timezone: true, reminderHour: true, quietHoursStart: true, quietHoursEnd: true },
   });
   const results: RunResult[] = [];
@@ -67,7 +67,7 @@ export async function runRemindersForAllOrgs(ctx: AppContext): Promise<RunResult
       if (r) results.push(r);
     } catch (err) {
       // One workspace's problem must not stop everyone else's reminders.
-      ctx.logger.error({ err, organizationId: org.id }, 'Reminder run failed for workspace');
+      ctx.logger.error({ err, workspaceId: org.id }, 'Reminder run failed for workspace');
     }
   }
   return results;
@@ -83,13 +83,13 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   if (local.hour < org.reminderHour) return null;
   const today = local.date;
 
-  // Claim the day — the unique (organizationId, localDate) makes this atomic across workers.
-  const previous = await ctx.db.orgReminderRun.findFirst({
-    where: { organizationId: org.id, localDate: { lt: today } },
+  // Claim the day — the unique (workspaceId, localDate) makes this atomic across workers.
+  const previous = await ctx.db.workspaceReminderRun.findFirst({
+    where: { workspaceId: org.id, localDate: { lt: today } },
     orderBy: { localDate: 'desc' },
   });
   try {
-    await ctx.db.orgReminderRun.create({ data: { organizationId: org.id, localDate: today, createdAt: now } });
+    await ctx.db.workspaceReminderRun.create({ data: { workspaceId: org.id, localDate: today, createdAt: now } });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return null;
     throw err;
@@ -97,38 +97,38 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   // Catch-up window: everything since the last run (yesterday on a normal day).
   const since = previous?.localDate ?? addDays(today, -1);
 
-  const obligations = await ctx.db.obligation.findMany({
-    where: { organizationId: org.id, status: 'ACTIVE' },
-    include: { platform: { select: { name: true } } },
+  const subscriptions = await ctx.db.subscription.findMany({
+    where: { workspaceId: org.id, status: 'ACTIVE' },
+    include: { company: { select: { name: true } } },
   });
-  const payments = obligations.length
+  const payments = subscriptions.length
     ? await ctx.db.paymentRecord.findMany({
-        where: { organizationId: org.id, OR: obligations.map((o) => ({ obligationId: o.id, cycleDueDate: o.nextDueDate })) },
-        select: { obligationId: true, cycleDueDate: true, amountMinor: true },
+        where: { workspaceId: org.id, OR: subscriptions.map((o) => ({ subscriptionId: o.id, cycleDueDate: o.nextDueDate })) },
+        select: { subscriptionId: true, cycleDueDate: true, amountCents: true },
       })
     : [];
   const members = await ctx.db.membership.findMany({
-    where: { organizationId: org.id },
-    select: { userId: true, role: true, departmentId: true },
+    where: { workspaceId: org.id },
+    select: { userId: true },
   });
 
   const perUser = new Map<string, PlannedReminder[]>();
   let reminderCount = 0;
-  for (const o of obligations) {
+  for (const o of subscriptions) {
     const offsets = o.reminderOffsets as number[];
-    const paid = paidForCycle(payments.filter((p) => p.obligationId === o.id), o.nextDueDate);
-    if (paid >= o.amountMinor) continue;
+    const paid = paidForCycle(payments.filter((p) => p.subscriptionId === o.id), o.nextDueDate);
+    if (paid >= o.amountCents) continue;
     const r: ReminderDate | null = mostRecentMissedReminder(o.nextDueDate, offsets, since, today);
     if (!r) continue;
     reminderCount++;
 
     const days = daysBetween(today, o.nextDueDate);
-    const remaining = o.amountMinor - paid;
-    const label = obligationLabel(o.name, o.platform?.name);
-    const copy = reminderCopy({ name: o.name, platform: o.platform?.name, amountMinor: remaining, currency: o.currency, dueDate: o.nextDueDate, daysUntilDue: days });
+    const remaining = o.amountCents - paid;
+    const label = subscriptionLabel(o.name, o.company.name);
+    const copy = reminderCopy({ name: o.name, company: o.company.name, amountCents: remaining, dueDate: o.nextDueDate, daysUntilDue: days });
     const firstOverdue = Math.max(...offsets.filter((x) => x < 0), -Infinity);
     const planned: PlannedReminder = {
-      obligationId: o.id,
+      subscriptionId: o.id,
       cycleDueDate: o.nextDueDate,
       offsetDays: r.offsetDays,
       type: days > 0 ? 'REMINDER' : days === 0 ? 'DUE_TODAY' : 'OVERDUE',
@@ -136,20 +136,20 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
       body: copy.body,
       keyMoment: r.offsetDays === 7 || r.offsetDays === 0 || r.offsetDays === firstOverdue,
       emailItem: {
-        obligationId: o.id,
+        subscriptionId: o.id,
         cycleDueDate: o.nextDueDate,
         label,
+        company: o.company.name,
         provider: o.provider,
-        amountMinor: remaining,
-        currency: o.currency,
+        amountCents: remaining,
         dueDate: o.nextDueDate,
         daysUntilDue: days,
         partiallyPaid: paid > 0,
-        url: paymentUrl(ctx, o.id),
+        url: subscriptionUrl(ctx, o.id),
       },
     };
 
-    for (const userId of recipientsFor(o, members)) {
+    for (const userId of recipientsFor(members)) {
       perUser.set(userId, [...(perUser.get(userId) ?? []), planned]);
     }
   }
@@ -159,22 +159,16 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   for (const [userId, items] of perUser) {
     created += await deliverToUser(ctx, org, userId, items, today, sendAfter);
   }
-  ctx.logger.info({ organizationId: org.id, today, since, reminders: reminderCount, notifications: created }, 'Reminders planned');
-  return { organizationId: org.id, localDate: today, since, reminders: reminderCount, notifications: created };
+  ctx.logger.info({ workspaceId: org.id, today, since, reminders: reminderCount, notifications: created }, 'Reminders planned');
+  return { workspaceId: org.id, localDate: today, since, reminders: reminderCount, notifications: created };
 }
 
-/** Assignee + every ADMIN and FINANCE member + DEPARTMENT members of the obligation's department. */
-export function recipientsFor(
-  o: { assigneeUserId: string | null; departmentId: string | null },
-  members: { userId: string; role: string; departmentId: string | null }[],
-): string[] {
-  const ids = new Set<string>();
-  if (o.assigneeUserId && members.some((m) => m.userId === o.assigneeUserId)) ids.add(o.assigneeUserId);
-  for (const m of members) {
-    if (m.role === 'ADMIN' || m.role === 'FINANCE') ids.add(m.userId);
-    else if (m.role === 'DEPARTMENT' && o.departmentId && m.departmentId === o.departmentId) ids.add(m.userId);
-  }
-  return [...ids];
+/**
+ * Every workspace member (ADMIN, FINANCE and VIEWER) receives reminders. Users who muted
+ * the subscription or turned a channel off are filtered later, per user (deliverToUser).
+ */
+export function recipientsFor(members: { userId: string }[]): string[] {
+  return [...new Set(members.map((m) => m.userId))];
 }
 
 async function deliverToUser(
@@ -186,17 +180,17 @@ async function deliverToUser(
   sendAfter: Date | null,
 ): Promise<number> {
   const prefs: Prefs = await prefsFor(ctx, userId, org.id);
-  const items = all.filter((i) => !prefs.muted.has(i.obligationId));
+  const items = all.filter((i) => !prefs.muted.has(i.subscriptionId));
   if (items.length === 0) return 0;
   const hasDevice = (await ctx.db.deviceToken.count({ where: { userId, active: true } })) > 0;
   const canPush = prefs.pushEnabled && hasDevice;
   let created = 0;
 
-  const key = (i: PlannedReminder, channel: string) => dedupeKey([org.id, i.obligationId, i.cycleDueDate, i.offsetDays, userId, channel]);
+  const key = (i: PlannedReminder, channel: string) => dedupeKey([org.id, i.subscriptionId, i.cycleDueDate, i.offsetDays, userId, channel]);
   const base = (i: PlannedReminder) => ({
-    organizationId: org.id,
+    workspaceId: org.id,
     userId,
-    obligationId: i.obligationId,
+    subscriptionId: i.subscriptionId,
     type: i.type,
     title: i.title,
     body: i.body,
@@ -213,7 +207,7 @@ async function deliverToUser(
   if (prefs.digestEnabled && items.length > DIGEST_THRESHOLD) {
     const copy = digestCopy(items.length, items.map((i) => i.emailItem.label));
     const digest = {
-      organizationId: org.id,
+      workspaceId: org.id,
       userId,
       type: 'DIGEST' as const,
       title: copy.title,

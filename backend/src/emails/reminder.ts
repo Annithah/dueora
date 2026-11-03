@@ -1,4 +1,4 @@
-import { formatLongDate, formatMoney } from '../lib/format.js';
+import { formatLongDate, formatUSD } from '../lib/format.js';
 import type { EmailMessage } from '../services/mailer.js';
 
 import { esc, renderLayout } from './layout.js';
@@ -27,11 +27,13 @@ function badgeHtml(b: Badge): string {
   return `<span style="display:inline-block;padding:4px 10px;border-radius:999px;background:${s.bg};color:${s.fg};font-size:12px;font-weight:800">${s.icon} ${s.label}</span>`;
 }
 
+/** One subscription in a reminder or digest email. Never contains the subscription key. */
 export interface ReminderEmailItem {
+  /** "KigaliToday · Hosting" */
   label: string;
-  provider: string;
-  amountMinor: number;
-  currency: string;
+  company: string;
+  provider: string | null;
+  amountCents: number;
   dueDate: string;
   daysUntilDue: number;
   partiallyPaid: boolean;
@@ -39,24 +41,19 @@ export interface ReminderEmailItem {
 }
 
 function itemRow(i: ReminderEmailItem): string {
+  const meta = [i.company, i.provider].filter(Boolean).join(' · ');
   return `<tr><td style="padding:12px 0;border-top:1px solid #E7EBEB">
     <div style="font-weight:700;font-size:15px">${esc(i.label)}</div>
-    <div style="color:#667373;font-size:13px">${esc(i.provider)} · due ${esc(formatLongDate(i.dueDate))}</div>
+    <div style="color:#667373;font-size:13px">${esc(meta)} · due ${esc(formatLongDate(i.dueDate))}</div>
     <div style="margin-top:6px">${badgeHtml(badgeFor(i.daysUntilDue, i.partiallyPaid))}
-      <span style="float:right;font-weight:800;font-size:15px">${esc(formatMoney(i.amountMinor, i.currency))}</span></div>
+      <span style="float:right;font-weight:800;font-size:15px">${esc(formatUSD(i.amountCents))}</span></div>
   </td></tr>`;
 }
 
-export function reminderEmail(opts: {
-  to: string;
-  orgName: string;
-  logoUrl?: string | null;
-  title: string;
-  body: string;
-  item: ReminderEmailItem;
-}): EmailMessage {
+export function reminderEmail(opts: { to: string; orgName: string; title: string; body: string; item: ReminderEmailItem }): EmailMessage {
   const i = opts.item;
-  const amount = formatMoney(i.amountMinor, i.currency);
+  const amount = formatUSD(i.amountCents);
+  const lines = [opts.body, '', i.label, `Amount: ${amount}`, `Due: ${formatLongDate(i.dueDate)}`, '', `Open in DueOra: ${i.url}`];
   return {
     to: opts.to,
     tag: 'reminder',
@@ -64,7 +61,6 @@ export function reminderEmail(opts: {
     html: renderLayout({
       preheader: opts.body,
       heading: opts.title,
-      logoUrl: opts.logoUrl,
       bodyHtml: `
         <p style="margin:0 0 16px">${esc(opts.body)}</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F8FA;border-radius:14px;padding:0 16px">
@@ -74,7 +70,7 @@ export function reminderEmail(opts: {
       button: { label: 'Open in DueOra', url: i.url },
       footerNote: `You're receiving this because you're part of ${opts.orgName} on DueOra. Change email reminders in Settings → Notifications.`,
     }),
-    text: `${opts.body}\n\n${i.label} — ${i.provider}\nAmount: ${amount}\nDue: ${formatLongDate(i.dueDate)}\n\nOpen in DueOra: ${i.url}`,
+    text: lines.join('\n'),
   };
 }
 
@@ -82,37 +78,42 @@ export function digestEmail(opts: {
   to: string;
   name: string;
   orgName: string;
-  logoUrl?: string | null;
   items: ReminderEmailItem[];
   appUrl: string;
 }): EmailMessage {
   const first = opts.name.trim().split(/\s+/)[0] ?? opts.name;
   const n = opts.items.length;
+  const list = opts.items.map((i) => `• ${i.label} — ${formatUSD(i.amountCents)}, due ${formatLongDate(i.dueDate)}`);
   return {
     to: opts.to,
     tag: 'digest',
-    subject: `🔔 ${n} payments need attention this week`,
+    subject: `🔔 ${n} subscriptions need attention this week`,
     html: renderLayout({
-      preheader: opts.items.map((i) => i.label).slice(0, 4).join(', '),
-      heading: `${n} payments need attention`,
-      logoUrl: opts.logoUrl,
+      preheader: opts.items
+        .map((i) => i.label)
+        .slice(0, 4)
+        .join(', '),
+      heading: `${n} subscriptions need attention`,
       bodyHtml: `<p style="margin:0 0 12px">Hi ${esc(first)}, here's what's coming up for ${esc(opts.orgName)}:</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${opts.items.map(itemRow).join('')}</table>`,
       button: { label: 'Open in DueOra', url: opts.appUrl },
       footerNote: 'We group reminders like this so your inbox stays calm. Turn digests off in Settings → Notifications.',
     }),
-    text: `Hi ${first}, ${n} payments need attention at ${opts.orgName}:\n\n${opts.items
-      .map((i) => `• ${i.label} — ${formatMoney(i.amountMinor, i.currency)}, due ${formatLongDate(i.dueDate)}`)
-      .join('\n')}\n\nOpen DueOra: ${opts.appUrl}`,
+    text: [`Hi ${first}, ${n} subscriptions need attention at ${opts.orgName}:`, '', ...list, '', `Open DueOra: ${opts.appUrl}`].join('\n'),
   };
 }
 
-export function paymentRecordedEmail(opts: { to: string; orgName: string; logoUrl?: string | null; title: string; body: string; url: string }): EmailMessage {
+export function paymentRecordedEmail(opts: { to: string; orgName: string; title: string; body: string; url: string }): EmailMessage {
   return {
     to: opts.to,
     tag: 'payment-recorded',
     subject: opts.body,
-    html: renderLayout({ preheader: opts.body, heading: opts.title, logoUrl: opts.logoUrl, bodyHtml: `<p style="margin:0">${esc(opts.body)}</p>`, button: { label: 'Open in DueOra', url: opts.url } }),
-    text: `${opts.body}\n\nOpen in DueOra: ${opts.url}`,
+    html: renderLayout({
+      preheader: opts.body,
+      heading: opts.title,
+      bodyHtml: `<p style="margin:0">${esc(opts.body)}</p>`,
+      button: { label: 'Open in DueOra', url: opts.url },
+    }),
+    text: [opts.body, '', `Open in DueOra: ${opts.url}`].join('\n'),
   };
 }

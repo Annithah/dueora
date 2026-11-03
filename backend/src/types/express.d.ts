@@ -5,13 +5,11 @@ declare global {
     interface Request {
       /** Set by requireAuth. */
       userId?: string;
-      /** Set by requireOrg: the caller's membership in the X-Org-Id workspace. */
-      org?: {
+      /** Set by requireWorkspace: the caller's membership in the X-Workspace-Id workspace. */
+      workspace?: {
         id: string;
         role: Role;
-        departmentId: string | null;
         timezone: string;
-        defaultCurrency: string;
       };
     }
   }

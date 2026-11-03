@@ -1,61 +1,61 @@
 import { describe, expect, it } from 'vitest';
 
-import { digestCopy, obligationLabel, paymentRecordedCopy, reminderCopy } from './messages.js';
+import { formatLongDate, formatShortDay, formatUSD } from '../lib/format.js';
 
-describe('obligationLabel', () => {
-  it.each([
-    ['Hosting', 'KigaliToday', 'KigaliToday hosting'],
-    ['Domain', 'KT Radio', 'KT Radio domain'],
-    ['Cloudflare', 'KigaliToday', 'Cloudflare (KigaliToday)'],
-    ['X subscription', 'KT Radio', 'X subscription (KT Radio)'],
-    ['Office rent', null, 'Office rent'],
-    ['KT Radio streaming', 'KT Radio', 'KT Radio streaming'],
-  ])('%s on %s → %s', (name, platform, label) => {
-    expect(obligationLabel(name, platform)).toBe(label);
+import { digestCopy, paymentRecordedCopy, reminderCopy, subscriptionLabel } from './messages.js';
+
+describe('formatting', () => {
+  it('formats USD cents with two decimals', () => {
+    expect(formatUSD(152_300)).toBe('$1,523.00');
+    expect(formatUSD(1_300)).toBe('$13.00');
+    expect(formatUSD(5)).toBe('$0.05');
+    expect(formatUSD(123_456_789)).toBe('$1,234,567.89');
+    expect(formatUSD(-500)).toBe('-$5.00');
+  });
+
+  it('formats dates', () => {
+    expect(formatShortDay('2026-10-20')).toBe('Tue, 20 Oct');
+    expect(formatLongDate('2028-10-02')).toBe('02 Oct 2028');
   });
 });
 
-describe('reminderCopy (matches the brief)', () => {
-  const base = { name: 'Hosting', platform: 'KigaliToday', amountMinor: 152300, currency: 'USD', dueDate: '2026-10-20' };
+describe('notification copy (brief examples)', () => {
+  const base = { name: 'Hosting', company: 'KigaliToday', amountCents: 152_300, dueDate: '2026-10-20' };
 
-  it('7 days before', () => {
-    expect(reminderCopy({ ...base, daysUntilDue: 7 }).body).toBe('⏰ KigaliToday hosting is due in 7 days — $1,523 on Tue, 20 Oct.');
+  it('labels subscriptions with their company', () => {
+    expect(subscriptionLabel('Hosting', 'KigaliToday')).toBe('KigaliToday · Hosting');
   });
 
-  it('tomorrow', () => {
-    expect(reminderCopy({ ...base, daysUntilDue: 1 })).toEqual({ title: 'Due tomorrow', body: '⏰ KigaliToday hosting is due tomorrow — $1,523.' });
+  it('reminder before the due date', () => {
+    const c = reminderCopy({ ...base, daysUntilDue: 7 });
+    expect(c.body).toBe('⏰ KigaliToday · Hosting is due in 7 days — $1,523.00 on Tue, 20 Oct.');
+    expect(c.title).toBe('Due in 7 days');
   });
 
-  it('due today', () => {
-    expect(reminderCopy({ name: 'Domain', platform: 'KT Radio', amountMinor: 18880, currency: 'RWF', dueDate: '2027-02-26', daysUntilDue: 0 }).body).toBe(
-      '📅 Today: KT Radio domain — 18,880 RWF.',
-    );
+  it('due tomorrow and due today', () => {
+    expect(reminderCopy({ ...base, daysUntilDue: 1 }).title).toBe('Due tomorrow');
+    const today = reminderCopy({ name: 'Domain renewal', company: 'KT Radio', amountCents: 1_300, dueDate: '2026-10-20', daysUntilDue: 0 });
+    expect(today.body).toBe('📅 Today: KT Radio · Domain renewal — $13.00.');
   });
 
   it('overdue', () => {
-    const c = reminderCopy({ name: 'Cloudflare', platform: 'KigaliToday', amountMinor: 24000, currency: 'USD', dueDate: '2026-01-30', daysUntilDue: -3 });
-    expect(c).toEqual({ title: '3 days overdue', body: '⚠️ Cloudflare (KigaliToday) is 3 days overdue — $240. Tap to record the payment.' });
+    const c = reminderCopy({ name: 'Cloudflare', company: 'KigaliToday', amountCents: 24_000, dueDate: '2026-10-20', daysUntilDue: -3 });
+    expect(c.body).toBe('⚠️ KigaliToday · Cloudflare is 3 days overdue — $240.00. Tap to record the payment.');
     expect(reminderCopy({ ...base, daysUntilDue: -1 }).title).toBe('1 day overdue');
   });
-});
 
-describe('paymentRecordedCopy', () => {
-  it('names the recorder and the next due date', () => {
-    expect(
-      paymentRecordedCopy({ recorderName: 'Anitha Uwase', name: 'Hosting', platform: 'KT Radio', amountMinor: 13200, currency: 'USD', nextDueDate: '2028-10-02', cycleCompleted: true }).body,
-    ).toBe('✅ Anitha recorded $132 for KT Radio hosting. Next due: 02 Oct 2028.');
-  });
-
-  it('handles partial and one-time payments', () => {
-    expect(paymentRecordedCopy({ recorderName: 'Isaac', name: 'Rent', amountMinor: 100, currency: 'USD', nextDueDate: '2026-12-01', cycleCompleted: false }).body).toMatch(
-      /Part of this cycle is still open\.$/,
+  it('payment recorded', () => {
+    const paid = { name: 'Hosting', company: 'KT Radio', amountCents: 13_200 };
+    expect(paymentRecordedCopy({ ...paid, nextDueDate: '2028-10-02', cycleCompleted: true }).body).toBe(
+      '✅ $132.00 recorded for KT Radio · Hosting. Next due: 02 Oct 2028.',
     );
-    expect(paymentRecordedCopy({ recorderName: 'Isaac', name: 'Audit', amountMinor: 100, currency: 'USD', nextDueDate: null, cycleCompleted: true }).body).toMatch(/fully paid/);
+    expect(paymentRecordedCopy({ ...paid, nextDueDate: '2028-10-02', cycleCompleted: false }).body).toMatch(/still open/);
+    expect(paymentRecordedCopy({ ...paid, nextDueDate: null, cycleCompleted: true }).body).toMatch(/fully paid/);
   });
-});
 
-describe('digestCopy', () => {
-  it('summarises', () => {
-    expect(digestCopy(5, ['A', 'B', 'C', 'D', 'E'])).toEqual({ title: '🔔 5 payments need attention this week', body: 'A, B, C and 2 more.' });
+  it('digest', () => {
+    const c = digestCopy(4, ['A · 1', 'B · 2', 'C · 3', 'D · 4']);
+    expect(c.title).toBe('🔔 4 subscriptions need attention this week');
+    expect(c.body).toBe('A · 1, B · 2, C · 3 and 1 more.');
   });
 });

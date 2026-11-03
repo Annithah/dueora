@@ -7,9 +7,9 @@ import { testDbDir } from '../globalSetup.js';
 import type { AppContext, Clock } from '../../src/context.js';
 import { createDb } from '../../src/db/client.js';
 import { createLogger } from '../../src/lib/logger.js';
+import { createSecretBox } from '../../src/lib/secretBox.js';
 import { FakePushProvider } from '../../src/notifications/push.js';
 import { MemoryMailer } from '../../src/services/mailer.js';
-import { MemoryStorage } from '../../src/services/storage.js';
 
 /** A clock tests can move: `clock.set('2026-11-02T07:00:00Z')`, `clock.advance(ms)`. */
 export class FakeClock implements Clock {
@@ -28,7 +28,7 @@ export class FakeClock implements Clock {
   }
 }
 
-export type TestContext = AppContext & { clock: FakeClock; mailer: MemoryMailer; storage: MemoryStorage; push: FakePushProvider };
+export type TestContext = AppContext & { clock: FakeClock; mailer: MemoryMailer; push: FakePushProvider };
 
 /** Fresh, migrated SQLite database + context for one test file. */
 export function createTestContext(
@@ -43,6 +43,7 @@ export function createTestContext(
     NODE_ENV: 'test',
     DATABASE_URL: `file:${file.split(path.sep).join('/')}`,
     JWT_ACCESS_SECRET: 'test-secret-test-secret-test-secret-123456',
+    SUBSCRIPTION_KEY_SECRET: 'test-subscription-key-secret-0123456789abcdef',
     LOG_LEVEL: 'silent',
     ...envOverrides,
   });
@@ -50,10 +51,10 @@ export function createTestContext(
     env,
     db: createDb(env.DATABASE_URL),
     logger: createLogger('silent'),
+    keys: createSecretBox('test-subscription-key-secret-0123456789abcdef'),
     ...overrides,
     clock: new FakeClock(),
     mailer: new MemoryMailer(),
-    storage: new MemoryStorage(),
     push: new FakePushProvider(),
   };
 }

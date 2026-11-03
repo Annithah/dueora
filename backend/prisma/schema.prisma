@@ -3,12 +3,12 @@
 // Conventions (see DECISIONS.md D1 and D6):
 // - Calendar dates without time (due dates, paid-on) are ISO strings "YYYY-MM-DD".
 //   They sort correctly as text and can never be shifted by a timezone.
-// - Money is an integer in the currency's smallest unit (amountMinor). Never floats.
-// - Every business table carries organizationId; services always filter by it.
+// - Money is always US dollars as integer cents (amountCents). Never floats, no other currency.
+// - Every business table carries workspaceId; services always filter by it.
 // - Json columns have no DB default (Prisma emits invalid SQLite for them); the
 //   application always sets them (see src/db/defaults.ts).
-// - This file targets SQLite for development/tests. scripts/postgres-schema.ts derives
-//   the production (PostgreSQL) schema from it.
+// - This file targets SQLite. scripts/postgres-migration.mjs derives the optional
+//   PostgreSQL schema from it.
 
 generator client {
   provider     = "prisma-client"
@@ -20,7 +20,7 @@ datasource db {
   provider = "sqlite"
 }
 
-enum OrgType {
+enum WorkspaceType {
   COMPANY
   PERSONAL
 }
@@ -28,8 +28,7 @@ enum OrgType {
 enum Role {
   ADMIN
   FINANCE
-  DEPARTMENT
-  EMPLOYEE
+  VIEWER
 }
 
 enum FrequencyUnit {
@@ -39,7 +38,7 @@ enum FrequencyUnit {
   ONCE
 }
 
-enum ObligationStatus {
+enum SubscriptionStatus {
   ACTIVE
   ARCHIVED
   COMPLETED
@@ -91,107 +90,79 @@ model User {
   id              String    @id @default(cuid())
   name            String
   email           String    @unique
-  phone           String?
   passwordHash    String
-  avatarUrl       String?
   emailVerifiedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  memberships        Membership[]
-  refreshTokens      RefreshToken[]
-  emailTokens        EmailToken[]
-  deviceTokens       DeviceToken[]
-  notificationPrefs  NotificationPreference[]
-  notifications      Notification[]
-  assigned           Obligation[]             @relation("ObligationAssignee")
-  createdObligations Obligation[]             @relation("ObligationCreator")
-  recordedPayments   PaymentRecord[]
-  auditLogs          AuditLog[]
-  invitesSent        Invite[]
+  memberships       Membership[]
+  refreshTokens     RefreshToken[]
+  emailTokens       EmailToken[]
+  deviceTokens      DeviceToken[]
+  notificationPrefs NotificationPreference[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  invitesSent       Invite[]
 }
 
-model Organization {
-  id                     String   @id @default(cuid())
+model Workspace {
+  id                     String        @id @default(cuid())
   name                   String
-  type                   OrgType  @default(COMPANY)
-  logoUrl                String?
-  defaultCurrency        String   @default("USD")
-  /// IANA timezone; "today" for this org is always computed here.
-  timezone               String   @default("Africa/Kigali")
+  type                   WorkspaceType @default(COMPANY)
+  /// IANA timezone; "today" for this workspace is always computed here.
+  timezone               String        @default("Africa/Kigali")
   /// Local hour (0–23) at which daily reminders go out.
-  reminderHour           Int      @default(9)
+  reminderHour           Int           @default(9)
   /// Quiet hours as minutes after local midnight (e.g. 1320 = 22:00). Both null = no quiet hours.
   quietHoursStart        Int?
   quietHoursEnd          Int?
   /// Default reminder offsets in days (JSON int[]; negative = after due date).
   defaultReminderOffsets Json
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
   memberships       Membership[]
-  departments       Department[]
-  platforms         Platform[]
+  companies         Company[]
   categories        Category[]
-  obligations       Obligation[]
-  attachments       Attachment[]
+  subscriptions     Subscription[]
   notifications     Notification[]
   notificationPrefs NotificationPreference[]
   auditLogs         AuditLog[]
   invites           Invite[]
-  exchangeRates     ExchangeRate[]
-  reminderRuns      OrgReminderRun[]
+  reminderRuns      WorkspaceReminderRun[]
 }
 
 model Membership {
-  id             String   @id @default(cuid())
-  userId         String
-  organizationId String
-  role           Role     @default(EMPLOYEE)
-  departmentId   String?
-  createdAt      DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        Role     @default(VIEWER)
+  createdAt   DateTime @default(now())
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, organizationId])
-  @@index([organizationId, role])
-}
-
-model Department {
-  id             String   @id @default(cuid())
-  organizationId String
-  name           String
-  createdAt      DateTime @default(now())
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  memberships  Membership[]
-  obligations  Obligation[]
-  invites      Invite[]
-
-  @@unique([organizationId, name])
+  @@unique([userId, workspaceId])
+  @@index([workspaceId, role])
 }
 
 model Invite {
-  id             String    @id @default(cuid())
-  organizationId String
-  email          String
-  role           Role      @default(EMPLOYEE)
-  departmentId   String?
+  id          String    @id @default(cuid())
+  workspaceId String
+  email       String
+  role        Role      @default(VIEWER)
   /// SHA-256 of the invite token sent by email.
-  tokenHash      String    @unique
-  invitedById    String
-  expiresAt      DateTime
-  acceptedAt     DateTime?
-  revokedAt      DateTime?
-  createdAt      DateTime  @default(now())
+  tokenHash   String    @unique
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  invitedBy    User         @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
 
-  @@index([organizationId, email])
+  @@index([workspaceId, email])
 }
 
 model RefreshToken {
@@ -229,139 +200,103 @@ model EmailToken {
   @@index([userId, purpose])
 }
 
-model Platform {
-  id             String   @id @default(cuid())
-  organizationId String
-  name           String
-  color          String   @default("#0F5C5C")
-  createdAt      DateTime @default(now())
+/// A company inside a workspace (e.g. "KT Radio", "KigaliToday"). Every subscription belongs to one.
+model Company {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String    @default("#0F5C5C")
+  /// Set when a company with subscriptions is "deleted": hidden from pickers, history kept.
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  obligations  Obligation[]
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
 
-  @@unique([organizationId, name])
+  @@unique([workspaceId, name])
 }
 
 model Category {
-  id             String   @id @default(cuid())
-  /// Null for the built-in defaults shared by every organization.
-  organizationId String?
-  name           String
-  icon           String
-  color          String
-  isDefault      Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  id          String   @id @default(cuid())
+  /// Null for the built-in defaults shared by every workspace.
+  workspaceId String?
+  name        String
+  icon        String
+  color       String
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  obligations  Obligation[]
+  workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
 
-  @@unique([organizationId, name])
+  @@unique([workspaceId, name])
 }
 
-model Obligation {
-  id                String           @id @default(cuid())
-  organizationId    String
-  platformId        String?
-  categoryId        String
-  departmentId      String?
-  assigneeUserId    String?
-  name              String
-  provider          String
-  description       String?
-  /// Optional icon key overriding the category's (e.g. "globe" for a domain under Hosting & domains).
-  icon              String?
-  amountMinor       Int
-  currency          String
-  frequencyUnit     FrequencyUnit
-  frequencyInterval Int              @default(1)
+model Subscription {
+  id                       String             @id @default(cuid())
+  workspaceId              String
+  companyId                String
+  categoryId               String
+  name                     String
+  provider                 String?
+  description              String?
+  /// AES-256-GCM ciphertext of the subscription key (license key, account number, ...). See src/lib/secretBox.ts.
+  subscriptionKeyEncrypted String?
+  /// Last 4 characters, for the masked display "••••••4F7A".
+  subscriptionKeyLast4     String?
+  /// HMAC-SHA256 of the normalised key, for exact-match search without decrypting.
+  subscriptionKeyHash      String?
+  /// US dollars, integer cents.
+  amountCents              Int
+  frequencyUnit            FrequencyUnit
+  frequencyInterval        Int                @default(1)
   /// Day of month (1–31) the schedule is anchored to, so month-end dates recover (31 → 28 → 31).
-  anchorDay         Int
+  anchorDay                Int
   /// "YYYY-MM-DD"
-  startDate         String
+  startDate                String
   /// "YYYY-MM-DD" — due date of the current (open) cycle.
-  nextDueDate       String
+  nextDueDate              String
   /// JSON int[] of days relative to the due date (negative = after).
-  reminderOffsets   Json
-  status            ObligationStatus @default(ACTIVE)
-  createdById       String
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  reminderOffsets          Json
+  status                   SubscriptionStatus @default(ACTIVE)
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 
-  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  platform      Platform?       @relation(fields: [platformId], references: [id], onDelete: SetNull)
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   category      Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  department    Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  assignee      User?           @relation("ObligationAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
-  createdBy     User            @relation("ObligationCreator", fields: [createdById], references: [id], onDelete: Restrict)
   payments      PaymentRecord[]
-  attachments   Attachment[]
   notifications Notification[]
 
-  @@index([organizationId, status, nextDueDate])
-  @@index([organizationId, nextDueDate])
-  @@index([organizationId, platformId])
-  @@index([assigneeUserId])
+  @@index([workspaceId, nextDueDate])
+  @@index([workspaceId, status])
+  @@index([workspaceId, companyId])
+  @@index([workspaceId, categoryId])
+  @@index([workspaceId, subscriptionKeyHash])
 }
 
 model PaymentRecord {
   id             String        @id @default(cuid())
-  /// Denormalised for org-scoped queries and isolation checks.
-  organizationId String
-  obligationId   String
+  /// Denormalised for workspace-scoped queries and isolation checks.
+  workspaceId    String
+  subscriptionId String
   /// "YYYY-MM-DD" — which cycle this payment belongs to.
   cycleDueDate   String
-  amountMinor    Int
-  currency       String
+  /// US dollars, integer cents.
+  amountCents    Int
   /// "YYYY-MM-DD"
   paidOn         String
   method         PaymentMethod
   reference      String?
   notes          String?
-  recordedById   String
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  obligation  Obligation   @relation(fields: [obligationId], references: [id], onDelete: Cascade)
-  recordedBy  User         @relation(fields: [recordedById], references: [id], onDelete: Restrict)
-  attachments Attachment[]
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
-  @@index([obligationId, cycleDueDate])
-  @@index([organizationId, paidOn])
-  @@index([organizationId, cycleDueDate])
-}
-
-model Attachment {
-  id              String   @id @default(cuid())
-  organizationId  String
-  obligationId    String?
-  paymentRecordId String?
-  fileKey         String   @unique
-  fileName        String
-  mimeType        String
-  size            Int
-  uploadedById    String
-  createdAt       DateTime @default(now())
-
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  obligation    Obligation?    @relation(fields: [obligationId], references: [id], onDelete: Cascade)
-  paymentRecord PaymentRecord? @relation(fields: [paymentRecordId], references: [id], onDelete: Cascade)
-
-  @@index([organizationId])
-  @@index([obligationId])
-  @@index([paymentRecordId])
-}
-
-model ExchangeRate {
-  id             String   @id @default(cuid())
-  organizationId String
-  /// 1 unit of `fromCurrency` = `rate` units of the org's default currency.
-  fromCurrency   String
-  rate           Decimal
-  updatedAt      DateTime @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@unique([organizationId, fromCurrency])
+  @@index([subscriptionId, cycleDueDate])
+  @@index([workspaceId, paidOn])
+  @@index([workspaceId, cycleDueDate])
 }
 
 model DeviceToken {
@@ -379,26 +314,26 @@ model DeviceToken {
 }
 
 model NotificationPreference {
-  userId             String
-  organizationId     String
-  pushEnabled        Boolean  @default(true)
-  emailEnabled       Boolean  @default(true)
-  digestEnabled      Boolean  @default(true)
-  /// JSON string[] of obligation ids the user muted.
-  mutedObligationIds Json
-  updatedAt          DateTime @updatedAt
+  userId               String
+  workspaceId          String
+  pushEnabled          Boolean  @default(true)
+  emailEnabled         Boolean  @default(true)
+  digestEnabled        Boolean  @default(true)
+  /// JSON string[] of subscription ids the user muted.
+  mutedSubscriptionIds Json
+  updatedAt            DateTime @updatedAt
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  @@id([userId, organizationId])
+  @@id([userId, workspaceId])
 }
 
 model Notification {
   id             String              @id @default(cuid())
-  organizationId String
+  workspaceId    String
   userId         String
-  obligationId   String?
+  subscriptionId String?
   type           NotificationType
   title          String
   body           String
@@ -408,7 +343,7 @@ model Notification {
   offsetDays     Int?
   channel        NotificationChannel
   status         NotificationStatus  @default(PENDING)
-  /// orgId:obligationId:cycleDueDate:offsetDays:userId:channel — unique so a reminder can never be sent twice.
+  /// workspaceId:subscriptionId:cycleDueDate:offsetDays:userId:channel — unique so a reminder can never be sent twice.
   dedupeKey      String              @unique
   attempts       Int                 @default(0)
   error          String?
@@ -420,45 +355,46 @@ model Notification {
   sentAt         DateTime?
   createdAt      DateTime            @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  obligation   Obligation?  @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
-  @@index([userId, organizationId, channel, createdAt])
-  @@index([userId, organizationId, channel, readAt])
+  @@index([userId, workspaceId, channel, createdAt])
+  @@index([userId, workspaceId, channel, readAt])
   @@index([status, channel, sendAfter])
-  @@index([obligationId, cycleDueDate])
+  @@index([subscriptionId, cycleDueDate])
 }
 
+/// Internal audit trail. Never shown in the app as ownership ("created by", "assigned to").
 model AuditLog {
-  id             String   @id @default(cuid())
-  organizationId String
-  userId         String
-  action         String
-  entity         String
-  entityId       String
-  meta           Json
-  createdAt      DateTime @default(now())
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  action      String
+  entity      String
+  entityId    String
+  meta        Json
+  createdAt   DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([organizationId, createdAt])
+  @@index([workspaceId, createdAt])
   @@index([entity, entityId])
 }
 
-/// Marks that an organization's reminders were processed for a local date.
+/// Marks that a workspace's reminders were processed for a local date.
 /// The unique constraint makes the claim atomic across workers.
-model OrgReminderRun {
-  id             String   @id @default(cuid())
-  organizationId String
-  /// Org-local "YYYY-MM-DD".
-  localDate      String
-  createdAt      DateTime @default(now())
+model WorkspaceReminderRun {
+  id          String   @id @default(cuid())
+  workspaceId String
+  /// Workspace-local "YYYY-MM-DD".
+  localDate   String
+  createdAt   DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, localDate])
+  @@unique([workspaceId, localDate])
 }
 
 /// Database-backed job queue (DECISIONS.md D2).

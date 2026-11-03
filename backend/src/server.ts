@@ -1,20 +1,12 @@
 import { createApp } from './app.js';
 import { env as loadEnv } from './config/env.js';
-import { systemClock, type AppContext } from './context.js';
-import { createDb } from './db/client.js';
-import { createLogger } from './lib/logger.js';
-import { ExpoPushProvider } from './notifications/push.js';
+import { createContext } from './bootstrap.js';
 import { startWorker } from './worker.js';
-import { LogMailer, ResendMailer } from './services/mailer.js';
-import { createStorage } from './services/storage.js';
 
 async function main() {
   const env = loadEnv();
-  const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV === 'development');
-  const db = createDb(env.DATABASE_URL);
-  const mailer = env.RESEND_API_KEY ? new ResendMailer(env.RESEND_API_KEY, env.EMAIL_FROM) : new LogMailer(logger);
-  if (!env.RESEND_API_KEY) logger.warn('RESEND_API_KEY not set — emails are written to the log instead of sent');
-  const ctx: AppContext = { env, db, logger, clock: systemClock, mailer, storage: createStorage(env), push: new ExpoPushProvider(env.EXPO_ACCESS_TOKEN) };
+  const ctx = createContext(env);
+  const { logger, db } = ctx;
 
   const app = createApp(ctx);
   const stopWorker = env.RUN_WORKER_IN_API ? startWorker(ctx, logger) : null;

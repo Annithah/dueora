@@ -198,11 +198,13 @@ describe('forgot / reset password', () => {
 });
 
 describe('profile', () => {
-  it('updates name and phone', async () => {
+  it('updates the name and nothing else', async () => {
     const s = await register(app, 'Profile', 'profile@example.com');
-    const res = await client(app, s).patch('/api/v1/me').send({ name: 'Profile Person', phone: '+250 788 123 456' });
+    const res = await client(app, s).patch('/api/v1/me').send({ name: 'Profile Person' });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ name: 'Profile Person', phone: '+250 788 123 456' });
+    expect(res.body).toMatchObject({ name: 'Profile Person', email: 'profile@example.com' });
+    expect(res.body).not.toHaveProperty('avatarUrl');
+    expect((await client(app, s).patch('/api/v1/me').send({ email: 'other@example.com' })).status).toBe(400);
   });
 
   it('changes the password only with the current one', async () => {

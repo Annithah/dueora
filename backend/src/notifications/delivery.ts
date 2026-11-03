@@ -20,7 +20,7 @@ interface Ticket {
 async function loadPending(ctx: AppContext, notificationId: string) {
   const n = await ctx.db.notification.findUnique({
     where: { id: notificationId },
-    include: { user: { select: { id: true, name: true, email: true } }, organization: { select: { name: true, logoUrl: true } } },
+    include: { user: { select: { id: true, name: true, email: true } }, workspace: { select: { name: true } } },
   });
   // Already sent (or cancelled): delivery jobs are idempotent.
   return n && n.status === 'PENDING' ? n : null;
@@ -32,7 +32,7 @@ export const deliverPush: JobHandler = async (ctx, payload) => {
   if (!n) return;
   // The notification counts attempts across jobs (receipt-triggered resends start new jobs).
   const attempt = n.attempts + 1;
-  const prefs = await prefsFor(ctx, n.userId, n.organizationId);
+  const prefs = await prefsFor(ctx, n.userId, n.workspaceId);
   const reason = !prefs.pushEnabled ? 'cancelled: push disabled' : await cancellationReason(ctx, n, prefs);
   if (reason) return markCancelled(ctx, n.id, reason);
 
@@ -48,7 +48,7 @@ export const deliverPush: JobHandler = async (ctx, payload) => {
     sound: 'default',
     priority: overdue ? 'high' : 'default',
     channelId: overdue ? 'overdue' : 'reminders',
-    data: { url: data.url, obligationId: n.obligationId, notificationId: n.id, type: n.type },
+    data: { url: data.url, subscriptionId: n.subscriptionId, notificationId: n.id, type: n.type },
   }));
 
   let tickets;
@@ -109,9 +109,9 @@ async function fallbackToEmail(
   if (n.status === 'PENDING') await markCancelled(ctx, n.id, `no push: ${why}`);
   if (!emailEnabled) return;
   await createNotification(ctx, {
-    organizationId: n.organizationId,
+    workspaceId: n.workspaceId,
     userId: n.userId,
-    obligationId: n.obligationId,
+    subscriptionId: n.subscriptionId,
     type: n.type,
     channel: 'EMAIL',
     title: n.title,
@@ -125,7 +125,7 @@ async function fallbackToEmail(
 
 function buildEmail(ctx: AppContext, n: NonNullable<Awaited<ReturnType<typeof loadPending>>>): EmailMessage {
   const data = n.data as Record<string, unknown>;
-  const common = { to: n.user.email, orgName: n.organization.name, logoUrl: n.organization.logoUrl };
+  const common = { to: n.user.email, orgName: n.workspace.name };
   switch (n.type) {
     case 'REMINDER':
     case 'DUE_TODAY':
@@ -150,7 +150,7 @@ export const deliverEmail: JobHandler = async (ctx, payload) => {
   const n = await loadPending(ctx, String(payload.notificationId));
   if (!n) return;
   const attempt = n.attempts + 1;
-  const prefs = await prefsFor(ctx, n.userId, n.organizationId);
+  const prefs = await prefsFor(ctx, n.userId, n.workspaceId);
   const reason = !prefs.emailEnabled && n.type !== 'SYSTEM' ? 'cancelled: email disabled' : await cancellationReason(ctx, n, prefs);
   if (reason) return markCancelled(ctx, n.id, reason);
 

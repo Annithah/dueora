@@ -1,7 +1,8 @@
-import { pino, type Logger } from 'pino';
+import { pino, type DestinationStream, type Logger } from 'pino';
 
-export function createLogger(level: string, pretty = false): Logger {
-  return pino({
+/** `destination` lets tests capture log output (e.g. to prove secrets never reach it). */
+export function createLogger(level: string, pretty = false, destination?: DestinationStream): Logger {
+  const options = {
     level,
     base: { service: 'dueora-api' },
     redact: {
@@ -13,11 +14,16 @@ export function createLogger(level: string, pretty = false): Logger {
         '*.refreshToken',
         '*.token',
         '*.code',
+        'subscriptionKey',
+        '*.subscriptionKey',
+        '*.*.subscriptionKey',
+        'req.body',
       ],
       censor: '[redacted]',
     },
-    ...(pretty ? { transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss' } } } : {}),
-  });
+    ...(pretty && !destination ? { transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss' } } } : {}),
+  };
+  return destination ? pino(options, destination) : pino(options);
 }
 
 export type { Logger };

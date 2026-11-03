@@ -9,9 +9,9 @@ export const QUEUES = {
 } as const;
 
 export interface NewNotification {
-  organizationId: string;
+  workspaceId: string;
   userId: string;
-  obligationId?: string | null;
+  subscriptionId?: string | null;
   type: NotificationType;
   channel: NotificationChannel;
   title: string;
@@ -56,7 +56,7 @@ export async function createNotification(
     const row = await ctx.db.notification.create({
       data: {
         ...n,
-        obligationId: n.obligationId ?? null,
+        subscriptionId: n.subscriptionId ?? null,
         cycleDueDate: n.cycleDueDate ?? null,
         offsetDays: n.offsetDays ?? null,
         data: n.data as Prisma.InputJsonValue,
@@ -87,10 +87,10 @@ export interface Prefs {
 
 export const DEFAULT_PREFS: Omit<Prefs, 'muted'> = { pushEnabled: true, emailEnabled: true, digestEnabled: true };
 
-export async function prefsFor(ctx: AppContext, userId: string, organizationId: string): Promise<Prefs> {
-  const p = await ctx.db.notificationPreference.findUnique({ where: { userId_organizationId: { userId, organizationId } } });
+export async function prefsFor(ctx: AppContext, userId: string, workspaceId: string): Promise<Prefs> {
+  const p = await ctx.db.notificationPreference.findUnique({ where: { userId_workspaceId: { userId, workspaceId } } });
   return p
-    ? { pushEnabled: p.pushEnabled, emailEnabled: p.emailEnabled, digestEnabled: p.digestEnabled, muted: new Set(p.mutedObligationIds as string[]) }
+    ? { pushEnabled: p.pushEnabled, emailEnabled: p.emailEnabled, digestEnabled: p.digestEnabled, muted: new Set(p.mutedSubscriptionIds as string[]) }
     : { ...DEFAULT_PREFS, muted: new Set() };
 }
 
@@ -101,29 +101,29 @@ export async function prefsFor(ctx: AppContext, userId: string, organizationId: 
  */
 export async function cancellationReason(
   ctx: AppContext,
-  n: { userId: string; organizationId: string; obligationId: string | null; cycleDueDate: string | null; type: NotificationType; data: unknown },
+  n: { userId: string; workspaceId: string; subscriptionId: string | null; cycleDueDate: string | null; type: NotificationType; data: unknown },
   prefs: Prefs,
 ): Promise<string | null> {
   const isReminder = n.type === 'REMINDER' || n.type === 'DUE_TODAY' || n.type === 'OVERDUE';
-  if (isReminder && n.obligationId && n.cycleDueDate) {
-    return obligationStillDue(ctx, n.obligationId, n.cycleDueDate, prefs);
+  if (isReminder && n.subscriptionId && n.cycleDueDate) {
+    return subscriptionStillDue(ctx, n.subscriptionId, n.cycleDueDate, prefs);
   }
   if (n.type === 'DIGEST') {
-    const items = ((n.data as { items?: { obligationId: string; cycleDueDate: string }[] }).items ?? []);
-    const reasons = await Promise.all(items.map((i) => obligationStillDue(ctx, i.obligationId, i.cycleDueDate, prefs)));
+    const items = ((n.data as { items?: { subscriptionId: string; cycleDueDate: string }[] }).items ?? []);
+    const reasons = await Promise.all(items.map((i) => subscriptionStillDue(ctx, i.subscriptionId, i.cycleDueDate, prefs)));
     return reasons.every((r) => r !== null) ? 'cancelled: nothing left to remind about' : null;
   }
   return null;
 }
 
-async function obligationStillDue(ctx: AppContext, obligationId: string, cycleDueDate: string, prefs: Prefs): Promise<string | null> {
-  if (prefs.muted.has(obligationId)) return 'cancelled: muted';
-  const o = await ctx.db.obligation.findUnique({ where: { id: obligationId }, select: { status: true, nextDueDate: true, amountMinor: true } });
+async function subscriptionStillDue(ctx: AppContext, subscriptionId: string, cycleDueDate: string, prefs: Prefs): Promise<string | null> {
+  if (prefs.muted.has(subscriptionId)) return 'cancelled: muted';
+  const o = await ctx.db.subscription.findUnique({ where: { id: subscriptionId }, select: { status: true, nextDueDate: true, amountCents: true } });
   if (!o) return 'cancelled: deleted';
   if (o.status !== 'ACTIVE') return `cancelled: ${o.status.toLowerCase()}`;
   if (o.nextDueDate !== cycleDueDate) return 'cancelled: paid';
-  const payments = await ctx.db.paymentRecord.findMany({ where: { obligationId, cycleDueDate }, select: { cycleDueDate: true, amountMinor: true } });
-  if (paidForCycle(payments, cycleDueDate) >= o.amountMinor) return 'cancelled: paid';
+  const payments = await ctx.db.paymentRecord.findMany({ where: { subscriptionId, cycleDueDate }, select: { cycleDueDate: true, amountCents: true } });
+  if (paidForCycle(payments, cycleDueDate) >= o.amountCents) return 'cancelled: paid';
   return null;
 }
 
@@ -131,6 +131,6 @@ export async function markCancelled(ctx: AppContext, id: string, reason: string)
   await ctx.db.notification.update({ where: { id }, data: { status: 'FAILED', error: reason } });
 }
 
-export function paymentUrl(ctx: AppContext, obligationId: string): string {
-  return `${ctx.env.APP_URL}payments/${obligationId}`;
+export function subscriptionUrl(ctx: AppContext, subscriptionId: string): string {
+  return `${ctx.env.APP_URL}subscriptions/${subscriptionId}`;
 }

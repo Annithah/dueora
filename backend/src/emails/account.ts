@@ -40,7 +40,6 @@ export function inviteMessage(opts: {
   orgName: string;
   roleLabel: string;
   acceptUrl: string;
-  logoUrl?: string | null;
 }): EmailMessage {
   return {
     to: opts.to,
@@ -49,9 +48,8 @@ export function inviteMessage(opts: {
     html: renderLayout({
       preheader: `Join ${opts.orgName} as ${opts.roleLabel}.`,
       heading: `You're invited to ${opts.orgName}`,
-      bodyHtml: `<p style="margin:0 0 12px">${esc(opts.inviterName)} added you as <b>${esc(opts.roleLabel)}</b> so you can keep track of payments and renewals together.</p><p style="margin:0 0 16px;color:#667373">The invitation expires in 7 days.</p>`,
+      bodyHtml: `<p style="margin:0 0 12px">${esc(opts.inviterName)} added you as <b>${esc(opts.roleLabel)}</b> so you can keep track of subscriptions and renewals together.</p><p style="margin:0 0 16px;color:#667373">The invitation expires in 7 days.</p>`,
       button: { label: 'Accept invitation', url: opts.acceptUrl },
-      logoUrl: opts.logoUrl,
       footerNote: "If you weren't expecting this, you can ignore it.",
     }),
     text: `${opts.inviterName} invited you to ${opts.orgName} on DueOra as ${opts.roleLabel}.\n\nAccept: ${opts.acceptUrl}\n\nThe invitation expires in 7 days.`,
@@ -61,6 +59,5 @@ export function inviteMessage(opts: {
 export const ROLE_LABELS = {
   ADMIN: 'Admin',
   FINANCE: 'Finance Officer',
-  DEPARTMENT: 'Department Officer',
-  EMPLOYEE: 'Employee',
+  VIEWER: 'Viewer',
 } as const;

@@ -23,7 +23,7 @@ export async function publicUser(ctx: AppContext, userId: string) {
     where: { id: userId },
     include: {
       memberships: {
-        include: { organization: { select: { id: true, name: true, type: true, logoUrl: true, defaultCurrency: true, timezone: true } } },
+        include: { workspace: { select: { id: true, name: true, type: true, timezone: true } } },
         orderBy: { createdAt: 'asc' },
       },
     },
@@ -32,14 +32,11 @@ export async function publicUser(ctx: AppContext, userId: string) {
     id: user.id,
     name: user.name,
     email: user.email,
-    phone: user.phone,
-    avatarUrl: user.avatarUrl,
     emailVerified: user.emailVerifiedAt !== null,
     createdAt: user.createdAt,
     workspaces: user.memberships.map((m) => ({
-      ...m.organization,
+      ...m.workspace,
       role: m.role,
-      departmentId: m.departmentId,
     })),
   };
 }

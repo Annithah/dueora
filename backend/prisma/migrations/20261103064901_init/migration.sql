@@ -3,21 +3,17 @@ CREATE TABLE "User" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "phone" TEXT,
     "passwordHash" TEXT NOT NULL,
-    "avatarUrl" TEXT,
     "emailVerifiedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );
 
 -- CreateTable
-CREATE TABLE "Organization" (
+CREATE TABLE "Workspace" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "type" TEXT NOT NULL DEFAULT 'COMPANY',
-    "logoUrl" TEXT,
-    "defaultCurrency" TEXT NOT NULL DEFAULT 'USD',
     "timezone" TEXT NOT NULL DEFAULT 'Africa/Kigali',
     "reminderHour" INTEGER NOT NULL DEFAULT 9,
     "quietHoursStart" INTEGER,
@@ -31,39 +27,26 @@ CREATE TABLE "Organization" (
 CREATE TABLE "Membership" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "userId" TEXT NOT NULL,
-    "organizationId" TEXT NOT NULL,
-    "role" TEXT NOT NULL DEFAULT 'EMPLOYEE',
-    "departmentId" TEXT,
+    "workspaceId" TEXT NOT NULL,
+    "role" TEXT NOT NULL DEFAULT 'VIEWER',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Membership_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Membership_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Membership_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "Department" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-);
-
--- CreateTable
-CREATE TABLE "Department" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Department_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "Membership_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
 CREATE TABLE "Invite" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
+    "workspaceId" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "role" TEXT NOT NULL DEFAULT 'EMPLOYEE',
-    "departmentId" TEXT,
+    "role" TEXT NOT NULL DEFAULT 'VIEWER',
     "tokenHash" TEXT NOT NULL,
     "invitedById" TEXT NOT NULL,
     "expiresAt" DATETIME NOT NULL,
     "acceptedAt" DATETIME,
     "revokedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Invite_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Invite_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "Department" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "Invite_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "Invite_invitedById_fkey" FOREIGN KEY ("invitedById") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -95,41 +78,41 @@ CREATE TABLE "EmailToken" (
 );
 
 -- CreateTable
-CREATE TABLE "Platform" (
+CREATE TABLE "Company" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
+    "workspaceId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "color" TEXT NOT NULL DEFAULT '#0F5C5C',
+    "archivedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Platform_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "Company_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
 CREATE TABLE "Category" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT,
+    "workspaceId" TEXT,
     "name" TEXT NOT NULL,
     "icon" TEXT NOT NULL,
     "color" TEXT NOT NULL,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Category_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "Category_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
-CREATE TABLE "Obligation" (
+CREATE TABLE "Subscription" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
-    "platformId" TEXT,
+    "workspaceId" TEXT NOT NULL,
+    "companyId" TEXT NOT NULL,
     "categoryId" TEXT NOT NULL,
-    "departmentId" TEXT,
-    "assigneeUserId" TEXT,
     "name" TEXT NOT NULL,
-    "provider" TEXT NOT NULL,
+    "provider" TEXT,
     "description" TEXT,
-    "icon" TEXT,
-    "amountMinor" INTEGER NOT NULL,
-    "currency" TEXT NOT NULL,
+    "subscriptionKeyEncrypted" TEXT,
+    "subscriptionKeyLast4" TEXT,
+    "subscriptionKeyHash" TEXT,
+    "amountCents" INTEGER NOT NULL,
     "frequencyUnit" TEXT NOT NULL,
     "frequencyInterval" INTEGER NOT NULL DEFAULT 1,
     "anchorDay" INTEGER NOT NULL,
@@ -137,61 +120,27 @@ CREATE TABLE "Obligation" (
     "nextDueDate" TEXT NOT NULL,
     "reminderOffsets" JSONB NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'ACTIVE',
-    "createdById" TEXT NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "Obligation_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Obligation_platformId_fkey" FOREIGN KEY ("platformId") REFERENCES "Platform" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT "Obligation_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-    CONSTRAINT "Obligation_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "Department" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT "Obligation_assigneeUserId_fkey" FOREIGN KEY ("assigneeUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT "Obligation_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    CONSTRAINT "Subscription_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Subscription_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "Subscription_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateTable
 CREATE TABLE "PaymentRecord" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
-    "obligationId" TEXT NOT NULL,
+    "workspaceId" TEXT NOT NULL,
+    "subscriptionId" TEXT NOT NULL,
     "cycleDueDate" TEXT NOT NULL,
-    "amountMinor" INTEGER NOT NULL,
-    "currency" TEXT NOT NULL,
+    "amountCents" INTEGER NOT NULL,
     "paidOn" TEXT NOT NULL,
     "method" TEXT NOT NULL,
     "reference" TEXT,
     "notes" TEXT,
-    "recordedById" TEXT NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "PaymentRecord_obligationId_fkey" FOREIGN KEY ("obligationId") REFERENCES "Obligation" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "PaymentRecord_recordedById_fkey" FOREIGN KEY ("recordedById") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
-);
-
--- CreateTable
-CREATE TABLE "Attachment" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
-    "obligationId" TEXT,
-    "paymentRecordId" TEXT,
-    "fileKey" TEXT NOT NULL,
-    "fileName" TEXT NOT NULL,
-    "mimeType" TEXT NOT NULL,
-    "size" INTEGER NOT NULL,
-    "uploadedById" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Attachment_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Attachment_obligationId_fkey" FOREIGN KEY ("obligationId") REFERENCES "Obligation" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Attachment_paymentRecordId_fkey" FOREIGN KEY ("paymentRecordId") REFERENCES "PaymentRecord" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
-
--- CreateTable
-CREATE TABLE "ExchangeRate" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
-    "fromCurrency" TEXT NOT NULL,
-    "rate" DECIMAL NOT NULL,
-    "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "ExchangeRate_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "PaymentRecord_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -209,24 +158,24 @@ CREATE TABLE "DeviceToken" (
 -- CreateTable
 CREATE TABLE "NotificationPreference" (
     "userId" TEXT NOT NULL,
-    "organizationId" TEXT NOT NULL,
+    "workspaceId" TEXT NOT NULL,
     "pushEnabled" BOOLEAN NOT NULL DEFAULT true,
     "emailEnabled" BOOLEAN NOT NULL DEFAULT true,
     "digestEnabled" BOOLEAN NOT NULL DEFAULT true,
-    "mutedObligationIds" JSONB NOT NULL,
+    "mutedSubscriptionIds" JSONB NOT NULL,
     "updatedAt" DATETIME NOT NULL,
 
-    PRIMARY KEY ("userId", "organizationId"),
+    PRIMARY KEY ("userId", "workspaceId"),
     CONSTRAINT "NotificationPreference_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "NotificationPreference_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "NotificationPreference_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
 CREATE TABLE "Notification" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
+    "workspaceId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "obligationId" TEXT,
+    "subscriptionId" TEXT,
     "type" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "body" TEXT NOT NULL,
@@ -243,32 +192,32 @@ CREATE TABLE "Notification" (
     "readAt" DATETIME,
     "sentAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Notification_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Notification_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "Notification_obligationId_fkey" FOREIGN KEY ("obligationId") REFERENCES "Obligation" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "Notification_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
 CREATE TABLE "AuditLog" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
+    "workspaceId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "action" TEXT NOT NULL,
     "entity" TEXT NOT NULL,
     "entityId" TEXT NOT NULL,
     "meta" JSONB NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "AuditLog_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "AuditLog_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
-CREATE TABLE "OrgReminderRun" (
+CREATE TABLE "WorkspaceReminderRun" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "organizationId" TEXT NOT NULL,
+    "workspaceId" TEXT NOT NULL,
     "localDate" TEXT NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "OrgReminderRun_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "WorkspaceReminderRun_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -292,19 +241,16 @@ CREATE TABLE "Job" (
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
 -- CreateIndex
-CREATE INDEX "Membership_organizationId_role_idx" ON "Membership"("organizationId", "role");
+CREATE INDEX "Membership_workspaceId_role_idx" ON "Membership"("workspaceId", "role");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Membership_userId_organizationId_key" ON "Membership"("userId", "organizationId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Department_organizationId_name_key" ON "Department"("organizationId", "name");
+CREATE UNIQUE INDEX "Membership_userId_workspaceId_key" ON "Membership"("userId", "workspaceId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Invite_tokenHash_key" ON "Invite"("tokenHash");
 
 -- CreateIndex
-CREATE INDEX "Invite_organizationId_email_idx" ON "Invite"("organizationId", "email");
+CREATE INDEX "Invite_workspaceId_email_idx" ON "Invite"("workspaceId", "email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "RefreshToken_tokenHash_key" ON "RefreshToken"("tokenHash");
@@ -319,43 +265,34 @@ CREATE INDEX "RefreshToken_familyId_idx" ON "RefreshToken"("familyId");
 CREATE INDEX "EmailToken_userId_purpose_idx" ON "EmailToken"("userId", "purpose");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Platform_organizationId_name_key" ON "Platform"("organizationId", "name");
+CREATE UNIQUE INDEX "Company_workspaceId_name_key" ON "Company"("workspaceId", "name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Category_organizationId_name_key" ON "Category"("organizationId", "name");
+CREATE UNIQUE INDEX "Category_workspaceId_name_key" ON "Category"("workspaceId", "name");
 
 -- CreateIndex
-CREATE INDEX "Obligation_organizationId_status_nextDueDate_idx" ON "Obligation"("organizationId", "status", "nextDueDate");
+CREATE INDEX "Subscription_workspaceId_nextDueDate_idx" ON "Subscription"("workspaceId", "nextDueDate");
 
 -- CreateIndex
-CREATE INDEX "Obligation_organizationId_nextDueDate_idx" ON "Obligation"("organizationId", "nextDueDate");
+CREATE INDEX "Subscription_workspaceId_status_idx" ON "Subscription"("workspaceId", "status");
 
 -- CreateIndex
-CREATE INDEX "Obligation_organizationId_platformId_idx" ON "Obligation"("organizationId", "platformId");
+CREATE INDEX "Subscription_workspaceId_companyId_idx" ON "Subscription"("workspaceId", "companyId");
 
 -- CreateIndex
-CREATE INDEX "Obligation_assigneeUserId_idx" ON "Obligation"("assigneeUserId");
+CREATE INDEX "Subscription_workspaceId_categoryId_idx" ON "Subscription"("workspaceId", "categoryId");
 
 -- CreateIndex
-CREATE INDEX "PaymentRecord_obligationId_cycleDueDate_idx" ON "PaymentRecord"("obligationId", "cycleDueDate");
+CREATE INDEX "Subscription_workspaceId_subscriptionKeyHash_idx" ON "Subscription"("workspaceId", "subscriptionKeyHash");
 
 -- CreateIndex
-CREATE INDEX "PaymentRecord_organizationId_paidOn_idx" ON "PaymentRecord"("organizationId", "paidOn");
+CREATE INDEX "PaymentRecord_subscriptionId_cycleDueDate_idx" ON "PaymentRecord"("subscriptionId", "cycleDueDate");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Attachment_fileKey_key" ON "Attachment"("fileKey");
+CREATE INDEX "PaymentRecord_workspaceId_paidOn_idx" ON "PaymentRecord"("workspaceId", "paidOn");
 
 -- CreateIndex
-CREATE INDEX "Attachment_organizationId_idx" ON "Attachment"("organizationId");
-
--- CreateIndex
-CREATE INDEX "Attachment_obligationId_idx" ON "Attachment"("obligationId");
-
--- CreateIndex
-CREATE INDEX "Attachment_paymentRecordId_idx" ON "Attachment"("paymentRecordId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ExchangeRate_organizationId_fromCurrency_key" ON "ExchangeRate"("organizationId", "fromCurrency");
+CREATE INDEX "PaymentRecord_workspaceId_cycleDueDate_idx" ON "PaymentRecord"("workspaceId", "cycleDueDate");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "DeviceToken_expoPushToken_key" ON "DeviceToken"("expoPushToken");
@@ -367,22 +304,25 @@ CREATE INDEX "DeviceToken_userId_active_idx" ON "DeviceToken"("userId", "active"
 CREATE UNIQUE INDEX "Notification_dedupeKey_key" ON "Notification"("dedupeKey");
 
 -- CreateIndex
-CREATE INDEX "Notification_userId_organizationId_channel_createdAt_idx" ON "Notification"("userId", "organizationId", "channel", "createdAt");
+CREATE INDEX "Notification_userId_workspaceId_channel_createdAt_idx" ON "Notification"("userId", "workspaceId", "channel", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "Notification_userId_workspaceId_channel_readAt_idx" ON "Notification"("userId", "workspaceId", "channel", "readAt");
 
 -- CreateIndex
 CREATE INDEX "Notification_status_channel_sendAfter_idx" ON "Notification"("status", "channel", "sendAfter");
 
 -- CreateIndex
-CREATE INDEX "Notification_obligationId_cycleDueDate_idx" ON "Notification"("obligationId", "cycleDueDate");
+CREATE INDEX "Notification_subscriptionId_cycleDueDate_idx" ON "Notification"("subscriptionId", "cycleDueDate");
 
 -- CreateIndex
-CREATE INDEX "AuditLog_organizationId_createdAt_idx" ON "AuditLog"("organizationId", "createdAt");
+CREATE INDEX "AuditLog_workspaceId_createdAt_idx" ON "AuditLog"("workspaceId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_entity_entityId_idx" ON "AuditLog"("entity", "entityId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "OrgReminderRun_organizationId_localDate_key" ON "OrgReminderRun"("organizationId", "localDate");
+CREATE UNIQUE INDEX "WorkspaceReminderRun_workspaceId_localDate_key" ON "WorkspaceReminderRun"("workspaceId", "localDate");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Job_singletonKey_key" ON "Job"("singletonKey");

@@ -5,31 +5,54 @@ import { workOnce } from '../src/notifications/scheduler.js';
 
 import { client } from './helpers/api.js';
 import { createTestContext, type TestContext } from './helpers/context.js';
-import { seedAndLogin, type SeededWorkspace } from './helpers/seed.js';
+import { buildFixture, USERS } from './helpers/fixture.js';
 
-const TOKENS = { anitha: 'ExponentPushToken[anitha]', isaac: 'ExponentPushToken[isaac]' };
+const TOKENS = { admin: 'ExponentPushToken[admin]', finance: 'ExponentPushToken[finance]' };
 const contexts: TestContext[] = [];
 
-/** Fresh seeded workspace at 2 Nov 2026 06:00 UTC (08:00 Kigali) with phones for Anitha and Isaac. */
+/**
+ * Fresh fixture workspace at 2 Nov 2026 06:00 UTC (08:00 Kigali). Admin and Finance have
+ * phones; the Viewer has none (so they get email instead of push).
+ */
 async function setup() {
   // These tests move the clock by days; long-lived tokens keep the sessions valid.
   const ctx = createTestContext({}, { ACCESS_TOKEN_TTL_MINUTES: '1000000', REFRESH_TOKEN_TTL_DAYS: '3650' });
   contexts.push(ctx);
   ctx.clock.set('2026-11-02T06:00:00Z');
   const app = createApp(ctx);
-  const ws = await seedAndLogin(app, ctx);
-  for (const who of ['anitha', 'isaac'] as const) {
-    const res = await client(app, ws.sessions[who]).post('/api/v1/devices').send({ expoPushToken: TOKENS[who], platform: 'android' });
+  const fx = await buildFixture(app, ctx);
+  for (const who of ['admin', 'finance'] as const) {
+    const res = await client(app, fx.sessions[who]).post('/api/v1/devices').send({ expoPushToken: TOKENS[who], platform: 'android' });
     expect(res.status).toBe(204);
   }
-  const as = (who: keyof SeededWorkspace['sessions']) => client(app, ws.sessions[who], ws.organizationId);
+  // Start every test from a quiet inbox: drop what fixture setup produced (invite emails,
+  // the "payment recorded" notice for the fixture's partial payment).
+  await ctx.db.notification.deleteMany({});
+  await ctx.db.job.deleteMany({});
+  ctx.mailer.sent.length = 0;
+  ctx.push.sent.length = 0;
   /** Move the clock and let the worker do everything that's due. */
   const at = async (iso: string) => {
     ctx.clock.set(iso);
     await workOnce(ctx);
   };
-  const notes = (where: Record<string, unknown> = {}) => ctx.db.notification.findMany({ where: { organizationId: ws.organizationId, ...where }, orderBy: { createdAt: 'asc' } });
-  return { ctx, app, ws, as, at, notes };
+  const notes = (where: Record<string, unknown> = {}) =>
+    ctx.db.notification.findMany({ where: { workspaceId: fx.workspaceId, ...where }, orderBy: { createdAt: 'asc' } });
+  const who = (userId: string) => (Object.entries(fx.userIds).find(([, id]) => id === userId)?.[0] ?? '?') as string;
+  const addMonthly = async (names: string[], startDate: string) => {
+    for (const name of names) {
+      const res = await fx.as('admin').post('/api/v1/subscriptions').send({
+        name,
+        companyId: fx.companies.alpha,
+        categoryId: fx.categories['Technology & software'],
+        amountCents: 1_500,
+        frequencyUnit: 'MONTH',
+        startDate,
+      });
+      expect(res.status).toBe(201);
+    }
+  };
+  return { ctx, app, fx, at, notes, who, addMonthly };
 }
 
 afterEach(async () => {
@@ -37,35 +60,37 @@ afterEach(async () => {
 });
 
 describe('daily reminder run', () => {
-  it('waits for 09:00 in Kigali, then sends exactly the reminders due today', async () => {
-    const { ctx, ws, at, notes } = await setup();
+  it('waits for 09:00 in Kigali, then sends exactly the reminders due today to every member', async () => {
+    const { ctx, fx, at, notes, who } = await setup();
     await at('2026-11-02T06:45:00Z'); // 08:45 local
     expect(await notes()).toHaveLength(0);
 
     await at('2026-11-02T07:00:00Z'); // 09:00 local
     const all = await notes();
-    // Only "Office internet" (due 5 Nov, 3-day reminder) is due today. Recipients: Isaac
-    // (assignee + finance) and Anitha (admin). Nadine is Technology, Eric isn't assigned.
-    expect(new Set(all.map((n) => n.obligationId))).toEqual(new Set([ws.obligationIds.internet]));
-    expect(all.map((n) => `${n.userId === ws.userIds.anitha ? 'anitha' : 'isaac'}:${n.channel}`).sort()).toEqual([
-      'anitha:IN_APP',
-      'anitha:PUSH',
-      'isaac:IN_APP',
-      'isaac:PUSH',
+    // Only Internet (due 5 Nov, 3-day reminder) is due today. Every member (ADMIN, FINANCE,
+    // VIEWER) receives it; the viewer has no phone, so they get email instead of push.
+    expect(new Set(all.map((n) => n.subscriptionId))).toEqual(new Set([fx.subscriptionIds.internet]));
+    expect(all.map((n) => `${who(n.userId)}:${n.channel}`).sort()).toEqual([
+      'admin:IN_APP',
+      'admin:PUSH',
+      'finance:IN_APP',
+      'finance:PUSH',
+      'viewer:EMAIL',
+      'viewer:IN_APP',
     ]);
     expect(all[0]).toMatchObject({ type: 'REMINDER', offsetDays: 3, cycleDueDate: '2026-11-05' });
 
-    // Pushes went out with the brief's copy and the reminders channel.
-    expect(ctx.push.sent.map((m) => m.to).sort()).toEqual([TOKENS.anitha, TOKENS.isaac]);
+    expect(ctx.push.sent.map((m) => m.to).sort()).toEqual([TOKENS.admin, TOKENS.finance]);
     expect(ctx.push.sent[0]).toMatchObject({
       title: 'Due in 3 days',
-      body: '⏰ Office internet is due in 3 days — 85,000 RWF on Thu, 5 Nov.',
+      body: '⏰ Alpha News · Internet is due in 3 days — $120.00 on Thu, 5 Nov.',
       channelId: 'reminders',
-      data: { url: `dueora://payments/${ws.obligationIds.internet}` },
+      data: { url: `dueora://subscriptions/${fx.subscriptionIds.internet}` },
     });
     expect((await notes({ channel: 'PUSH' })).every((n) => n.status === 'SENT' && n.pushTicketId)).toBe(true);
-    // A 3-day reminder isn't a "key moment" and both have phones → no email.
-    expect(ctx.mailer.sent).toHaveLength(0);
+    expect(ctx.mailer.sent.map((m) => `${m.to}:${m.subject}`)).toEqual([
+      `${USERS.viewer.email}:⏰ Alpha News · Internet is due in 3 days — $120.00 on Thu, 5 Nov.`,
+    ]);
   });
 
   it('runs once per day no matter how often the worker ticks', async () => {
@@ -76,72 +101,81 @@ describe('daily reminder run', () => {
     expect(await notes()).toHaveLength(count);
   });
 
-  it('emails people without a phone, and on key moments', async () => {
-    const { ctx, at } = await setup();
+  it('emails people without a phone for every reminder, and everyone on key moments', async () => {
+    const { ctx, at, addMonthly } = await setup();
+    await addMonthly(['Accounting'], '2026-11-09'); // 7 days away → key moment today
     await at('2026-11-02T07:00:00Z');
-    ctx.mailer.sent.length = 0;
-    // 3 Nov: KigaliToday hosting (due 20 Oct) hits its weekly follow-up (-14) and the
-    // cleaning service its 3-day reminder.
-    await at('2026-11-03T07:00:00Z');
-    const nadine = ctx.mailer.sent.filter((m) => m.to === 'nadine@kigalitoday.com');
-    expect(nadine.map((m) => m.subject)).toEqual(['⚠️ KigaliToday hosting is 14 days overdue — $1,523.']);
-    expect(nadine[0]!.html).toContain('Open in DueOra');
-    expect(nadine[0]!.html).toContain('⚠️ Overdue');
-    // Eric (employee, assignee of cleaning, no phone) gets that one by email.
-    expect(ctx.mailer.sent.filter((m) => m.to === 'eric@kigalitoday.com').map((m) => m.subject)).toEqual([
-      '⏰ Cleaning service is due in 3 days — 25,000 RWF on Fri, 6 Nov.',
+    expect(ctx.mailer.sent.filter((m) => m.to === USERS.admin.email).map((m) => m.subject)).toEqual([
+      '⏰ Alpha News · Accounting is due in 7 days — $15.00 on Mon, 9 Nov.',
     ]);
-    // Anitha has a phone and -14 isn't a key moment → push only.
-    expect(ctx.mailer.sent.filter((m) => m.to === 'anitha@kigalitoday.com')).toHaveLength(0);
-    expect(ctx.push.to(TOKENS.anitha).map((m) => m.channelId)).toContain('overdue');
+    ctx.mailer.sent.length = 0;
+
+    // 3 Nov: Hosting (due 20 Oct) hits its weekly follow-up (-14), Cleaning its 3-day reminder.
+    await at('2026-11-03T07:00:00Z');
+    const viewer = ctx.mailer.sent.filter((m) => m.to === USERS.viewer.email);
+    expect(viewer.map((m) => m.subject).sort()).toEqual([
+      '⏰ Alpha News · Cleaning is due in 3 days — $40.00 on Fri, 6 Nov.',
+      '⚠️ Alpha News · Hosting is 14 days overdue — $1,523.00.',
+    ]);
+    const overdueMail = viewer.find((m) => m.subject.includes('overdue'))!;
+    expect(overdueMail.html).toContain('Open in DueOra');
+    expect(overdueMail.html).toContain('⚠️ Overdue');
+    expect(overdueMail.html).toContain('Alpha News');
+    // The admin has a phone and neither is a key moment → push only.
+    expect(ctx.mailer.sent.filter((m) => m.to === USERS.admin.email)).toHaveLength(0);
+    expect(ctx.push.to(TOKENS.admin).map((m) => m.channelId)).toContain('overdue');
   });
 });
 
 describe('stopping reminders', () => {
   it('stops as soon as the cycle is paid', async () => {
-    const { ws, as, at, notes } = await setup();
+    const { fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z'); // 3-day reminder for internet
-    await as('isaac').post(`/api/v1/obligations/${ws.obligationIds.internet}/payments`).send({ method: 'MOBILE_MONEY' });
+    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds.internet}/payments`).send({ method: 'MOBILE_MONEY' });
     for (const day of ['03', '04', '05', '06']) await at(`2026-11-${day}T07:00:00Z`);
-    // The paid cycle (due 5 Nov) gets nothing more. Its next cycle (5 Dec) starts fresh:
-    // its 30-day reminder correctly falls on 5 Nov.
-    const paidCycle = await notes({ obligationId: ws.obligationIds.internet, cycleDueDate: '2026-11-05', type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] } });
+    const paidCycle = await notes({
+      subscriptionId: fx.subscriptionIds.internet,
+      cycleDueDate: '2026-11-05',
+      type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] },
+    });
     expect(new Set(paidCycle.map((n) => n.offsetDays))).toEqual(new Set([3]));
-    const nextCycle = await notes({ obligationId: ws.obligationIds.internet, cycleDueDate: '2026-12-05', channel: 'IN_APP', userId: ws.userIds.isaac });
+    // The next cycle (5 Dec) starts fresh: its 30-day reminder correctly falls on 5 Nov.
+    const nextCycle = await notes({ subscriptionId: fx.subscriptionIds.internet, cycleDueDate: '2026-12-05', channel: 'IN_APP', userId: fx.userIds.viewer });
     expect(nextCycle.map((n) => n.offsetDays)).toEqual([30]);
   });
 
-  it('stops for people who mute, and when archived', async () => {
-    const { ws, as, at, notes } = await setup();
-    await as('anitha').post(`/api/v1/obligations/${ws.obligationIds.cleaning}/mute`);
-    await as('isaac').post(`/api/v1/obligations/${ws.obligationIds['kt-hosting']}/archive`);
+  it('stops for people who mute, and for everyone when archived', async () => {
+    const { fx, at, notes } = await setup();
+    await fx.as('admin').post(`/api/v1/subscriptions/${fx.subscriptionIds.cleaning}/mute`);
+    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds['alpha-hosting']}/archive`);
     for (const day of ['02', '03', '04', '05', '06', '10']) await at(`2026-11-${day}T07:00:00Z`);
-    expect(await notes({ obligationId: ws.obligationIds.cleaning, userId: ws.userIds.anitha, type: { not: 'PAYMENT_RECORDED' } })).toHaveLength(0);
-    expect((await notes({ obligationId: ws.obligationIds.cleaning, userId: ws.userIds.isaac })).length).toBeGreaterThan(0);
-    expect(await notes({ obligationId: ws.obligationIds['kt-hosting'] })).toHaveLength(0);
+    expect(await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.admin })).toHaveLength(0);
+    expect((await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.finance })).length).toBeGreaterThan(0);
+    expect((await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.viewer })).length).toBeGreaterThan(0);
+    expect(await notes({ subscriptionId: fx.subscriptionIds['alpha-hosting'] })).toHaveLength(0);
   });
 
   it('cancels a queued push if the bill is paid during quiet hours', async () => {
-    const { ctx, ws, as, at, notes } = await setup();
+    const { ctx, fx, at, notes } = await setup();
     // Quiet 08:30–10:00 local: the 09:00 run's pushes wait until 10:00 (08:00 UTC).
-    await as('anitha').patch('/api/v1/workspaces/current').send({ quietHoursStart: 510, quietHoursEnd: 600 });
+    await fx.as('admin').patch('/api/v1/workspaces/current').send({ quietHoursStart: 510, quietHoursEnd: 600 });
     await at('2026-11-02T07:00:00Z');
     const pushes = await notes({ channel: 'PUSH' });
     expect(pushes.every((p) => p.status === 'PENDING' && p.sendAfter?.toISOString() === '2026-11-02T08:00:00.000Z')).toBe(true);
     expect(ctx.push.sent).toHaveLength(0);
-    // In-app entries appear immediately.
-    expect((await notes({ channel: 'IN_APP' })).length).toBe(2);
+    expect(await notes({ channel: 'IN_APP' })).toHaveLength(3); // in-app appears immediately
 
-    await as('isaac').post(`/api/v1/obligations/${ws.obligationIds.internet}/payments`).send({ method: 'CASH' });
+    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds.internet}/payments`).send({ method: 'CASH' });
     await at('2026-11-02T08:00:00Z');
     const after = await notes({ channel: 'PUSH', type: 'REMINDER' });
     expect(after.every((p) => p.status === 'FAILED' && p.error === 'cancelled: paid')).toBe(true);
-    expect(ctx.push.sent.filter((m) => m.body?.includes('internet is due'))).toHaveLength(0);
+    expect(ctx.push.sent.filter((m) => m.body?.includes('Internet is due'))).toHaveLength(0);
+    expect(ctx.mailer.sent.filter((m) => m.subject.includes('Internet is due'))).toHaveLength(0);
   });
 
   it('delivers after quiet hours end when still relevant', async () => {
-    const { ctx, as, at } = await setup();
-    await as('anitha').patch('/api/v1/workspaces/current').send({ quietHoursStart: 510, quietHoursEnd: 600 });
+    const { ctx, fx, at } = await setup();
+    await fx.as('admin').patch('/api/v1/workspaces/current').send({ quietHoursStart: 510, quietHoursEnd: 600 });
     await at('2026-11-02T07:00:00Z');
     await at('2026-11-02T07:45:00Z');
     expect(ctx.push.sent).toHaveLength(0);
@@ -156,72 +190,76 @@ describe('delivery reliability', () => {
     ctx.push.failNext = 2;
     await at('2026-11-02T07:00:00Z');
     expect(ctx.push.sent).toHaveLength(0);
-    const pending = await ctx.db.job.findMany({ where: { queue: 'notify.push', status: 'PENDING' } });
-    expect(pending.length).toBeGreaterThan(0);
-    // Two failures consumed by the first job's retries; others succeed on later ticks.
+    expect((await ctx.db.job.findMany({ where: { queue: 'notify.push', status: 'PENDING' } })).length).toBeGreaterThan(0);
     for (const t of ['07:01', '07:02', '07:03', '07:05', '07:10']) await at(`2026-11-02T${t}:00Z`);
     expect(ctx.push.sent).toHaveLength(2);
     expect((await notes({ channel: 'PUSH' })).every((n) => n.status === 'SENT')).toBe(true);
   });
 
   it('deactivates unregistered devices and falls back to email', async () => {
-    const { ctx, ws, at, notes } = await setup();
-    ctx.push.unregistered.add(TOKENS.anitha);
+    const { ctx, fx, at, notes } = await setup();
+    ctx.push.unregistered.add(TOKENS.admin);
     await at('2026-11-02T07:00:00Z');
-    const token = await ctx.db.deviceToken.findUniqueOrThrow({ where: { expoPushToken: TOKENS.anitha } });
-    expect(token.active).toBe(false);
-    expect(ctx.mailer.sent.filter((m) => m.to === 'anitha@kigalitoday.com').map((m) => m.subject)).toEqual([
-      '⏰ Office internet is due in 3 days — 85,000 RWF on Thu, 5 Nov.',
+    expect((await ctx.db.deviceToken.findUniqueOrThrow({ where: { expoPushToken: TOKENS.admin } })).active).toBe(false);
+    expect(ctx.mailer.sent.filter((m) => m.to === USERS.admin.email).map((m) => m.subject)).toEqual([
+      '⏰ Alpha News · Internet is due in 3 days — $120.00 on Thu, 5 Nov.',
     ]);
-    const anithaPush = await notes({ userId: ws.userIds.anitha, channel: 'PUSH' });
-    expect(anithaPush[0]).toMatchObject({ status: 'FAILED' });
+    expect((await notes({ userId: fx.userIds.admin, channel: 'PUSH' }))[0]).toMatchObject({ status: 'FAILED' });
   });
 
   it('checks receipts ~15 minutes later', async () => {
-    const { ctx, ws, at, notes } = await setup();
+    const { ctx, fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z');
     const pushes = await notes({ channel: 'PUSH' });
-    const first = pushes.find((n) => n.userId === ws.userIds.anitha);
-    const second = pushes.find((n) => n.userId === ws.userIds.isaac);
-    ctx.push.receiptOverrides.set(second!.pushTicketId!, {
+    const first = pushes.find((n) => n.userId === fx.userIds.admin)!;
+    const second = pushes.find((n) => n.userId === fx.userIds.finance)!;
+    ctx.push.receiptOverrides.set(second.pushTicketId!, {
       status: 'error',
       message: 'gone',
-      details: { error: 'DeviceNotRegistered', expoPushToken: TOKENS.isaac },
+      details: { error: 'DeviceNotRegistered', expoPushToken: TOKENS.finance },
     });
     await at('2026-11-02T07:10:00Z');
-    expect((await notes({ channel: 'PUSH', status: 'DELIVERED' }))).toHaveLength(0); // too early
+    expect(await notes({ channel: 'PUSH', status: 'DELIVERED' })).toHaveLength(0); // too early
     await at('2026-11-02T07:15:00Z');
     const after = await notes({ channel: 'PUSH' });
-    expect(after.find((n) => n.id === first!.id)?.status).toBe('DELIVERED');
-    expect(after.find((n) => n.id === second!.id)?.status).toBe('FAILED');
+    expect(after.find((n) => n.id === first.id)?.status).toBe('DELIVERED');
+    expect(after.find((n) => n.id === second.id)?.status).toBe('FAILED');
     const inactive = await ctx.db.deviceToken.findMany({ where: { active: false } });
-    expect(inactive.map((t) => t.expoPushToken)).toEqual([TOKENS.isaac]);
+    expect(inactive.map((t) => t.expoPushToken)).toEqual([TOKENS.finance]);
   });
 
-  it('never sends twice even with two workers at once', async () => {
+  it('never sends twice even with three workers at once', async () => {
     const { ctx, at, notes } = await setup();
     ctx.clock.set('2026-11-02T07:00:00Z');
     await Promise.all([workOnce(ctx, 'w1'), workOnce(ctx, 'w2'), workOnce(ctx, 'w3')]);
     await at('2026-11-02T07:01:00Z');
     expect(ctx.push.sent).toHaveLength(2);
+    expect(ctx.mailer.sent).toHaveLength(1);
     const keys = (await notes()).map((n) => n.dedupeKey);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('uses the deterministic dedupe key workspace:subscription:cycle:offset:user:channel', async () => {
+    const { fx, at, notes } = await setup();
+    await at('2026-11-02T07:00:00Z');
+    const n = (await notes({ userId: fx.userIds.admin, channel: 'IN_APP' }))[0]!;
+    expect(n.dedupeKey).toBe([fx.workspaceId, fx.subscriptionIds.internet, '2026-11-05', 3, fx.userIds.admin, 'IN_APP'].join(':'));
   });
 });
 
 describe('catch-up after downtime', () => {
-  it('sends only the most relevant missed reminder per obligation', async () => {
-    const { ws, at, notes } = await setup();
+  it('sends only the most relevant missed reminder per subscription', async () => {
+    const { fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z');
     await at('2026-11-03T07:00:00Z');
-    // Server down 4–7 Nov. Cleaning (due 6 Nov) missed its 1-day, due-day and 1-day-overdue
+    // Down 4–7 Nov. Cleaning (due 6 Nov) missed its 1-day, due-day and 1-day-overdue
     // reminders; on 8 Nov only the latest (offset -1) goes out, phrased for today.
     await at('2026-11-08T07:00:00Z');
-    const cleaning = await notes({ obligationId: ws.obligationIds.cleaning, userId: ws.userIds.isaac, channel: 'IN_APP' });
+    const cleaning = await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.finance, channel: 'IN_APP' });
     expect(cleaning.map((n) => n.offsetDays)).toEqual([3, -1]);
-    expect(cleaning[1]!.body).toBe('⚠️ Cleaning service is 2 days overdue — 25,000 RWF. Tap to record the payment.');
-    // Internet (due 5 Nov) missed 1, 0 and -1; on 8 Nov its own -3 reminder is due, so that one goes.
-    const internet = await notes({ obligationId: ws.obligationIds.internet, userId: ws.userIds.isaac, channel: 'IN_APP' });
+    expect(cleaning[1]!.body).toBe('⚠️ Alpha News · Cleaning is 2 days overdue — $40.00. Tap to record the payment.');
+    // Internet (due 5 Nov) missed 1, 0 and -1; on 8 Nov its own -3 reminder is due.
+    const internet = await notes({ subscriptionId: fx.subscriptionIds.internet, userId: fx.userIds.finance, channel: 'IN_APP' });
     expect(internet.map((n) => n.offsetDays)).toEqual([3, -3]);
     expect(internet[1]!.body).toContain('3 days overdue');
   });
@@ -229,104 +267,95 @@ describe('catch-up after downtime', () => {
 
 describe('digest', () => {
   it('groups more than 3 reminders into one push and one email', async () => {
-    const { ctx, ws, as, at, notes } = await setup();
-    const cats = await as('anitha').get('/api/v1/categories');
-    for (const name of ['Figma', 'Notion', 'Slack', 'Zoom']) {
-      await as('anitha').post('/api/v1/obligations').send({
-        name,
-        provider: name,
-        amountMinor: 1500,
-        currency: 'USD',
-        frequencyUnit: 'MONTH',
-        startDate: '2026-11-09',
-        categoryId: cats.body[0].id,
-      });
-    }
-    await at('2026-11-02T07:00:00Z'); // all four hit their 7-day reminder, plus internet
-    const anitha = await notes({ userId: ws.userIds.anitha });
-    expect(anitha.filter((n) => n.channel === 'IN_APP')).toHaveLength(5);
-    const pushes = anitha.filter((n) => n.channel === 'PUSH');
+    const { ctx, fx, at, notes, addMonthly } = await setup();
+    await addMonthly(['Figma', 'Notion', 'Slack', 'Zoom'], '2026-11-09');
+    await at('2026-11-02T07:00:00Z'); // all four hit their 7-day reminder, plus Internet
+    const admin = await notes({ userId: fx.userIds.admin });
+    expect(admin.filter((n) => n.channel === 'IN_APP')).toHaveLength(5);
+    const pushes = admin.filter((n) => n.channel === 'PUSH');
     expect(pushes).toHaveLength(1);
-    expect(pushes[0]).toMatchObject({ type: 'DIGEST', title: '🔔 5 payments need attention this week' });
-    const email = ctx.mailer.sent.filter((m) => m.to === 'anitha@kigalitoday.com');
+    expect(pushes[0]).toMatchObject({ type: 'DIGEST', title: '🔔 5 subscriptions need attention this week' });
+    const email = ctx.mailer.sent.filter((m) => m.to === USERS.admin.email);
     expect(email).toHaveLength(1);
-    expect(email[0]!.subject).toBe('🔔 5 payments need attention this week');
-    expect(email[0]!.text).toContain('Figma');
-    // Isaac is finance, so he receives every reminder too → also a digest.
-    expect((await notes({ userId: ws.userIds.isaac, channel: 'PUSH' }))[0]!.type).toBe('DIGEST');
+    expect(email[0]!.subject).toBe('🔔 5 subscriptions need attention this week');
+    expect(email[0]!.text).toContain('Alpha News · Figma — $15.00');
+    expect((await notes({ userId: fx.userIds.finance, channel: 'PUSH' }))[0]!.type).toBe('DIGEST');
+    // The viewer (no phone) gets the single digest email, not five reminder emails.
+    expect(ctx.mailer.sent.filter((m) => m.to === USERS.viewer.email).map((m) => m.tag)).toEqual(['digest']);
   });
 
   it('can be turned off', async () => {
-    const { ws, as, at, notes } = await setup();
-    await as('anitha').patch('/api/v1/notifications/preferences').send({ digestEnabled: false });
-    const cats = await as('anitha').get('/api/v1/categories');
-    for (const name of ['A', 'B', 'C', 'D']) {
-      await as('anitha').post('/api/v1/obligations').send({ name, provider: name, amountMinor: 100, currency: 'USD', frequencyUnit: 'MONTH', startDate: '2026-11-09', categoryId: cats.body[0].id });
-    }
+    const { fx, at, notes, addMonthly } = await setup();
+    await fx.as('admin').patch('/api/v1/notifications/preferences').send({ digestEnabled: false });
+    await addMonthly(['A', 'B', 'C', 'D'], '2026-11-09');
     await at('2026-11-02T07:00:00Z');
-    expect((await notes({ userId: ws.userIds.anitha, channel: 'PUSH' })).every((n) => n.type !== 'DIGEST')).toBe(true);
-    expect(await notes({ userId: ws.userIds.anitha, channel: 'PUSH' })).toHaveLength(5);
+    const pushes = await notes({ userId: fx.userIds.admin, channel: 'PUSH' });
+    expect(pushes.every((n) => n.type !== 'DIGEST')).toBe(true);
+    expect(pushes).toHaveLength(5);
   });
 });
 
 describe('payment recorded', () => {
-  it('tells admins and finance, not the person who recorded it', async () => {
-    const { ctx, ws, as, at, notes } = await setup();
+  it('tells every other member, without naming who recorded it', async () => {
+    const { ctx, fx, at, notes, who } = await setup();
     ctx.clock.set('2026-11-02T08:00:00Z');
-    await as('isaac').post(`/api/v1/obligations/${ws.obligationIds['ktr-hosting']}/payments`).send({ method: 'CARD', paidOn: '2026-11-02' });
+    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds['beta-hosting']}/payments`).send({ method: 'CARD', paidOn: '2026-11-02' });
     await at('2026-11-02T08:01:00Z');
     const recorded = await notes({ type: 'PAYMENT_RECORDED' });
-    expect(recorded.map((n) => `${n.userId === ws.userIds.anitha ? 'anitha' : 'other'}:${n.channel}`).sort()).toEqual(['anitha:IN_APP', 'anitha:PUSH']);
-    expect(recorded[0]!.body).toBe('✅ Isaac recorded $132 for KT Radio hosting. Next due: 02 Oct 2028.');
-    expect(ctx.push.to(TOKENS.anitha).some((m) => m.body === recorded[0]!.body)).toBe(true);
+    expect(recorded.map((n) => `${who(n.userId)}:${n.channel}`).sort()).toEqual(['admin:IN_APP', 'admin:PUSH', 'viewer:IN_APP']);
+    expect(recorded[0]!.body).toBe('✅ $132.00 recorded for Beta Radio · Hosting. Next due: 02 Oct 2028.');
+    expect(recorded[0]!.body).not.toContain(USERS.finance.name.split(' ')[0]);
+    expect(ctx.push.to(TOKENS.admin).some((m) => m.body === recorded[0]!.body)).toBe(true);
   });
 });
 
 describe('notifications API', () => {
   it('serves the Alerts inbox with unread counts', async () => {
-    const { as, at } = await setup();
+    const { fx, at } = await setup();
     await at('2026-11-02T07:00:00Z');
     await at('2026-11-03T07:00:00Z');
-    const inbox = await as('anitha').get('/api/v1/notifications');
+    const inbox = await fx.as('admin').get('/api/v1/notifications');
     expect(inbox.status).toBe(200);
     expect(inbox.body.unreadCount).toBe(inbox.body.total);
     expect(inbox.body.items[0].createdAt >= inbox.body.items.at(-1).createdAt).toBe(true);
 
     const first = inbox.body.items[0].id;
-    expect((await as('anitha').post(`/api/v1/notifications/${first}/read`)).status).toBe(204);
-    expect((await as('anitha').get('/api/v1/notifications')).body.unreadCount).toBe(inbox.body.total - 1);
-    expect((await as('anitha').get('/api/v1/notifications').query({ unreadOnly: 'true' })).body.total).toBe(inbox.body.total - 1);
-
-    // Someone else's notification can't be marked read.
-    expect((await as('isaac').post(`/api/v1/notifications/${first}/read`)).status).toBe(404);
-
-    await as('anitha').post('/api/v1/notifications/read-all');
-    expect((await as('anitha').get('/api/v1/notifications')).body.unreadCount).toBe(0);
+    expect((await fx.as('admin').post(`/api/v1/notifications/${first}/read`)).status).toBe(204);
+    expect((await fx.as('admin').get('/api/v1/notifications')).body.unreadCount).toBe(inbox.body.total - 1);
+    expect((await fx.as('admin').get('/api/v1/notifications').query({ unreadOnly: 'true' })).body.total).toBe(inbox.body.total - 1);
+    expect((await fx.as('finance').post(`/api/v1/notifications/${first}/read`)).status).toBe(404); // someone else's
+    await fx.as('admin').post('/api/v1/notifications/read-all');
+    expect((await fx.as('admin').get('/api/v1/notifications')).body.unreadCount).toBe(0);
   });
 
-  it('manages preferences and devices', async () => {
-    const { app, as, ws } = await setup();
-    const prefs = await as('eric').get('/api/v1/notifications/preferences');
-    expect(prefs.body).toEqual({ pushEnabled: true, emailEnabled: true, digestEnabled: true, mutedObligationIds: [] });
-    const updated = await as('eric').patch('/api/v1/notifications/preferences').send({ emailEnabled: false });
-    expect(updated.body.emailEnabled).toBe(false);
+  it('manages preferences, mutes and devices', async () => {
+    const { app, fx } = await setup();
+    const prefs = await fx.as('viewer').get('/api/v1/notifications/preferences');
+    expect(prefs.body).toEqual({ pushEnabled: true, emailEnabled: true, digestEnabled: true, mutedSubscriptionIds: [] });
+    expect((await fx.as('viewer').patch('/api/v1/notifications/preferences').send({ emailEnabled: false })).body.emailEnabled).toBe(false);
 
-    expect((await as('eric').post(`/api/v1/obligations/${ws.obligationIds['kt-hosting']}/mute`)).status).toBe(404); // not visible to him
-    const bad = await client(app, ws.sessions.eric).post('/api/v1/devices').send({ expoPushToken: 'not-a-token', platform: 'ios' });
+    // Viewers receive reminders, so they may mute them.
+    const id = fx.subscriptionIds['alpha-hosting'];
+    expect((await fx.as('viewer').post(`/api/v1/subscriptions/${id}/mute`)).status).toBe(200);
+    expect((await fx.as('viewer').get(`/api/v1/subscriptions/${id}`)).body.muted).toBe(true);
+    expect((await fx.as('viewer').post(`/api/v1/subscriptions/${id}/unmute`)).status).toBe(200);
+    expect((await fx.as('viewer').get(`/api/v1/subscriptions/${id}`)).body.muted).toBe(false);
+
+    const bad = await client(app, fx.sessions.viewer).post('/api/v1/devices').send({ expoPushToken: 'not-a-token', platform: 'ios' });
     expect(bad.status).toBe(400);
   });
 
   it('sends a test notification on request', async () => {
-    const { ctx, as, at } = await setup();
-    const res = await as('anitha').post('/api/v1/notifications/test');
+    const { ctx, fx, at } = await setup();
+    const res = await fx.as('admin').post('/api/v1/notifications/test');
     expect(res.status).toBe(202);
     expect(res.body).toMatchObject({ queued: true, channel: 'PUSH', devices: 1 });
     await at('2026-11-02T06:00:30Z');
-    expect(ctx.push.to(TOKENS.anitha).map((m) => m.title)).toEqual(['🔔 Test from DueOra']);
+    expect(ctx.push.to(TOKENS.admin).map((m) => m.title)).toEqual(['🔔 Test from DueOra']);
 
-    const eric = await as('eric').post('/api/v1/notifications/test');
-    expect(eric.body.channel).toBe('EMAIL');
+    const viewer = await fx.as('viewer').post('/api/v1/notifications/test');
+    expect(viewer.body.channel).toBe('EMAIL');
     await at('2026-11-02T06:01:00Z');
-    expect(ctx.mailer.sent.some((m) => m.to === 'eric@kigalitoday.com' && m.subject === '🔔 Test from DueOra')).toBe(true);
+    expect(ctx.mailer.sent.some((m) => m.to === USERS.viewer.email && m.subject === '🔔 Test from DueOra')).toBe(true);
   });
 });

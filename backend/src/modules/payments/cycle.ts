@@ -1,11 +1,11 @@
 import type { AppContext } from '../../context.js';
-import { nextDueDate, previousDueDate } from '../../domain/schedule.js';
+import { advance, previousDueDate } from '../../domain/schedule.js';
 
 type Tx = Parameters<Parameters<AppContext['db']['$transaction']>[0]>[0];
 
-async function paidFor(tx: Tx, obligationId: string, cycleDueDate: string): Promise<number> {
-  const agg = await tx.paymentRecord.aggregate({ where: { obligationId, cycleDueDate }, _sum: { amountMinor: true } });
-  return agg._sum.amountMinor ?? 0;
+async function paidFor(tx: Tx, subscriptionId: string, cycleDueDate: string): Promise<number> {
+  const agg = await tx.paymentRecord.aggregate({ where: { subscriptionId, cycleDueDate }, _sum: { amountCents: true } });
+  return agg._sum.amountCents ?? 0;
 }
 
 export interface CycleChange {
@@ -18,7 +18,7 @@ export interface CycleChange {
 }
 
 /**
- * Bring an obligation's open cycle in line with its payments after a payment is
+ * Bring a subscription's open cycle in line with its payments after a payment is
  * recorded, edited or deleted.
  *
  * - Current cycle fully paid → advance one cycle (one-time → COMPLETED).
@@ -29,16 +29,16 @@ export interface CycleChange {
  * The advance is a conditional update on the old due date, so two concurrent
  * payments can never advance the schedule twice.
  */
-export async function reconcileCycle(tx: Tx, obligationId: string, touchedCycle?: string): Promise<CycleChange> {
-  const o = await tx.obligation.findUniqueOrThrow({ where: { id: obligationId } });
+export async function reconcileCycle(tx: Tx, subscriptionId: string, touchedCycle?: string): Promise<CycleChange> {
+  const o = await tx.subscription.findUniqueOrThrow({ where: { id: subscriptionId } });
   const unchanged: CycleChange = { completedCycle: null, reopenedCycle: null, nextDueDate: o.nextDueDate, status: o.status };
   if (o.status === 'ARCHIVED') return unchanged;
 
   if (o.frequencyUnit === 'ONCE') {
     const paid = await paidFor(tx, o.id, o.nextDueDate);
-    const target = paid >= o.amountMinor ? 'COMPLETED' : 'ACTIVE';
+    const target = paid >= o.amountCents ? 'COMPLETED' : 'ACTIVE';
     if (target === o.status) return unchanged;
-    await tx.obligation.update({ where: { id: o.id }, data: { status: target } });
+    await tx.subscription.update({ where: { id: o.id }, data: { status: target } });
     return {
       ...unchanged,
       status: target,
@@ -48,9 +48,9 @@ export async function reconcileCycle(tx: Tx, obligationId: string, touchedCycle?
   }
 
   const paidCurrent = await paidFor(tx, o.id, o.nextDueDate);
-  if (paidCurrent >= o.amountMinor) {
-    const next = nextDueDate(o.nextDueDate, o.frequencyUnit, o.frequencyInterval, o.anchorDay)!;
-    const moved = await tx.obligation.updateMany({
+  if (paidCurrent >= o.amountCents) {
+    const next = advance(o.nextDueDate, o.frequencyUnit, o.frequencyInterval, o.anchorDay)!;
+    const moved = await tx.subscription.updateMany({
       where: { id: o.id, nextDueDate: o.nextDueDate },
       data: { nextDueDate: next },
     });
@@ -59,8 +59,8 @@ export async function reconcileCycle(tx: Tx, obligationId: string, touchedCycle?
 
   if (paidCurrent === 0 && touchedCycle) {
     const prev = previousDueDate(o.nextDueDate, o.frequencyUnit, o.frequencyInterval, o.anchorDay)!;
-    if (touchedCycle === prev && (await paidFor(tx, o.id, prev)) < o.amountMinor) {
-      await tx.obligation.updateMany({ where: { id: o.id, nextDueDate: o.nextDueDate }, data: { nextDueDate: prev } });
+    if (touchedCycle === prev && (await paidFor(tx, o.id, prev)) < o.amountCents) {
+      await tx.subscription.updateMany({ where: { id: o.id, nextDueDate: o.nextDueDate }, data: { nextDueDate: prev } });
       return { ...unchanged, reopenedCycle: prev, nextDueDate: prev };
     }
   }

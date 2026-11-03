@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AppContext } from '../../context.js';
 import { daysBetween, todayIn } from '../../domain/schedule.js';
 import { badRequest } from '../../http/errors.js';
-import { requireAuth, requireOrg, requirePermission } from '../../http/middleware/auth.js';
+import { requireAuth, requireWorkspace, requirePermission } from '../../http/middleware/auth.js';
 import { isoDate } from '../../http/schemas.js';
 import { parseQuery } from '../../http/validate.js';
 
@@ -22,7 +22,7 @@ const CalendarQuery = z.object({ from: isoDate, to: isoDate });
 
 export function insightsRouter(ctx: AppContext): Router {
   const router = Router();
-  const guard = [requireAuth(ctx), requireOrg(ctx)];
+  const guard = [requireAuth(ctx), requireWorkspace(ctx)];
 
   /** One aggregated call for the whole Home screen. */
   router.get('/dashboard', ...guard, async (req, res) => {
@@ -42,13 +42,13 @@ export function insightsRouter(ctx: AppContext): Router {
   };
 
   router.get('/reports', ...guard, requirePermission('reports:view'), async (req, res) => {
-    const p = resolvePeriod(parseQuery(req, ReportQuery), req.org!.timezone);
+    const p = resolvePeriod(parseQuery(req, ReportQuery), req.workspace!.timezone);
     res.json(await svc.report(ctx, req, p.period, p.year, p.month));
   });
 
   router.get('/reports/export', ...guard, requirePermission('reports:view'), async (req, res) => {
     const format = z.enum(['pdf', 'xlsx']).parse(req.query.format);
-    const p = resolvePeriod(parseQuery(req, ReportQuery), req.org!.timezone);
+    const p = resolvePeriod(parseQuery(req, ReportQuery), req.workspace!.timezone);
     const r = await svc.report(ctx, req, p.period, p.year, p.month);
     const body = format === 'pdf' ? await reportPdf(r) : await reportXlsx(r);
     res.setHeader('Content-Type', format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

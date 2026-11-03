@@ -1,40 +1,17 @@
 /**
- * Display formatting for notification copy and emails. Mirrors mobile/src/lib/money.ts
- * so a reminder reads exactly like the app: "$1,523", "18,880 RWF", "Tue, 20 Oct".
+ * Display formatting for notification copy, emails and reports. Mirrors mobile/src/lib/money.ts
+ * so a reminder reads exactly like the app: "$1,523.00", "Tue, 20 Oct".
+ * DueOra works only in US dollars; amounts are integer cents.
  */
 
-const MINOR_UNITS: Record<string, number> = {
-  RWF: 0,
-  UGX: 0,
-  JPY: 0,
-  KRW: 0,
-  XAF: 0,
-  XOF: 0,
-  BIF: 0,
-  KWD: 3,
-  BHD: 3,
-  TND: 3,
-};
-const SYMBOLS: Record<string, string> = { USD: '$', EUR: '€', GBP: '£' };
-
-export function minorUnits(currency: string): number {
-  return MINOR_UNITS[currency.toUpperCase()] ?? 2;
-}
-
-/** Integer minor units → "$1,523" / "$1,523.50" / "18,880 RWF". */
-export function formatMoney(amountMinor: number, currency: string): string {
-  const code = currency.toUpperCase();
-  const exponent = minorUnits(code);
-  const abs = Math.abs(Math.trunc(amountMinor));
-  const divisor = 10 ** exponent;
-  let number = Math.floor(abs / divisor)
+/** Integer cents → "$1,523.00" (negative → "-$5.00"). */
+export function formatUSD(cents: number): string {
+  const abs = Math.abs(Math.trunc(cents));
+  const dollars = Math.floor(abs / 100)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const fraction = abs % divisor;
-  if (exponent > 0 && fraction > 0) number += `.${fraction.toString().padStart(exponent, '0')}`;
-  const sign = amountMinor < 0 ? '-' : '';
-  const symbol = SYMBOLS[code];
-  return symbol ? `${sign}${symbol}${number}` : `${sign}${number} ${code}`;
+  const fraction = (abs % 100).toString().padStart(2, '0');
+  return `${cents < 0 ? '-' : ''}$${dollars}.${fraction}`;
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

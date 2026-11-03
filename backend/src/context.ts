@@ -1,9 +1,9 @@
 import type { Env } from './config/env.js';
 import type { Db } from './db/client.js';
 import type { Logger } from './lib/logger.js';
+import type { SecretBox } from './lib/secretBox.js';
 import type { PushProvider } from './notifications/push.js';
 import type { Mailer } from './services/mailer.js';
-import type { Storage } from './services/storage.js';
 
 /** Source of "now". Injected so tests (e.g. the year-long reminder simulation) can fake time. */
 export interface Clock {
@@ -19,6 +19,7 @@ export interface AppContext {
   logger: Logger;
   clock: Clock;
   mailer: Mailer;
-  storage: Storage;
   push: PushProvider;
+  /** Encrypts/decrypts subscription keys (SUBSCRIPTION_KEY_SECRET). */
+  keys: SecretBox;
 }

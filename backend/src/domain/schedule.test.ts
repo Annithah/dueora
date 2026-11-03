@@ -12,7 +12,8 @@ import {
   isLeapYear,
   localTimeIn,
   mostRecentMissedReminder,
-  nextDueDate,
+  advance,
+  calculateNextDueDate,
   paidForCycle,
   parseDate,
   previousDueDate,
@@ -28,7 +29,7 @@ function walk(start: string, unit: FrequencyUnit, interval: number, anchor: numb
   const out = [start];
   let cur = start;
   for (let i = 0; i < n; i++) {
-    const next = nextDueDate(cur, unit, interval, anchor);
+    const next = advance(cur, unit, interval, anchor);
     if (!next) break;
     out.push(next);
     cur = next;
@@ -111,32 +112,32 @@ describe('nextDueDate', () => {
     expect(walk('2026-12-15', 'MONTH', 3, 15, 4)).toEqual(['2026-12-15', '2027-03-15', '2027-06-15', '2027-09-15', '2027-12-15']);
     expect(walk('2026-08-31', 'MONTH', 6, 31, 2)).toEqual(['2026-08-31', '2027-02-28', '2027-08-31']);
     expect(walk('2026-05-31', 'MONTH', 3, 31, 3)).toEqual(['2026-05-31', '2026-08-31', '2026-11-30', '2027-02-28']);
-    expect(nextDueDate('2026-01-10', 'MONTH', 18, 10)).toBe('2027-07-10');
+    expect(advance('2026-01-10', 'MONTH', 18, 10)).toBe('2027-07-10');
   });
 
   it('yearly, including Feb 29 anchors in and out of leap years', () => {
     expect(walk('2027-10-02', 'YEAR', 1, 2, 2)).toEqual(['2027-10-02', '2028-10-02', '2029-10-02']);
     expect(walk('2028-02-29', 'YEAR', 1, 29, 4)).toEqual(['2028-02-29', '2029-02-28', '2030-02-28', '2031-02-28', '2032-02-29']);
-    expect(nextDueDate('2028-02-29', 'YEAR', 4, 29)).toBe('2032-02-29');
-    expect(nextDueDate('2026-10-20', 'YEAR', 2, 20)).toBe('2028-10-20');
+    expect(advance('2028-02-29', 'YEAR', 4, 29)).toBe('2032-02-29');
+    expect(advance('2026-10-20', 'YEAR', 2, 20)).toBe('2028-10-20');
   });
 
   it('one-time has no next date', () => {
-    expect(nextDueDate('2026-11-20', 'ONCE', 1, 20)).toBeNull();
+    expect(advance('2026-11-20', 'ONCE', 1, 20)).toBeNull();
     expect(previousDueDate('2026-11-20', 'ONCE', 1, 20)).toBeNull();
   });
 
-  it('seed obligations advance correctly', () => {
-    expect(nextDueDate('2026-01-30', 'YEAR', 1, 30)).toBe('2027-01-30'); // Cloudflare
-    expect(nextDueDate('2026-10-20', 'YEAR', 1, 20)).toBe('2027-10-20'); // KigaliToday hosting
-    expect(nextDueDate('2026-11-30', 'MONTH', 1, 31)).toBe('2026-12-31'); // rent anchored to month end
-    expect(nextDueDate('2027-02-26', 'YEAR', 1, 26)).toBe('2028-02-26');
+  it('seed subscriptions advance correctly', () => {
+    expect(advance('2026-01-30', 'YEAR', 1, 30)).toBe('2027-01-30'); // Cloudflare
+    expect(advance('2026-10-20', 'YEAR', 1, 20)).toBe('2027-10-20'); // KigaliToday hosting
+    expect(advance('2026-11-30', 'MONTH', 1, 31)).toBe('2026-12-31'); // rent anchored to month end
+    expect(advance('2027-02-26', 'YEAR', 1, 26)).toBe('2028-02-26');
   });
 
   it('rejects invalid schedules', () => {
-    expect(() => nextDueDate('2026-01-01', 'MONTH', 0, 1)).toThrow();
-    expect(() => nextDueDate('2026-01-01', 'MONTH', 1.5, 1)).toThrow();
-    expect(() => nextDueDate('2026-01-01', 'DAY' as FrequencyUnit, 1, 1)).toThrow();
+    expect(() => advance('2026-01-01', 'MONTH', 0, 1)).toThrow();
+    expect(() => advance('2026-01-01', 'MONTH', 1.5, 1)).toThrow();
+    expect(() => advance('2026-01-01', 'DAY' as FrequencyUnit, 1, 1)).toThrow();
     expect(() => previousDueDate('2026-01-01', 'WEEK', -1, 1)).toThrow();
   });
 });
@@ -175,7 +176,7 @@ describe('frequencyLabel', () => {
 });
 
 describe('time zones', () => {
-  it('computes today in the organization timezone, not the server timezone', () => {
+  it('computes today in the workspace timezone, not the server timezone', () => {
     // 22:30 UTC on 1 Nov is already 00:30 on 2 Nov in Kigali (UTC+2).
     const instant = new Date('2026-11-01T22:30:00Z');
     expect(todayIn(instant, 'Africa/Kigali')).toBe('2026-11-02');
@@ -207,7 +208,7 @@ describe('time zones', () => {
 });
 
 describe('computeStatus', () => {
-  const base = { status: 'ACTIVE' as const, nextDueDate: '2026-11-20', amountMinor: 24000 };
+  const base = { status: 'ACTIVE' as const, nextDueDate: '2026-11-20', amountCents: 24000 };
 
   it.each([
     ['2026-11-01', 'UPCOMING'],
@@ -226,7 +227,7 @@ describe('computeStatus', () => {
   });
 
   it('partial payments for the current cycle', () => {
-    const partial = [{ cycleDueDate: '2026-11-20', amountMinor: 12000 }];
+    const partial = [{ cycleDueDate: '2026-11-20', amountCents: 12000 }];
     expect(computeStatus(base, partial, '2026-11-01')).toBe('PARTIALLY_PAID');
     expect(computeStatus(base, partial, '2026-11-20')).toBe('PARTIALLY_PAID');
     expect(computeStatus(base, partial, '2026-11-21')).toBe('OVERDUE');
@@ -234,25 +235,25 @@ describe('computeStatus', () => {
 
   it('full payment (possibly in several parts) is PAID', () => {
     const parts = [
-      { cycleDueDate: '2026-11-20', amountMinor: 12000 },
-      { cycleDueDate: '2026-11-20', amountMinor: 12000 },
+      { cycleDueDate: '2026-11-20', amountCents: 12000 },
+      { cycleDueDate: '2026-11-20', amountCents: 12000 },
     ];
     expect(computeStatus(base, parts, '2026-11-25')).toBe('PAID');
-    expect(computeStatus(base, [{ cycleDueDate: '2026-11-20', amountMinor: 30000 }], '2026-11-25')).toBe('PAID');
+    expect(computeStatus(base, [{ cycleDueDate: '2026-11-20', amountCents: 30000 }], '2026-11-25')).toBe('PAID');
   });
 
   it('ignores payments from other cycles (history is kept, status is per cycle)', () => {
-    const lastYear = [{ cycleDueDate: '2025-11-20', amountMinor: 24000 }];
+    const lastYear = [{ cycleDueDate: '2025-11-20', amountCents: 24000 }];
     expect(computeStatus(base, lastYear, '2026-11-21')).toBe('OVERDUE');
     expect(paidForCycle(lastYear, '2026-11-20')).toBe(0);
   });
 
   it('seed data on 2 Nov 2026 (Kigali)', () => {
     const today = todayIn(new Date('2026-11-02T07:00:00Z'), 'Africa/Kigali');
-    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2026-10-20', amountMinor: 152300 }, [], today)).toBe('OVERDUE');
-    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2026-01-30', amountMinor: 24000 }, [], today)).toBe('OVERDUE');
-    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2027-10-02', amountMinor: 13200 }, [], today)).toBe('UPCOMING');
-    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2026-11-05', amountMinor: 85000 }, [], today)).toBe('DUE_SOON');
+    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2026-10-20', amountCents: 152300 }, [], today)).toBe('OVERDUE');
+    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2026-01-30', amountCents: 24000 }, [], today)).toBe('OVERDUE');
+    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2027-10-02', amountCents: 13200 }, [], today)).toBe('UPCOMING');
+    expect(computeStatus({ status: 'ACTIVE', nextDueDate: '2026-11-05', amountCents: 85000 }, [], today)).toBe('DUE_SOON');
   });
 });
 
@@ -304,5 +305,49 @@ describe('reminders', () => {
     expect(mostRecentMissedReminder('2026-11-20', offsets, '2026-11-17', '2026-11-18')).toBeNull();
     // Today's own reminder counts.
     expect(mostRecentMissedReminder('2026-11-20', offsets, '2026-11-18', '2026-11-19')).toEqual({ offsetDays: 1, date: '2026-11-19' });
+  });
+});
+
+describe('calculateNextDueDate (new subscriptions)', () => {
+  const today = '2026-11-03';
+
+  it('uses the start date when it is today or in the future', () => {
+    expect(calculateNextDueDate('2026-11-03', 'MONTH', 1, 3, today)).toBe('2026-11-03');
+    expect(calculateNextDueDate('2027-01-15', 'YEAR', 1, 15, today)).toBe('2027-01-15');
+  });
+
+  it('keeps one-time subscriptions on their start date, even in the past', () => {
+    expect(calculateNextDueDate('2026-10-01', 'ONCE', 1, 1, today)).toBe('2026-10-01');
+  });
+
+  it('steps weekly schedules forward to the first date on/after today', () => {
+    expect(calculateNextDueDate('2026-10-06', 'WEEK', 1, 6, today)).toBe('2026-11-03'); // exactly today
+    expect(calculateNextDueDate('2026-10-07', 'WEEK', 1, 7, today)).toBe('2026-11-04');
+    expect(calculateNextDueDate('2026-10-01', 'WEEK', 2, 1, today)).toBe('2026-11-12');
+  });
+
+  it('steps monthly, quarterly and yearly schedules keeping the anchor day', () => {
+    expect(calculateNextDueDate('2026-01-15', 'MONTH', 1, 15, today)).toBe('2026-11-15');
+    expect(calculateNextDueDate('2026-01-02', 'MONTH', 1, 2, today)).toBe('2026-12-02');
+    expect(calculateNextDueDate('2026-02-10', 'MONTH', 3, 10, today)).toBe('2026-11-10');
+    expect(calculateNextDueDate('2020-10-20', 'YEAR', 1, 20, today)).toBe('2027-10-20');
+    expect(calculateNextDueDate('2025-11-03', 'YEAR', 1, 3, today)).toBe('2026-11-03');
+  });
+
+  it('handles month-end anchors and leap days', () => {
+    expect(calculateNextDueDate('2026-01-31', 'MONTH', 1, 31, '2026-02-01')).toBe('2026-02-28');
+    expect(calculateNextDueDate('2028-01-31', 'MONTH', 1, 31, '2028-02-10')).toBe('2028-02-29');
+    expect(calculateNextDueDate('2026-01-31', 'MONTH', 1, 31, '2026-03-01')).toBe('2026-03-31');
+    expect(calculateNextDueDate('2024-02-29', 'YEAR', 1, 29, '2026-11-03')).toBe('2027-02-28');
+    expect(calculateNextDueDate('2024-02-29', 'YEAR', 1, 29, '2027-03-01')).toBe('2028-02-29');
+  });
+
+  it('works from a start date decades ago', () => {
+    expect(calculateNextDueDate('1990-06-30', 'MONTH', 1, 30, today)).toBe('2026-11-30');
+    expect(calculateNextDueDate('1990-01-01', 'WEEK', 1, 1, today) >= today).toBe(true);
+  });
+
+  it('rejects invalid schedules', () => {
+    expect(() => calculateNextDueDate('2026-01-01', 'MONTH', 0, 1, today)).toThrow();
   });
 });

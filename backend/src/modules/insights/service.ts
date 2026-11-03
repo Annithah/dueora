@@ -2,36 +2,29 @@ import type { Request } from 'express';
 
 import type { AppContext } from '../../context.js';
 import { addDays, computeStatus, daysBetween, DUE_SOON_DAYS, localTimeIn, type PaymentStatus } from '../../domain/schedule.js';
-import type { Prisma } from '../../generated/prisma/client.js';
-import { actorOf, orgIdOf } from '../../http/middleware/auth.js';
-import { viewsFor } from '../obligations/service.js';
-import { obligationInclude, type ObligationView } from '../obligations/view.js';
+import { workspaceIdOf } from '../../http/middleware/auth.js';
+import { viewsFor } from '../subscriptions/service.js';
+import { subscriptionInclude, type SubscriptionView } from '../subscriptions/view.js';
 
-import { addTo, Converter, totalsList, type CurrencyTotals } from './money.js';
 import { addMonthsKey, lastMonths, monthRange, occurrencesBetween } from './projection.js';
 
-/** Everything the insight views need, loaded once and scoped to what the caller may see. */
+/**
+ * Dashboard, calendar and reports. Everything is US dollars in integer cents, computed
+ * from the database only; an empty workspace yields zeros and empty lists.
+ */
+
+/** Everything the insight views need, loaded once per request. */
 async function loadScope(ctx: AppContext, req: Request) {
-  const orgId = orgIdOf(req);
-  const actor = actorOf(req);
-  const org = await ctx.db.organization.findUniqueOrThrow({ where: { id: orgId }, include: { exchangeRates: true } });
-  const local = localTimeIn(ctx.clock.now(), org.timezone);
-  const scope: Prisma.ObligationWhereInput = {
-    organizationId: orgId,
-    ...(actor.role === 'EMPLOYEE' ? { assigneeUserId: actor.userId } : {}),
-  };
-  const rows = await ctx.db.obligation.findMany({ where: { ...scope, status: { in: ['ACTIVE', 'COMPLETED'] } }, include: obligationInclude });
-  const views = await viewsFor(ctx, orgId, rows, local.date);
-  return {
-    orgId,
-    org,
-    today: local.date,
-    localHour: local.hour,
-    rows,
-    views,
-    scope,
-    converter: new Converter(org.defaultCurrency, org.exchangeRates),
-  };
+  const workspaceId = workspaceIdOf(req);
+  const workspace = await ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+  const local = localTimeIn(ctx.clock.now(), workspace.timezone);
+  const rows = await ctx.db.subscription.findMany({
+    where: { workspaceId, status: { in: ['ACTIVE', 'COMPLETED'] } },
+    include: subscriptionInclude,
+  });
+  const views = await viewsFor(ctx, workspaceId, rows, local.date);
+  const rowById = new Map(rows.map((r) => [r.id, r]));
+  return { workspaceId, workspace, today: local.date, localHour: local.hour, rowById, views };
 }
 
 type Scope = Awaited<ReturnType<typeof loadScope>>;
@@ -46,17 +39,15 @@ const URGENCY: Record<PaymentStatus, number> = {
   ARCHIVED: 6,
 };
 
-function lite(v: ObligationView) {
+function lite(v: SubscriptionView) {
   return {
     id: v.id,
     name: v.name,
     provider: v.provider,
-    icon: v.icon,
-    platform: v.platform,
+    company: v.company,
     category: v.category,
-    amountMinor: v.amountMinor,
-    remainingMinor: v.remainingMinor,
-    currency: v.currency,
+    amountCents: v.amountCents,
+    remainingCents: v.remainingCents,
     nextDueDate: v.nextDueDate,
     daysUntilDue: v.daysUntilDue,
     paymentStatus: v.paymentStatus,
@@ -66,89 +57,104 @@ function lite(v: ObligationView) {
 
 async function paymentsBetween(ctx: AppContext, s: Scope, from: string, to: string) {
   return ctx.db.paymentRecord.findMany({
-    where: { organizationId: s.orgId, paidOn: { gte: from, lte: to }, obligation: s.scope },
+    where: { workspaceId: s.workspaceId, paidOn: { gte: from, lte: to } },
     select: {
-      amountMinor: true,
-      currency: true,
+      amountCents: true,
       paidOn: true,
       cycleDueDate: true,
-      obligation: { select: { id: true, name: true, provider: true, category: { select: { id: true, name: true, color: true, icon: true } }, platform: { select: { name: true } } } },
+      reference: true,
+      method: true,
+      subscription: {
+        select: {
+          id: true,
+          name: true,
+          provider: true,
+          category: { select: { id: true, name: true, color: true, icon: true } },
+          company: { select: { id: true, name: true, color: true } },
+        },
+      },
     },
   });
 }
+
+interface Bucket {
+  id: string;
+  name: string;
+  color: string;
+  icon?: string;
+  amountCents: number;
+}
+
+/** Group amounts into buckets (category/company), largest first, with percentage shares. */
+function buckets(entries: { key: Omit<Bucket, 'amountCents'>; amountCents: number }[]) {
+  const map = new Map<string, Bucket>();
+  for (const e of entries) {
+    const b = map.get(e.key.id) ?? { ...e.key, amountCents: 0 };
+    b.amountCents += e.amountCents;
+    map.set(e.key.id, b);
+  }
+  const list = [...map.values()].filter((b) => b.amountCents > 0).sort((a, b) => b.amountCents - a.amountCents);
+  const total = list.reduce((sum, b) => sum + b.amountCents, 0);
+  return list.map((b) => ({ ...b, share: total ? Math.round((b.amountCents / total) * 1000) / 10 : 0 }));
+}
+
+const pctChange = (now: number, before: number) => (before > 0 ? Math.round(((now - before) / before) * 1000) / 10 : null);
 
 // --- Dashboard ---------------------------------------------------------------
 
 export async function dashboard(ctx: AppContext, req: Request) {
   const s = await loadScope(ctx, req);
-  const { today, views, converter } = s;
+  const { today, views } = s;
   const month = monthRange(today);
   const weekEnd = addDays(today, DUE_SOON_DAYS - 1);
   const active = views.filter((v) => v.status === 'ACTIVE');
 
-  const overdue: CurrencyTotals = {};
-  const week: CurrencyTotals = {};
-  const monthDue: CurrencyTotals = {};
-  let overdueCount = 0;
-  let weekCount = 0;
-  let monthCount = 0;
+  const summary = {
+    overdue: { amountCents: 0, count: 0 },
+    dueThisWeek: { amountCents: 0, count: 0 },
+    dueThisMonth: { amountCents: 0, count: 0 },
+  };
   for (const v of active) {
     if (v.paymentStatus === 'OVERDUE') {
-      addTo(overdue, v.currency, v.remainingMinor);
-      overdueCount++;
+      summary.overdue.amountCents += v.remainingCents;
+      summary.overdue.count++;
       continue;
     }
-    for (const occ of occurrencesBetween(s.rows.find((r) => r.id === v.id)!, today, month.to)) {
-      const amount = occ.kind === 'current' ? v.remainingMinor : v.amountMinor;
+    for (const occ of occurrencesBetween(s.rowById.get(v.id)!, today, month.to)) {
+      const amount = occ.kind === 'current' ? v.remainingCents : v.amountCents;
       if (amount === 0) continue;
-      addTo(monthDue, v.currency, amount);
-      monthCount++;
+      summary.dueThisMonth.amountCents += amount;
+      summary.dueThisMonth.count++;
       if (occ.date <= weekEnd) {
-        addTo(week, v.currency, amount);
-        weekCount++;
+        summary.dueThisWeek.amountCents += amount;
+        summary.dueThisWeek.count++;
       }
     }
   }
 
-  // Payments over the last 12 months feed "paid this month", the trend chart and the donut.
-  const months = lastMonths(today.slice(0, 7), 12);
+  // Payments over the last 24 months feed "paid this month", the trend, and the breakdowns.
+  const thisMonth = today.slice(0, 7);
+  const months = lastMonths(thisMonth, 12);
   const yearAgo = `${months[0]}-01`;
-  const prevMonth = addMonthsKey(today.slice(0, 7), -1);
   const payments = await paymentsBetween(ctx, s, `${addMonthsKey(months[0]!, -12)}-01`, today);
-  const paidThisMonth: CurrencyTotals = {};
-  const paidLastMonth: CurrencyTotals = {};
-  const byMonth = new Map<string, CurrencyTotals>(months.map((m) => [m, {}]));
-  const prevYear: CurrencyTotals = {};
-  const byCategory = new Map<string, { id: string; name: string; color: string; icon: string; totals: CurrencyTotals }>();
+  const byMonth = new Map<string, number>(months.map((m) => [m, 0]));
+  let paidThisMonth = 0;
   let paidThisMonthCount = 0;
+  let paidLastMonth = 0;
+  let prevYear = 0;
+  const lastYear = payments.filter((p) => p.paidOn >= yearAgo);
   for (const p of payments) {
     const key = p.paidOn.slice(0, 7);
-    if (key === today.slice(0, 7)) {
-      addTo(paidThisMonth, p.currency, p.amountMinor);
+    if (key === thisMonth) {
+      paidThisMonth += p.amountCents;
       paidThisMonthCount++;
     }
-    if (key === prevMonth) addTo(paidLastMonth, p.currency, p.amountMinor);
-    if (p.paidOn >= yearAgo) {
-      addTo(byMonth.get(key) ?? {}, p.currency, p.amountMinor);
-      const c = p.obligation.category;
-      const entry = byCategory.get(c.id) ?? { ...c, totals: {} };
-      addTo(entry.totals, p.currency, p.amountMinor);
-      byCategory.set(c.id, entry);
-    } else {
-      addTo(prevYear, p.currency, p.amountMinor);
-    }
+    if (key === addMonthsKey(thisMonth, -1)) paidLastMonth += p.amountCents;
+    if (p.paidOn >= yearAgo) byMonth.set(key, (byMonth.get(key) ?? 0) + p.amountCents);
+    else prevYear += p.amountCents;
   }
-
-  const trend = months.map((m) => ({ month: m, amountMinor: converter.total(byMonth.get(m) ?? {}) }));
-  const paidYear = trend.reduce((sum, t) => sum + t.amountMinor, 0);
-  const prevYearTotal = converter.total(prevYear);
-  const thisMonthTotal = converter.total(paidThisMonth);
-  const lastMonthTotal = converter.total(paidLastMonth);
-  const categories = [...byCategory.values()]
-    .map((c) => ({ id: c.id, name: c.name, color: c.color, icon: c.icon, amountMinor: converter.total(c.totals) }))
-    .filter((c) => c.amountMinor > 0)
-    .sort((a, b) => b.amountMinor - a.amountMinor);
-  const categoryTotal = categories.reduce((sum, c) => sum + c.amountMinor, 0);
+  const trend = months.map((m) => ({ month: m, amountCents: byMonth.get(m) ?? 0 }));
+  const paidYear = trend.reduce((sum, t) => sum + t.amountCents, 0);
 
   const attention = active
     .filter((v) => ['OVERDUE', 'DUE_TODAY', 'PARTIALLY_PAID', 'DUE_SOON'].includes(v.paymentStatus))
@@ -156,44 +162,34 @@ export async function dashboard(ctx: AppContext, req: Request) {
 
   const timeline = active
     .flatMap((v) =>
-      occurrencesBetween(s.rows.find((r) => r.id === v.id)!, addDays(today, 1), addDays(today, 30)).map((occ) => ({
+      occurrencesBetween(s.rowById.get(v.id)!, today, addDays(today, 30)).map((occ) => ({
         date: occ.date,
-        obligation: lite(v),
-        amountMinor: occ.kind === 'current' ? v.remainingMinor : v.amountMinor,
-        status: (daysBetween(today, occ.date) <= DUE_SOON_DAYS ? 'DUE_SOON' : 'UPCOMING') as PaymentStatus,
+        subscription: lite(v),
+        amountCents: occ.kind === 'current' ? v.remainingCents : v.amountCents,
+        status: (occ.kind === 'current'
+          ? v.paymentStatus
+          : daysBetween(today, occ.date) <= DUE_SOON_DAYS
+            ? 'DUE_SOON'
+            : 'UPCOMING') as PaymentStatus,
       })),
     )
-    .filter((t) => t.amountMinor > 0)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.obligation.name.localeCompare(b.obligation.name));
+    .filter((t) => t.amountCents > 0)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.subscription.name.localeCompare(b.subscription.name));
 
   return {
     today,
     localHour: s.localHour,
-    defaultCurrency: s.org.defaultCurrency,
-    missingRates: [...converter.missing],
     summary: {
-      overdue: converter.summary(overdue, overdueCount),
-      dueThisWeek: converter.summary(week, weekCount),
-      dueThisMonth: converter.summary(monthDue, monthCount),
-      paidThisMonth: {
-        ...converter.summary(paidThisMonth, paidThisMonthCount),
-        changePercent: lastMonthTotal > 0 ? Math.round(((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 1000) / 10 : null,
-      },
+      ...summary,
+      paidThisMonth: { amountCents: paidThisMonth, count: paidThisMonthCount, changePercent: pctChange(paidThisMonth, paidLastMonth) },
     },
     needsAttention: attention.slice(0, 5).map(lite),
     needsAttentionCount: attention.length,
-    next30Days: timeline.slice(0, 12),
-    spending: {
-      months: trend,
-      paidLast12Months: paidYear,
-      changePercent: prevYearTotal > 0 ? Math.round(((paidYear - prevYearTotal) / prevYearTotal) * 1000) / 10 : null,
-    },
-    byCategory: categories.map((c) => ({ ...c, share: categoryTotal ? Math.round((c.amountMinor / categoryTotal) * 1000) / 10 : 0 })),
-    counts: {
-      active: active.length,
-      overdue: overdueCount,
-      upcoming30: timeline.length,
-    },
+    next30Days: timeline.slice(0, 20),
+    spending: { months: trend, paidLast12Months: paidYear, changePercent: pctChange(paidYear, prevYear) },
+    byCategory: buckets(lastYear.map((p) => ({ key: p.subscription.category, amountCents: p.amountCents }))),
+    byCompany: buckets(lastYear.map((p) => ({ key: p.subscription.company, amountCents: p.amountCents }))),
+    counts: { active: active.length, total: views.length, overdue: summary.overdue.count, upcoming30: timeline.length },
   };
 }
 
@@ -201,68 +197,64 @@ export async function dashboard(ctx: AppContext, req: Request) {
 
 export interface CalendarEvent {
   date: string;
-  obligationId: string;
+  subscriptionId: string;
   name: string;
-  provider: string;
-  icon: string;
-  platform: string | null;
-  amountMinor: number;
-  currency: string;
+  company: string;
+  categoryIcon: string;
+  categoryColor: string;
+  amountCents: number;
   status: PaymentStatus;
   kind: 'paid' | 'current' | 'future';
 }
 
-export async function calendar(ctx: AppContext, req: Request, from: string, to: string): Promise<{ from: string; to: string; today: string; events: CalendarEvent[] }> {
+export async function calendar(ctx: AppContext, req: Request, from: string, to: string) {
   const s = await loadScope(ctx, req);
   const events: CalendarEvent[] = [];
 
-  // Projected and open cycles.
+  // Open and projected cycles.
   for (const v of s.views) {
-    const row = s.rows.find((r) => r.id === v.id)!;
-    for (const occ of occurrencesBetween(row, from, to)) {
+    for (const occ of occurrencesBetween(s.rowById.get(v.id)!, from, to)) {
       const status: PaymentStatus =
         occ.kind === 'current'
           ? v.paymentStatus
-          : computeStatus({ status: 'ACTIVE', nextDueDate: occ.date, amountMinor: v.amountMinor }, [], s.today);
+          : computeStatus({ status: 'ACTIVE', nextDueDate: occ.date, amountCents: v.amountCents }, [], s.today);
       events.push({
         date: occ.date,
-        obligationId: v.id,
+        subscriptionId: v.id,
         name: v.name,
-        provider: v.provider,
-        icon: v.icon,
-        platform: v.platform?.name ?? null,
-        amountMinor: occ.kind === 'current' ? v.remainingMinor || v.amountMinor : v.amountMinor,
-        currency: v.currency,
+        company: v.company.name,
+        categoryIcon: v.category.icon,
+        categoryColor: v.category.color,
+        amountCents: occ.kind === 'current' ? v.remainingCents || v.amountCents : v.amountCents,
         status,
         kind: occ.kind,
       });
     }
   }
 
-  // Closed cycles, from payment history (one event per cycle, on its due date).
+  // Closed cycles from payment history (one event per cycle, on its due date).
   const paid = await ctx.db.paymentRecord.groupBy({
-    by: ['obligationId', 'cycleDueDate', 'currency'],
-    where: { organizationId: s.orgId, cycleDueDate: { gte: from, lte: to }, obligation: s.scope },
-    _sum: { amountMinor: true },
+    by: ['subscriptionId', 'cycleDueDate'],
+    where: { workspaceId: s.workspaceId, cycleDueDate: { gte: from, lte: to } },
+    _sum: { amountCents: true },
   });
-  const allObligations = await ctx.db.obligation.findMany({
-    where: { id: { in: [...new Set(paid.map((p) => p.obligationId))] } },
-    include: obligationInclude,
+  const paidSubs = await ctx.db.subscription.findMany({
+    where: { workspaceId: s.workspaceId, id: { in: [...new Set(paid.map((p) => p.subscriptionId))] } },
+    include: subscriptionInclude,
   });
+  const subById = new Map(paidSubs.map((x) => [x.id, x]));
   for (const p of paid) {
-    const o = allObligations.find((x) => x.id === p.obligationId);
-    if (!o) continue;
-    const isOpen = o.status === 'ACTIVE' && o.nextDueDate === p.cycleDueDate;
-    if (isOpen) continue; // shown above as the current (partly paid) cycle
+    const sub = subById.get(p.subscriptionId);
+    if (!sub) continue;
+    if (sub.status === 'ACTIVE' && sub.nextDueDate === p.cycleDueDate) continue; // the open cycle, shown above
     events.push({
       date: p.cycleDueDate,
-      obligationId: o.id,
-      name: o.name,
-      provider: o.provider,
-      icon: o.icon ?? o.category.icon,
-      platform: o.platform?.name ?? null,
-      amountMinor: p._sum.amountMinor ?? 0,
-      currency: p.currency,
+      subscriptionId: sub.id,
+      name: sub.name,
+      company: sub.company.name,
+      categoryIcon: sub.category.icon,
+      categoryColor: sub.category.color,
+      amountCents: p._sum?.amountCents ?? 0,
       status: 'PAID',
       kind: 'paid',
     });
@@ -278,63 +270,51 @@ export type ReportPeriod = 'month' | 'year';
 
 export async function report(ctx: AppContext, req: Request, period: ReportPeriod, year: number, month?: number) {
   const s = await loadScope(ctx, req);
-  const { converter, today } = s;
+  const { today } = s;
   const from = period === 'year' ? `${year}-01-01` : `${year}-${String(month).padStart(2, '0')}-01`;
   const to = period === 'year' ? `${year}-12-31` : monthRange(from).to;
+  const active = s.views.filter((v) => v.status === 'ACTIVE');
 
   const payments = await paymentsBetween(ctx, s, from, to);
-  const paid: CurrencyTotals = {};
-  const paidByCategory = new Map<string, { id: string; name: string; color: string; icon: string; totals: CurrencyTotals }>();
-  const paidByMonth = new Map<string, CurrencyTotals>();
+  const paidByMonth = new Map<string, number>();
+  let paid = 0;
   for (const p of payments) {
-    addTo(paid, p.currency, p.amountMinor);
-    const c = p.obligation.category;
-    const entry = paidByCategory.get(c.id) ?? { ...c, totals: {} };
-    addTo(entry.totals, p.currency, p.amountMinor);
-    paidByCategory.set(c.id, entry);
+    paid += p.amountCents;
     const mk = p.paidOn.slice(0, 7);
-    addTo(paidByMonth.get(mk) ?? paidByMonth.set(mk, {}).get(mk)!, p.currency, p.amountMinor);
+    paidByMonth.set(mk, (paidByMonth.get(mk) ?? 0) + p.amountCents);
   }
 
   // Still to pay within the period: open cycles (remaining) and projected cycles.
-  const outstanding: CurrencyTotals = {};
-  const outstandingItems: { date: string; obligation: ReturnType<typeof lite>; amountMinor: number; overdue: boolean }[] = [];
-  const committedByMonth = new Map<string, CurrencyTotals>();
-  for (const v of s.views.filter((x) => x.status === 'ACTIVE')) {
-    const row = s.rows.find((r) => r.id === v.id)!;
-    for (const occ of occurrencesBetween(row, from, to)) {
-      const amount = occ.kind === 'current' ? v.remainingMinor : v.amountMinor;
+  let outstanding = 0;
+  const outstandingItems: { date: string; subscription: ReturnType<typeof lite>; amountCents: number; overdue: boolean }[] = [];
+  const outstandingByMonth = new Map<string, number>();
+  for (const v of active) {
+    for (const occ of occurrencesBetween(s.rowById.get(v.id)!, from, to)) {
+      const amount = occ.kind === 'current' ? v.remainingCents : v.amountCents;
       if (amount === 0) continue;
-      addTo(outstanding, v.currency, amount);
-      outstandingItems.push({ date: occ.date, obligation: lite(v), amountMinor: amount, overdue: occ.date < today });
+      outstanding += amount;
+      outstandingItems.push({ date: occ.date, subscription: lite(v), amountCents: amount, overdue: occ.date < today });
       const mk = occ.date.slice(0, 7);
-      addTo(committedByMonth.get(mk) ?? committedByMonth.set(mk, {}).get(mk)!, v.currency, amount);
+      outstandingByMonth.set(mk, (outstandingByMonth.get(mk) ?? 0) + amount);
     }
   }
 
-  const overdueItems = s.views.filter((v) => v.paymentStatus === 'OVERDUE').map(lite);
-  const overdueTotals: CurrencyTotals = {};
-  for (const o of overdueItems) addTo(overdueTotals, o.currency, o.remainingMinor);
-
-  const committed: CurrencyTotals = { ...paid };
-  for (const [cur, amt] of Object.entries(outstanding)) addTo(committed, cur, amt);
+  const overdueItems = active.filter((v) => v.paymentStatus === 'OVERDUE').map(lite);
+  const overdue = overdueItems.reduce((sum, o) => sum + o.remainingCents, 0);
 
   // 12-month forecast from the current month.
   const forecastMonths = Array.from({ length: 12 }, (_, i) => addMonthsKey(today.slice(0, 7), i));
-  const forecastTotals = new Map<string, CurrencyTotals>(forecastMonths.map((m) => [m, {}]));
+  const forecast = new Map<string, number>(forecastMonths.map((m) => [m, 0]));
   const horizon = monthRange(`${forecastMonths.at(-1)}-01`).to;
-  for (const v of s.views.filter((x) => x.status === 'ACTIVE')) {
-    for (const occ of occurrencesBetween(s.rows.find((r) => r.id === v.id)!, `${forecastMonths[0]}-01`, horizon)) {
-      const amount = occ.kind === 'current' ? v.remainingMinor : v.amountMinor;
-      addTo(forecastTotals.get(occ.date.slice(0, 7))!, v.currency, amount);
+  for (const v of active) {
+    for (const occ of occurrencesBetween(s.rowById.get(v.id)!, `${forecastMonths[0]}-01`, horizon)) {
+      const mk = occ.date.slice(0, 7);
+      forecast.set(mk, (forecast.get(mk) ?? 0) + (occ.kind === 'current' ? v.remainingCents : v.amountCents));
     }
   }
 
-  const categories = [...paidByCategory.values()]
-    .map((c) => ({ id: c.id, name: c.name, color: c.color, icon: c.icon, totals: totalsList(c.totals), amountMinor: converter.total(c.totals) }))
-    .sort((a, b) => b.amountMinor - a.amountMinor);
-  const categoryTotal = categories.reduce((sum, c) => sum + c.amountMinor, 0);
-  const monthKeys = period === 'year' ? Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`) : [from.slice(0, 7)];
+  const monthKeys =
+    period === 'year' ? Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`) : [from.slice(0, 7)];
 
   return {
     period,
@@ -343,36 +323,32 @@ export async function report(ctx: AppContext, req: Request, period: ReportPeriod
     from,
     to,
     today,
-    defaultCurrency: s.org.defaultCurrency,
-    organization: { name: s.org.name, logoUrl: s.org.logoUrl },
+    workspace: { name: s.workspace.name },
     totals: {
-      committed: converter.summary(committed, payments.length + outstandingItems.length),
-      paid: converter.summary(paid, payments.length),
-      outstanding: converter.summary(outstanding, outstandingItems.length),
-      overdue: converter.summary(overdueTotals, overdueItems.length),
+      committed: { amountCents: paid + outstanding, count: payments.length + outstandingItems.length },
+      paid: { amountCents: paid, count: payments.length },
+      outstanding: { amountCents: outstanding, count: outstandingItems.length },
+      overdue: { amountCents: overdue, count: overdueItems.length },
     },
-    byCategory: categories.map((c) => ({ ...c, share: categoryTotal ? Math.round((c.amountMinor / categoryTotal) * 1000) / 10 : 0 })),
-    months: monthKeys.map((m) => ({
-      month: m,
-      paidMinor: converter.total(paidByMonth.get(m) ?? {}),
-      outstandingMinor: converter.total(committedByMonth.get(m) ?? {}),
-    })),
-    forecast: forecastMonths.map((m) => ({ month: m, amountMinor: converter.total(forecastTotals.get(m) ?? {}) })),
+    byCategory: buckets(payments.map((p) => ({ key: p.subscription.category, amountCents: p.amountCents }))),
+    byCompany: buckets(payments.map((p) => ({ key: p.subscription.company, amountCents: p.amountCents }))),
+    months: monthKeys.map((m) => ({ month: m, paidCents: paidByMonth.get(m) ?? 0, outstandingCents: outstandingByMonth.get(m) ?? 0 })),
+    forecast: forecastMonths.map((m) => ({ month: m, amountCents: forecast.get(m) ?? 0 })),
     overdue: overdueItems,
     outstanding: outstandingItems.sort((a, b) => a.date.localeCompare(b.date)),
     payments: payments
       .map((p) => ({
         paidOn: p.paidOn,
         cycleDueDate: p.cycleDueDate,
-        name: p.obligation.name,
-        provider: p.obligation.provider,
-        platform: p.obligation.platform?.name ?? null,
-        category: p.obligation.category.name,
-        amountMinor: p.amountMinor,
-        currency: p.currency,
+        name: p.subscription.name,
+        provider: p.subscription.provider,
+        company: p.subscription.company.name,
+        category: p.subscription.category.name,
+        method: p.method,
+        reference: p.reference,
+        amountCents: p.amountCents,
       }))
       .sort((a, b) => a.paidOn.localeCompare(b.paidOn)),
-    missingRates: [...converter.missing],
   };
 }
 

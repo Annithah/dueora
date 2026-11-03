@@ -1,13 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { env as loadEnv } from './config/env.js';
-import { systemClock, type AppContext } from './context.js';
-import { createDb } from './db/client.js';
-import { createLogger, type Logger } from './lib/logger.js';
-import { ExpoPushProvider } from './notifications/push.js';
+import { createContext } from './bootstrap.js';
+import type { AppContext } from './context.js';
+import type { Logger } from './lib/logger.js';
 import { workOnce } from './notifications/scheduler.js';
-import { LogMailer, ResendMailer } from './services/mailer.js';
-import { createStorage } from './services/storage.js';
 
 const POLL_MS = 5_000;
 
@@ -38,18 +35,8 @@ export function startWorker(ctx: AppContext, logger: Logger): () => Promise<void
 
 async function main() {
   const env = loadEnv();
-  const logger = createLogger(env.LOG_LEVEL, env.NODE_ENV === 'development');
-  const db = createDb(env.DATABASE_URL);
-  const mailer = env.RESEND_API_KEY ? new ResendMailer(env.RESEND_API_KEY, env.EMAIL_FROM) : new LogMailer(logger);
-  const ctx: AppContext = {
-    env,
-    db,
-    logger,
-    clock: systemClock,
-    mailer,
-    storage: createStorage(env),
-    push: new ExpoPushProvider(env.EXPO_ACCESS_TOKEN),
-  };
+  const ctx = createContext(env);
+  const { logger, db } = ctx;
   const stop = startWorker(ctx, logger);
 
   const shutdown = async (signal: string) => {

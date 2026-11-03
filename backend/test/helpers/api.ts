@@ -10,11 +10,11 @@ export interface Session {
   refreshToken: string;
 }
 
-/** supertest wrapper that adds the bearer token and X-Org-Id header. */
-export function client(app: Express, session?: Pick<Session, 'accessToken'> | null, orgId?: string | null) {
+/** supertest wrapper that adds the bearer token and X-Workspace-Id header. */
+export function client(app: Express, session?: Pick<Session, 'accessToken'> | null, workspaceId?: string | null) {
   const decorate = (r: request.Test) => {
     if (session) r.set('Authorization', `Bearer ${session.accessToken}`);
-    if (orgId) r.set('X-Org-Id', orgId);
+    if (workspaceId) r.set('X-Workspace-Id', workspaceId);
     return r;
   };
   const base = request(app);
@@ -56,23 +56,22 @@ export function lastInviteToken(ctx: TestContext, to: string): string {
 }
 
 export async function createWorkspace(app: Express, session: Session, name = 'Acme Ltd'): Promise<string> {
-  const res = await client(app, session).post('/api/v1/workspaces').send({ name, defaultCurrency: 'USD', timezone: 'Africa/Kigali' });
+  const res = await client(app, session).post('/api/v1/workspaces').send({ name, timezone: 'Africa/Kigali' });
   if (res.status !== 201) throw new Error(`createWorkspace failed: ${res.status} ${JSON.stringify(res.body)}`);
   return res.body.id as string;
 }
 
-/** Invite `email` with `role` into `orgId` and have them accept. Returns the new member's session. */
+/** Invite `email` with `role` into `workspaceId` and have them accept. Returns the new member's session. */
 export async function addMember(
   app: Express,
   ctx: TestContext,
   admin: Session,
-  orgId: string,
+  workspaceId: string,
   name: string,
   email: string,
-  role: 'ADMIN' | 'FINANCE' | 'DEPARTMENT' | 'EMPLOYEE',
-  departmentId?: string,
+  role: 'ADMIN' | 'FINANCE' | 'VIEWER',
 ): Promise<Session> {
-  const inv = await client(app, admin, orgId).post('/api/v1/workspaces/current/invites').send({ email, role, departmentId });
+  const inv = await client(app, admin, workspaceId).post('/api/v1/workspaces/current/invites').send({ email, role });
   if (inv.status !== 201) throw new Error(`invite failed: ${inv.status} ${JSON.stringify(inv.body)}`);
   const member = await register(app, name, email);
   const acc = await client(app, member).post('/api/v1/workspaces/accept-invite').send({ token: lastInviteToken(ctx, email) });

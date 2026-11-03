@@ -3,13 +3,13 @@
  *
  * All calendar maths works on ISO date strings ("YYYY-MM-DD") broken into
  * year/month/day numbers, so neither the server's timezone nor DST can shift a
- * due date. "Today" is always derived from an instant + the organization's IANA
+ * due date. "Today" is always derived from an instant + the workspace's IANA
  * timezone (todayIn).
  */
 
 export type ISODate = string;
 export type FrequencyUnit = 'WEEK' | 'MONTH' | 'YEAR' | 'ONCE';
-export type ObligationStatus = 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
+export type SubscriptionStatus = 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
 export type PaymentStatus =
   | 'UPCOMING'
   | 'DUE_SOON'
@@ -92,14 +92,14 @@ function assertSchedule(unit: FrequencyUnit, interval: number): void {
 }
 
 /**
- * The due date one cycle after `current`, or null for one-time obligations.
+ * Move one cycle forward: the due date one cycle after `current`, or null for one-time subscriptions.
  *
  * - WEEK × n: every n weeks (weekly, fortnightly, ...)
  * - MONTH × n: monthly (1), quarterly (3), every 6 months (6), any custom n
  * - YEAR × n: yearly / every n years (Feb 29 anchors fall back to Feb 28)
  * - ONCE: no next cycle
  */
-export function nextDueDate(current: ISODate, unit: FrequencyUnit, interval: number, anchorDay: number): ISODate | null {
+export function advance(current: ISODate, unit: FrequencyUnit, interval: number, anchorDay: number): ISODate | null {
   assertSchedule(unit, interval);
   switch (unit) {
     case 'WEEK':
@@ -111,6 +111,41 @@ export function nextDueDate(current: ISODate, unit: FrequencyUnit, interval: num
     case 'ONCE':
       return null;
   }
+}
+
+/**
+ * Due date for a NEW subscription: the first cycle date on or after `today`, counting
+ * from `startDate` (which is itself the first due date).
+ *
+ * - startDate today or in the future → startDate
+ * - startDate in the past → step whole cycles from startDate (keeping the anchor day) until ≥ today
+ * - one-time → startDate (even when it's in the past: the single payment is still owed)
+ */
+export function calculateNextDueDate(
+  startDate: ISODate,
+  unit: FrequencyUnit,
+  interval: number,
+  anchorDay: number,
+  today: ISODate,
+): ISODate {
+  assertSchedule(unit, interval);
+  if (startDate >= today || unit === 'ONCE') return startDate;
+  if (unit === 'WEEK') {
+    const step = 7 * interval;
+    const cycles = Math.ceil(daysBetween(startDate, today) / step);
+    return addDays(startDate, cycles * step);
+  }
+  const months = unit === 'MONTH' ? interval : 12 * interval;
+  const start = parseDate(startDate);
+  const now = parseDate(today);
+  // Jump close to today in one step, then walk forward (at most a couple of cycles).
+  let cycles = Math.max(0, Math.floor(((now.y - start.y) * 12 + (now.m - start.m)) / months) - 1);
+  let due = addMonths(startDate, cycles * months, anchorDay);
+  while (due < today) {
+    cycles += 1;
+    due = addMonths(startDate, cycles * months, anchorDay);
+  }
+  return due;
 }
 
 /** The due date one cycle before `current` (null for one-time). Used for cycle length. */
@@ -187,7 +222,7 @@ export function localTimeIn(instant: Date, timeZone: string): LocalTime {
   return { date: `${parts.year}-${parts.month}-${parts.day}`, hour, minute, minutes: hour * 60 + minute };
 }
 
-/** "Today" for an organization. */
+/** "Today" for an workspace. */
 export function todayIn(instant: Date, timeZone: string): ISODate {
   return localTimeIn(instant, timeZone).date;
 }
@@ -195,23 +230,23 @@ export function todayIn(instant: Date, timeZone: string): ISODate {
 // --- Status ------------------------------------------------------------------
 
 export interface StatusInput {
-  status: ObligationStatus;
+  status: SubscriptionStatus;
   nextDueDate: ISODate;
-  amountMinor: number;
+  amountCents: number;
 }
 
 export interface PaymentInput {
   cycleDueDate: ISODate;
-  amountMinor: number;
+  amountCents: number;
 }
 
 /** Sum of payments recorded against the cycle that ends on `cycleDueDate`. */
 export function paidForCycle(payments: readonly PaymentInput[], cycleDueDate: ISODate): number {
-  return payments.reduce((sum, p) => (p.cycleDueDate === cycleDueDate ? sum + p.amountMinor : sum), 0);
+  return payments.reduce((sum, p) => (p.cycleDueDate === cycleDueDate ? sum + p.amountCents : sum), 0);
 }
 
 /**
- * Status of the obligation's current cycle as seen on `today` (org-local date).
+ * Status of the subscription's current cycle as seen on `today` (org-local date).
  * Precedence: ARCHIVED → PAID (completed or fully paid) → OVERDUE → PARTIALLY_PAID →
  * DUE_TODAY → DUE_SOON (≤ 7 days) → UPCOMING. A part-paid cycle past its due date is
  * OVERDUE: it is the more urgent fact (the remaining balance is reported separately).
@@ -220,7 +255,7 @@ export function computeStatus(o: StatusInput, payments: readonly PaymentInput[],
   if (o.status === 'ARCHIVED') return 'ARCHIVED';
   if (o.status === 'COMPLETED') return 'PAID';
   const paid = paidForCycle(payments, o.nextDueDate);
-  if (paid >= o.amountMinor) return 'PAID';
+  if (paid >= o.amountCents) return 'PAID';
   const days = daysBetween(today, o.nextDueDate);
   if (days < 0) return 'OVERDUE';
   if (paid > 0) return 'PARTIALLY_PAID';

@@ -6,39 +6,60 @@ import { addMember, client, createWorkspace, lastInviteToken, register, type Ses
 import { createTestContext } from './helpers/context.js';
 
 /**
- * Cross-organization isolation: a member of org A must never read or modify org B.
- * Later phases extend this file for obligations, payments, attachments and reports.
+ * Cross-workspace isolation: a member of workspace A must never read or modify workspace B.
+ * (test/security.test.ts additionally sweeps every registered route.)
  */
 const ctx = createTestContext();
 const app = createApp(ctx);
 
 let aliceA: Session; // admin of A
 let bobB: Session; // admin of B
-let orgA: string;
-let orgB: string;
+let wsA: string;
+let wsB: string;
 let bMemberId: string;
-let bDeptId: string;
+let bCompanyId: string;
+let bCategoryId: string;
+let bSubscriptionId: string;
+let bPaymentId: string;
+
+const a = () => client(app, aliceA, wsA);
+const aIntoB = () => client(app, aliceA, wsB);
 
 beforeAll(async () => {
+  ctx.clock.set('2026-11-02T07:00:00Z');
   aliceA = await register(app, 'Alice', 'alice@a.test');
   bobB = await register(app, 'Bob', 'bob@b.test');
-  orgA = await createWorkspace(app, aliceA, 'Org A');
-  orgB = await createWorkspace(app, bobB, 'Org B');
-  await addMember(app, ctx, bobB, orgB, 'Carol', 'carol@b.test', 'EMPLOYEE');
-  const members = await client(app, bobB, orgB).get('/api/v1/workspaces/current/members');
+  wsA = await createWorkspace(app, aliceA, 'Workspace A');
+  wsB = await createWorkspace(app, bobB, 'Workspace B');
+  await addMember(app, ctx, bobB, wsB, 'Carol', 'carol@b.test', 'VIEWER');
+  const b = client(app, bobB, wsB);
+  const members = await b.get('/api/v1/workspaces/current/members');
   bMemberId = members.body.find((m: { email: string }) => m.email === 'carol@b.test').id;
-  bDeptId = (await client(app, bobB, orgB).post('/api/v1/workspaces/current/departments').send({ name: 'B-Dept' })).body.id;
+  bCompanyId = (await b.post('/api/v1/companies').send({ name: 'B-Company' })).body.id;
+  bCategoryId = (await b.post('/api/v1/categories').send({ name: 'B-Only', icon: 'tag', color: '#111111' })).body.id;
+  const created = await b.post('/api/v1/subscriptions').send({
+    name: 'B secret hosting',
+    companyId: bCompanyId,
+    categoryId: bCategoryId,
+    amountCents: 99_900,
+    frequencyUnit: 'YEAR',
+    subscriptionKey: 'B-SECRET-KEY-1234',
+  });
+  expect(created.status).toBe(201);
+  bSubscriptionId = created.body.id;
+  const paid = await b.post(`/api/v1/subscriptions/${bSubscriptionId}/payments`).send({ amountCents: 100, method: 'CASH' });
+  bPaymentId = paid.body.payment.id;
 });
 
 afterAll(async () => {
   await ctx.db.$disconnect();
 });
 
-describe('cross-organization isolation', () => {
+describe('workspace-level isolation', () => {
   it('a non-member gets 404 for another workspace (no existence leak)', async () => {
-    const res = await client(app, aliceA, orgB).get('/api/v1/workspaces/current');
+    const res = await aIntoB().get('/api/v1/workspaces/current');
+    const unknown = await client(app, aliceA, 'ws_does_not_exist').get('/api/v1/workspaces/current');
     expect(res.status).toBe(404);
-    const unknown = await client(app, aliceA, 'org_does_not_exist').get('/api/v1/workspaces/current');
     expect(unknown.status).toBe(404);
     expect(res.body.error.message).toBe(unknown.body.error.message);
   });
@@ -46,112 +67,89 @@ describe('cross-organization isolation', () => {
   it.each([
     ['patch', '/api/v1/workspaces/current', { name: 'Pwned' }],
     ['get', '/api/v1/workspaces/current/members', undefined],
-    ['get', '/api/v1/workspaces/current/departments', undefined],
     ['post', '/api/v1/workspaces/current/invites', { email: 'spy@a.test', role: 'ADMIN' }],
-    ['put', '/api/v1/workspaces/current/exchange-rates/EUR', { rate: 9 }],
-    ['delete', '/api/v1/workspaces/current', { confirmName: 'Org B' }],
-  ] as const)('org A admin cannot %s %s in org B', async (method, url, body) => {
-    const res = await client(app, aliceA, orgB)[method](url).send(body as object);
-    expect(res.status).toBe(404);
+    ['delete', '/api/v1/workspaces/current', { confirmName: 'Workspace B' }],
+    ['get', '/api/v1/companies', undefined],
+    ['get', '/api/v1/subscriptions', undefined],
+    ['get', '/api/v1/payments', undefined],
+    ['get', '/api/v1/dashboard', undefined],
+    ['get', '/api/v1/reports', undefined],
+    ['get', '/api/v1/notifications', undefined],
+  ] as const)('workspace A admin cannot %s %s in workspace B', async (method, url, body) => {
+    expect((await aIntoB()[method](url).send(body as object)).status).toBe(404);
   });
 
-  it("cannot touch org B's members or departments through org A", async () => {
-    // Using A's header with B's ids must not find anything.
-    const patch = await client(app, aliceA, orgA).patch(`/api/v1/workspaces/current/members/${bMemberId}`).send({ role: 'ADMIN' });
-    expect(patch.status).toBe(404);
-    const del = await client(app, aliceA, orgA).delete(`/api/v1/workspaces/current/members/${bMemberId}`);
-    expect(del.status).toBe(404);
-    const dept = await client(app, aliceA, orgA).patch(`/api/v1/workspaces/current/departments/${bDeptId}`).send({ name: 'Mine now' });
-    expect(dept.status).toBe(404);
-    const delDept = await client(app, aliceA, orgA).delete(`/api/v1/workspaces/current/departments/${bDeptId}`);
-    expect(delDept.status).toBe(404);
+  it("cannot touch workspace B's members through workspace A", async () => {
+    expect((await a().patch(`/api/v1/workspaces/current/members/${bMemberId}`).send({ role: 'ADMIN' })).status).toBe(404);
+    expect((await a().delete(`/api/v1/workspaces/current/members/${bMemberId}`)).status).toBe(404);
   });
 
-  it("cannot assign org B's department to an org A invite or member", async () => {
-    const res = await client(app, aliceA, orgA).post('/api/v1/workspaces/current/invites').send({ email: 'd@a.test', role: 'DEPARTMENT', departmentId: bDeptId });
-    expect(res.status).toBe(400);
-  });
-
-  it('B data is unchanged after all attempts', async () => {
-    const org = await ctx.db.organization.findUniqueOrThrow({ where: { id: orgB } });
-    expect(org.name).toBe('Org B');
-    const carol = await ctx.db.membership.findUniqueOrThrow({ where: { id: bMemberId } });
-    expect(carol.role).toBe('EMPLOYEE');
-    const dept = await ctx.db.department.findUniqueOrThrow({ where: { id: bDeptId } });
-    expect(dept.name).toBe('B-Dept');
-  });
-
-  it("an invite to org B can't be redeemed by an org A user with another email", async () => {
-    await client(app, bobB, orgB).post('/api/v1/workspaces/current/invites').send({ email: 'dave@b.test', role: 'FINANCE' });
+  it("an invite to workspace B can't be redeemed by a workspace A user with another email", async () => {
+    await client(app, bobB, wsB).post('/api/v1/workspaces/current/invites').send({ email: 'dave@b.test', role: 'FINANCE' });
     const token = lastInviteToken(ctx, 'dave@b.test');
-    const res = await client(app, aliceA).post('/api/v1/workspaces/accept-invite').send({ token });
-    expect(res.status).toBe(403);
-    expect(await ctx.db.membership.findFirst({ where: { userId: aliceA.userId, organizationId: orgB } })).toBeNull();
+    expect((await client(app, aliceA).post('/api/v1/workspaces/accept-invite').send({ token })).status).toBe(403);
+    expect(await ctx.db.membership.findFirst({ where: { userId: aliceA.userId, workspaceId: wsB } })).toBeNull();
   });
 });
 
-describe('cross-organization isolation: obligations, platforms, categories', () => {
-  let bObligationId: string;
-  let bPlatformId: string;
-  let bCategoryId: string;
-
-  beforeAll(async () => {
-    const b = client(app, bobB, orgB);
-    const cats = await b.get('/api/v1/categories');
-    bPlatformId = (await b.post('/api/v1/platforms').send({ name: 'B-Platform' })).body.id;
-    bCategoryId = (await b.post('/api/v1/categories').send({ name: 'B-Only', icon: 'tag', color: '#111111' })).body.id;
-    const created = await b.post('/api/v1/obligations').send({
-      name: 'B secret hosting',
-      provider: 'B Corp',
-      amountMinor: 99900,
-      currency: 'USD',
-      frequencyUnit: 'YEAR',
-      startDate: '2026-12-01',
-      categoryId: cats.body[0].id,
-      platformId: bPlatformId,
-    });
-    expect(created.status).toBe(201);
-    bObligationId = created.body.id;
-  });
-
-  it("org A never sees org B's obligations, platforms or custom categories", async () => {
-    const a = client(app, aliceA, orgA);
-    expect((await a.get('/api/v1/obligations')).body.total).toBe(0);
-    expect((await a.get('/api/v1/obligations').query({ platformId: bPlatformId })).body.total).toBe(0);
-    expect((await a.get('/api/v1/platforms')).body).toEqual([]);
-    const cats = await a.get('/api/v1/categories');
-    expect(cats.body.some((c: { id: string }) => c.id === bCategoryId)).toBe(false);
+describe('data isolation: companies, categories, subscriptions, payments', () => {
+  it("workspace A never sees workspace B's data in any list", async () => {
+    expect((await a().get('/api/v1/subscriptions')).body.total).toBe(0);
+    expect((await a().get('/api/v1/subscriptions').query({ companyId: bCompanyId })).body.total).toBe(0);
+    expect((await a().get('/api/v1/subscriptions').query({ q: 'B-SECRET-KEY-1234' })).body.total).toBe(0);
+    expect((await a().get('/api/v1/payments')).body.total).toBe(0);
+    expect((await a().get('/api/v1/companies')).body.map((c: { name: string }) => c.name)).toEqual(['Workspace A']);
+    expect((await a().get('/api/v1/categories')).body.some((c: { id: string }) => c.id === bCategoryId)).toBe(false);
+    const dash = await a().get('/api/v1/dashboard');
+    expect(dash.body.counts.total).toBe(0);
+    const cal = await a().get('/api/v1/calendar').query({ from: '2026-11-01', to: '2027-11-30' });
+    expect(cal.body.events).toEqual([]);
   });
 
   it.each([
     ['get', ''],
+    ['get', '/key'],
     ['patch', ''],
     ['post', '/archive'],
     ['post', '/unarchive'],
+    ['post', '/payments'],
+    ['post', '/mute'],
     ['delete', ''],
-  ] as const)("org A cannot %s org B's obligation%s", async (method, suffix) => {
-    const res = await client(app, aliceA, orgA)[method](`/api/v1/obligations/${bObligationId}${suffix}`).send({ name: 'Hijacked' });
+  ] as const)("workspace A cannot %s workspace B's subscription%s", async (method, suffix) => {
+    const body = suffix === '/payments' ? { method: 'CASH' } : method === 'patch' ? { name: 'Hijacked' } : {};
+    const res = await a()[method](`/api/v1/subscriptions/${bSubscriptionId}${suffix}`).send(body);
     expect(res.status).toBe(404);
   });
 
-  it("org A cannot edit or delete org B's platform or category", async () => {
-    const a = client(app, aliceA, orgA);
-    expect((await a.patch(`/api/v1/platforms/${bPlatformId}`).send({ name: 'Mine' })).status).toBe(404);
-    expect((await a.delete(`/api/v1/platforms/${bPlatformId}`)).status).toBe(404);
-    expect((await a.patch(`/api/v1/categories/${bCategoryId}`).send({ name: 'Mine' })).status).toBe(404);
-    expect((await a.delete(`/api/v1/categories/${bCategoryId}`)).status).toBe(404);
+  it("workspace A cannot read, edit or delete workspace B's payments, companies or categories", async () => {
+    expect((await a().get(`/api/v1/payments/${bPaymentId}`)).status).toBe(404);
+    expect((await a().patch(`/api/v1/payments/${bPaymentId}`).send({ amountCents: 1 })).status).toBe(404);
+    expect((await a().delete(`/api/v1/payments/${bPaymentId}`)).status).toBe(404);
+    expect((await a().patch(`/api/v1/companies/${bCompanyId}`).send({ name: 'Mine' })).status).toBe(404);
+    expect((await a().delete(`/api/v1/companies/${bCompanyId}`)).status).toBe(404);
+    expect((await a().post(`/api/v1/companies/${bCompanyId}/unarchive`)).status).toBe(404);
+    expect((await a().patch(`/api/v1/categories/${bCategoryId}`).send({ name: 'Mine' })).status).toBe(404);
+    expect((await a().delete(`/api/v1/categories/${bCategoryId}`)).status).toBe(404);
   });
 
-  it("org A cannot attach org B's platform or category to its own obligation", async () => {
-    const a = client(app, aliceA, orgA);
-    const cats = await a.get('/api/v1/categories');
-    const body = { name: 'X', provider: 'Y', amountMinor: 100, currency: 'USD', frequencyUnit: 'MONTH', startDate: '2026-12-01' };
-    expect((await a.post('/api/v1/obligations').send({ ...body, categoryId: bCategoryId })).status).toBe(400);
-    expect((await a.post('/api/v1/obligations').send({ ...body, categoryId: cats.body[0].id, platformId: bPlatformId })).status).toBe(400);
+  it("workspace A cannot use workspace B's company or category on its own subscription", async () => {
+    const own = (await a().get('/api/v1/companies')).body[0].id;
+    const cats = await a().get('/api/v1/categories');
+    const body = { name: 'X', amountCents: 100, frequencyUnit: 'MONTH' };
+    expect((await a().post('/api/v1/subscriptions').send({ ...body, companyId: bCompanyId, categoryId: cats.body[0].id })).status).toBe(400);
+    expect((await a().post('/api/v1/subscriptions').send({ ...body, companyId: own, categoryId: bCategoryId })).status).toBe(400);
   });
 
-  it("org B's obligation is untouched", async () => {
-    const o = await ctx.db.obligation.findUniqueOrThrow({ where: { id: bObligationId } });
-    expect(o).toMatchObject({ name: 'B secret hosting', status: 'ACTIVE', organizationId: orgB });
+  it("workspace B's data is unchanged after every attempt", async () => {
+    expect((await ctx.db.workspace.findUniqueOrThrow({ where: { id: wsB } })).name).toBe('Workspace B');
+    expect((await ctx.db.membership.findUniqueOrThrow({ where: { id: bMemberId } })).role).toBe('VIEWER');
+    expect(await ctx.db.subscription.findUniqueOrThrow({ where: { id: bSubscriptionId } })).toMatchObject({
+      name: 'B secret hosting',
+      status: 'ACTIVE',
+      workspaceId: wsB,
+    });
+    expect((await ctx.db.paymentRecord.findUniqueOrThrow({ where: { id: bPaymentId } })).amountCents).toBe(100);
+    expect((await ctx.db.company.findUniqueOrThrow({ where: { id: bCompanyId } })).name).toBe('B-Company');
+    expect((await ctx.db.category.findUniqueOrThrow({ where: { id: bCategoryId } })).name).toBe('B-Only');
   });
 });
