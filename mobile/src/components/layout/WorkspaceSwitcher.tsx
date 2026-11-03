@@ -15,11 +15,11 @@ export function WorkspaceSwitcher() {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
   const me = useMe();
-  const activeOrgId = useSession((s) => s.activeOrgId);
-  const setActiveOrg = useSession((s) => s.setActiveOrg);
+  const activeWorkspaceId = useSession((s) => s.activeWorkspaceId);
+  const setActiveWorkspace = useSession((s) => s.setActiveWorkspace);
   const [open, setOpen] = useState(false);
   const workspaces = me.data?.workspaces ?? [];
-  const active = workspaces.find((w) => w.id === activeOrgId);
+  const active = workspaces.find((w) => w.id === activeWorkspaceId);
 
   return (
     <>
@@ -50,11 +50,11 @@ export function WorkspaceSwitcher() {
           <Pressable
             key={w.id}
             accessibilityRole="radio"
-            accessibilityState={{ checked: w.id === activeOrgId }}
+            accessibilityState={{ checked: w.id === activeWorkspaceId }}
             onPress={async () => {
               setOpen(false);
-              if (w.id === activeOrgId) return;
-              await setActiveOrg(w.id);
+              if (w.id === activeWorkspaceId) return;
+              await setActiveWorkspace(w.id);
               await queryClient.invalidateQueries();
             }}
             style={({ pressed }) => ({
@@ -64,17 +64,17 @@ export function WorkspaceSwitcher() {
               padding: 10,
               minHeight: 60,
               borderRadius: radius.sm,
-              backgroundColor: w.id === activeOrgId || pressed ? colors.primarySoft : 'transparent',
+              backgroundColor: w.id === activeWorkspaceId || pressed ? colors.primarySoft : 'transparent',
             })}
           >
-            <Avatar name={w.name} imageUrl={w.logoUrl} color={colors.primary} size={40} />
+            <Avatar name={w.name} color={colors.primary} size={40} />
             <View style={{ flex: 1 }}>
               <Text variant="bodyStrong">{w.name}</Text>
               <Text variant="small" tone="muted">
                 {w.type === 'PERSONAL' ? 'Personal' : 'Company'} · {ROLE_LABELS[w.role]}
               </Text>
             </View>
-            {w.id === activeOrgId ? <Check size={18} color={colors.primaryStrong} /> : null}
+            {w.id === activeWorkspaceId ? <Check size={18} color={colors.primaryStrong} /> : null}
           </Pressable>
         ))}
         <Pressable

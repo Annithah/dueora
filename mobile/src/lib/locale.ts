@@ -1,15 +1,5 @@
 import type { SelectOption } from '@/components/ui';
 
-export const CURRENCY_OPTIONS: SelectOption<string>[] = [
-  { value: 'USD', label: 'USD', description: 'US Dollar' },
-  { value: 'RWF', label: 'RWF', description: 'Rwandan Franc' },
-  { value: 'EUR', label: 'EUR', description: 'Euro' },
-  { value: 'GBP', label: 'GBP', description: 'British Pound' },
-  { value: 'KES', label: 'KES', description: 'Kenyan Shilling' },
-  { value: 'UGX', label: 'UGX', description: 'Ugandan Shilling' },
-  { value: 'TZS', label: 'TZS', description: 'Tanzanian Shilling' },
-];
-
 const ZONES: [string, string][] = [
   ['Africa/Kigali', 'Kigali (GMT+2)'],
   ['Africa/Nairobi', 'Nairobi (GMT+3)'],

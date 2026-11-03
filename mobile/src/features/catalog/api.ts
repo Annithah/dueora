@@ -4,11 +4,12 @@ import { api } from '@/api';
 import type { Role } from '@/features/auth/api';
 import { useSession } from '@/state/session';
 
-export interface Platform {
+export interface Company {
   id: string;
   name: string;
   color: string;
-  obligationCount?: number;
+  archived: boolean;
+  subscriptionCount: number;
 }
 
 export interface Category {
@@ -17,6 +18,7 @@ export interface Category {
   icon: string;
   color: string;
   isDefault: boolean;
+  subscriptionCount?: number;
 }
 
 export interface Member {
@@ -24,9 +26,7 @@ export interface Member {
   userId: string;
   name: string;
   email: string;
-  avatarUrl: string | null;
   role: Role;
-  department: { id: string; name: string } | null;
   joinedAt: string;
 }
 
@@ -34,77 +34,77 @@ export interface PendingInvite {
   id: string;
   email: string;
   role: Role;
-  departmentId: string | null;
   expiresAt: string;
 }
 
-const useOrg = () => useSession((s) => s.activeOrgId);
+const useWorkspaceId = () => useSession((s) => s.activeWorkspaceId);
 
-export function usePlatforms() {
-  const orgId = useOrg();
+/** Companies in the active workspace (archived ones only when asked, e.g. in settings). */
+export function useCompanies(options: { includeArchived?: boolean } = {}) {
+  const workspaceId = useWorkspaceId();
   return useQuery({
-    queryKey: ['platforms', orgId],
-    queryFn: () => api.get<Platform[]>('/platforms'),
-    enabled: !!orgId,
+    queryKey: ['companies', workspaceId, options.includeArchived ?? false],
+    queryFn: () =>
+      api.get<Company[]>('/companies', { includeArchived: options.includeArchived ? 'true' : undefined }),
+    enabled: !!workspaceId,
   });
 }
 
 export function useCategories() {
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useQuery({
-    queryKey: ['categories', orgId],
+    queryKey: ['categories', workspaceId],
     queryFn: () => api.get<Category[]>('/categories'),
-    enabled: !!orgId,
+    enabled: !!workspaceId,
     staleTime: 5 * 60_000,
   });
 }
 
 export function useMembers() {
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useQuery({
-    queryKey: ['members', orgId],
+    queryKey: ['members', workspaceId],
     queryFn: () => api.get<Member[]>('/workspaces/current/members'),
-    enabled: !!orgId,
+    enabled: !!workspaceId,
   });
 }
 
 export function useInvites(enabled: boolean) {
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useQuery({
-    queryKey: ['invites', orgId],
+    queryKey: ['invites', workspaceId],
     queryFn: () => api.get<PendingInvite[]>('/workspaces/current/invites'),
-    enabled: !!orgId && enabled,
+    enabled: !!workspaceId && enabled,
   });
 }
 
-/** Small helper for create/update/delete calls that refresh one list. */
-export function useListMutation<TVars>(listKey: string, fn: (vars: TVars) => Promise<unknown>) {
+/** Create/update/delete calls that refresh one list (and the workspace summary). */
+export function useListMutation<TVars, TResult = unknown>(listKey: string, fn: (vars: TVars) => Promise<TResult>) {
   const queryClient = useQueryClient();
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useMutation({
     mutationFn: fn,
     onSuccess: () =>
       Promise.all([
-        queryClient.invalidateQueries({ queryKey: [listKey, orgId] }),
-        queryClient.invalidateQueries({ queryKey: ['workspace', orgId] }),
+        queryClient.invalidateQueries({ queryKey: [listKey, workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['workspace', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['subscriptions', workspaceId] }),
       ]),
   });
 }
 
-export const createPlatform = (body: { name: string; color: string }) =>
-  api.post<Platform>('/platforms', body);
+export const createCompany = (body: { name: string; color?: string }) => api.post<Company>('/companies', body);
+export const updateCompany = ({ id, ...body }: { id: string; name?: string; color?: string }) =>
+  api.patch<Company>(`/companies/${id}`, body);
+/** Deletes an unused company; one with subscriptions is archived instead (history kept). */
+export const deleteCompany = (id: string) => api.del<{ deleted: boolean; archived: boolean }>(`/companies/${id}`);
+export const unarchiveCompany = (id: string) => api.post<Company>(`/companies/${id}/unarchive`);
+
 export const createCategory = (body: { name: string; icon: string; color: string }) =>
   api.post<Category>('/categories', body);
 export const deleteCategory = (id: string) => api.del(`/categories/${id}`);
-export const updateMember = ({
-  id,
-  ...body
-}: {
-  id: string;
-  role?: Role;
-  departmentId?: string | null;
-}) => api.patch<Member>(`/workspaces/current/members/${id}`, body);
+
+export const updateMember = ({ id, role }: { id: string; role: Role }) =>
+  api.patch<Member>(`/workspaces/current/members/${id}`, { role });
 export const removeMember = (id: string) => api.del(`/workspaces/current/members/${id}`);
 export const revokeInvite = (id: string) => api.del(`/workspaces/current/invites/${id}`);
-export const createDepartment = (name: string) =>
-  api.post<{ id: string; name: string }>('/workspaces/current/departments', { name });

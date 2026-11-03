@@ -2,31 +2,29 @@ import { fireEvent, screen } from '@testing-library/react-native';
 
 import { renderWithTheme } from '@/test/render';
 
-import { PaymentRow } from './PaymentRow';
+import { SubscriptionRow } from './SubscriptionRow';
 
+// Test-only fixture.
 const item = {
   id: '1',
-  name: 'Hosting',
-  provider: 'AWS · Yearly',
-  icon: 'cloud',
-  amountMinor: 152300,
-  currency: 'USD',
+  name: 'Test hosting',
+  icon: 'server',
+  amountCents: 152_300,
   date: '2026-10-20',
   status: 'OVERDUE' as const,
-  platform: 'KigaliToday',
+  subtitle: 'Acme Co · Yearly',
 };
 
-describe('PaymentRow', () => {
-  it('shows name, amount, date and status, and is tappable', async () => {
+describe('SubscriptionRow', () => {
+  it('shows name, company, USD amount, due date and status, and is tappable', async () => {
     const onPress = jest.fn();
-    await renderWithTheme(<PaymentRow item={item} onPress={onPress} />);
-    expect(screen.getByText('Hosting')).toBeTruthy();
-    expect(screen.getByText('$1,523')).toBeTruthy();
+    await renderWithTheme(<SubscriptionRow item={item} onPress={onPress} />);
+    expect(screen.getByText('Test hosting')).toBeTruthy();
+    expect(screen.getByText('Acme Co · Yearly')).toBeTruthy();
+    expect(screen.getByText('$1,523.00')).toBeTruthy();
     expect(screen.getByText('20 Oct 2026')).toBeTruthy();
     expect(screen.getByText('Overdue')).toBeTruthy();
-    await fireEvent.press(
-      screen.getByRole('button', { name: 'Hosting, KigaliToday, AWS · Yearly' }),
-    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Test hosting, Acme Co · Yearly' }));
     expect(onPress).toHaveBeenCalled();
   });
 });

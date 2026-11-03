@@ -39,7 +39,7 @@ describe('reminder choices', () => {
 
 describe('routeForNotification', () => {
   it('opens the payment for reminders and recorded payments', () => {
-    expect(routeForNotification({ obligationId: 'abc', type: 'OVERDUE' })).toBe('/payments/abc');
+    expect(routeForNotification({ subscriptionId: 'abc', type: 'OVERDUE' })).toBe('/subscriptions/abc');
   });
   it('opens alerts for digests and system messages', () => {
     expect(routeForNotification({ type: 'DIGEST' })).toBe('/alerts');

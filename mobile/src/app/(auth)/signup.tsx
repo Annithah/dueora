@@ -42,7 +42,7 @@ export default function Signup() {
             Create your account
           </Text>
           <Text variant="body" tone="muted">
-            Start tracking your recurring obligations in minutes.
+            Start tracking your recurring subscriptions in minutes.
           </Text>
         </View>
 
@@ -54,7 +54,7 @@ export default function Signup() {
           render={({ field, fieldState }) => (
             <Input
               label="Full name"
-              placeholder="Anitha Uwase"
+              placeholder="Your full name"
               icon={<UserRound size={18} color={colors.muted} />}
               autoComplete="name"
               textContentType="name"

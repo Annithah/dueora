@@ -4,25 +4,20 @@ import { api, type Tokens } from '@/api';
 import { unregisterDevice } from '@/features/notifications/push';
 import { useSession } from '@/state/session';
 
-export type Role = 'ADMIN' | 'FINANCE' | 'DEPARTMENT' | 'EMPLOYEE';
+export type Role = 'ADMIN' | 'FINANCE' | 'VIEWER';
 
 export interface WorkspaceSummary {
   id: string;
   name: string;
   type: 'COMPANY' | 'PERSONAL';
-  logoUrl: string | null;
-  defaultCurrency: string;
   timezone: string;
   role: Role;
-  departmentId: string | null;
 }
 
 export interface Me {
   id: string;
   name: string;
   email: string;
-  phone: string | null;
-  avatarUrl: string | null;
   emailVerified: boolean;
   workspaces: WorkspaceSummary[];
 }
@@ -42,8 +37,8 @@ export function useMe(enabled = true) {
 async function completeSignIn(queryClient: QueryClient, res: AuthResponse) {
   queryClient.setQueryData(meKey, res.user);
   const session = useSession.getState();
-  const keep = res.user.workspaces.some((w) => w.id === session.activeOrgId)
-    ? session.activeOrgId
+  const keep = res.user.workspaces.some((w) => w.id === session.activeWorkspaceId)
+    ? session.activeWorkspaceId
     : null;
   await session.signIn(
     { accessToken: res.accessToken, refreshToken: res.refreshToken },

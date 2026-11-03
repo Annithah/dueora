@@ -4,21 +4,20 @@ import { AmountText, CategoryIcon, StatusBadge, Text } from '@/components/ui';
 import { formatDate } from '@/lib/dates';
 import { useTheme, type PaymentStatus } from '@/theme';
 
-export interface PaymentRowData {
+export interface SubscriptionRowData {
   id: string;
   name: string;
-  provider: string;
+  /** Category icon key. */
   icon: string;
-  amountMinor: number;
-  currency: string;
+  amountCents: number;
   date: string;
   status: PaymentStatus;
-  subtitle?: string;
-  platform?: string | null;
+  /** "<company> · <frequency>" */
+  subtitle: string;
 }
 
-export interface PaymentRowProps {
-  item: PaymentRowData;
+export interface SubscriptionRowProps {
+  item: SubscriptionRowData;
   onPress?: () => void;
   /** Compact rows put the badge under the amount (dashboard lists). */
   compact?: boolean;
@@ -27,17 +26,17 @@ export interface PaymentRowProps {
   bordered?: boolean;
 }
 
-/** The prototype's payment row: category tile, name + "provider · cycle", amount, date and status. */
-export function PaymentRow({
+/** Subscription row: category badge, name + "company · frequency", USD amount, due date and status. */
+export function SubscriptionRow({
   item,
   onPress,
   compact = false,
   divider = false,
   bordered = false,
-}: PaymentRowProps) {
+}: SubscriptionRowProps) {
   const { colors } = useTheme();
   const overdue = item.status === 'OVERDUE';
-  const label = `${item.name}, ${item.platform ? `${item.platform}, ` : ''}${item.subtitle ?? item.provider}`;
+  const label = `${item.name}, ${item.subtitle}`;
 
   return (
     <Pressable
@@ -76,12 +75,12 @@ export function PaymentRow({
           {item.name}
         </Text>
         <Text variant="small" tone="muted" numberOfLines={1}>
-          {item.subtitle ?? item.provider}
+          {item.subtitle}
         </Text>
         {!compact ? <StatusBadge status={item.status} /> : null}
       </View>
       <View style={{ alignItems: 'flex-end', gap: 4 }}>
-        <AmountText amountMinor={item.amountMinor} currency={item.currency} variant="bodyStrong" />
+        <AmountText amountCents={item.amountCents} variant="bodyStrong" />
         <Text variant="caption" tone="muted">
           {formatDate(item.date)}
         </Text>

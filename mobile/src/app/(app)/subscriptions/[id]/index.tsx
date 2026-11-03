@@ -6,19 +6,19 @@ import {
   BellOff,
   CalendarDays,
   Check,
+  Building2,
   Clock3,
-  Download,
   Ellipsis,
-  FileText,
   ReceiptText,
+  Store,
   Tag,
   Trash2,
-  UserRound,
 } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, RefreshControl, View } from 'react-native';
+import { RefreshControl, View } from 'react-native';
 
 import { QueryState } from '@/components/layout/QueryState';
+import { SubscriptionKeyCard } from '@/components/subscriptions/SubscriptionKeyCard';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
 import {
@@ -36,20 +36,18 @@ import {
   toast,
 } from '@/components/ui';
 import { ApiError } from '@/api';
-import { useMe } from '@/features/auth/api';
-import { downloadAndShare } from '@/features/insights/api';
-import { useMute, usePrefs } from '@/features/notifications/api';
+import { useMute } from '@/features/notifications/api';
 import {
   METHOD_LABELS,
-  useArchiveObligation,
-  useDeleteObligation,
-  useObligation,
-  type ObligationDetail,
-} from '@/features/obligations/api';
-import { RecordPaymentSheet } from '@/features/obligations/RecordPaymentSheet';
-import { formatDate, humanSpan, toISODate } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
-import { useSession } from '@/state/session';
+  useArchiveSubscription,
+  useDeleteSubscription,
+  useSubscription,
+  type SubscriptionDetail,
+} from '@/features/subscriptions/api';
+import { RecordPaymentSheet } from '@/features/subscriptions/RecordPaymentSheet';
+import { usePermissions, useWorkspaceToday } from '@/features/workspaces/api';
+import { formatDate, humanSpan } from '@/lib/dates';
+import { formatUSD } from '@/lib/money';
 import { useTheme } from '@/theme';
 
 function offsetLabel(offset: number): string {
@@ -61,70 +59,48 @@ function offsetLabel(offset: number): string {
   return offset > 0 ? `${unit} before` : `${unit} after`;
 }
 
-function fileSize(bytes: number): string {
-  return bytes > 1024 * 1024
-    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
 function Detail({
   o,
   menuOpen,
   setMenuOpen,
 }: {
-  o: ObligationDetail;
+  o: SubscriptionDetail;
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
 }) {
   const { colors } = useTheme();
-  const me = useMe();
-  const orgId = useSession((s) => s.activeOrgId);
-  const role = me.data?.workspaces.find((w) => w.id === orgId)?.role;
-  const canManage =
-    role === 'ADMIN' ||
-    role === 'FINANCE' ||
-    (role === 'DEPARTMENT' &&
-      o.department?.id === me.data?.workspaces.find((w) => w.id === orgId)?.departmentId);
-  const prefs = usePrefs();
+  const can = usePermissions();
+  const canManage = can.manageSubscriptions;
   const mute = useMute();
-  const archive = useArchiveObligation();
-  const del = useDeleteObligation();
+  const archive = useArchiveSubscription();
+  const del = useDeleteSubscription();
   const [recordOpen, setRecordOpen] = useState(false);
   // A new key per opening gives the sheet fresh fields every time.
   const [recordKey, setRecordKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const muted = prefs.data?.mutedObligationIds.includes(o.id) ?? false;
-  const today = toISODate(new Date());
+  const muted = o.muted;
+  const today = useWorkspaceToday();
   const days = o.daysUntilDue;
   const active = o.status === 'ACTIVE';
-
-  const share = (a: { id: string; fileName: string; mimeType: string }) =>
-    downloadAndShare(`/attachments/${a.id}`, a.fileName, a.mimeType).catch(() =>
-      toast.error('Could not open the file'),
-    );
 
   return (
     <>
       <View style={{ alignItems: 'center', gap: 4, paddingTop: 4 }}>
-        <CategoryIcon icon={o.icon} size={58} />
+        <CategoryIcon icon={o.category.icon} size={58} />
         <Text variant="small" tone="muted" style={{ marginTop: 8 }}>
-          {o.platform ? `${o.platform.name} · ` : ''}
-          {o.provider}
+          {o.company.name}
+          {o.provider ? ` · ${o.provider}` : ''}
         </Text>
         <Text variant="title" align="center" accessibilityRole="header">
           {o.name}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginVertical: 6 }}>
-          <Text variant="amountXL">{formatMoney(o.amountMinor, o.currency)}</Text>
-          <Text variant="smallStrong" tone="muted">
-            {o.currency}
-          </Text>
+          <Text variant="amountXL">{formatUSD(o.amountCents)}</Text>
         </View>
         <StatusBadge status={o.paymentStatus} />
-        {o.paidMinor > 0 && active ? (
+        {o.paidCents > 0 && active ? (
           <Text variant="small" color={colors.purple} style={{ marginTop: 6 }}>
-            {formatMoney(o.paidMinor, o.currency)} paid ·{' '}
-            {formatMoney(o.remainingMinor, o.currency)} left
+            {formatUSD(o.paidCents)} paid · {formatUSD(o.remainingCents)} left
           </Text>
         ) : null}
       </View>
@@ -181,11 +157,30 @@ function Detail({
           />
           <ListItem
             divider
-            icon={<UserRound size={18} color={colors.primaryStrong} />}
-            title="Assigned to"
-            trailing={<Text variant="bodyStrong">{o.assignee?.name ?? '—'}</Text>}
+            icon={<Building2 size={18} color={colors.primaryStrong} />}
+            title="Company"
+            trailing={<Text variant="bodyStrong">{o.company.name}</Text>}
+          />
+          {o.provider ? (
+            <ListItem
+              divider
+              icon={<Store size={18} color={colors.primaryStrong} />}
+              title="Provider"
+              trailing={<Text variant="bodyStrong">{o.provider}</Text>}
+            />
+          ) : null}
+          <ListItem
+            divider
+            icon={<CalendarDays size={18} color={colors.primaryStrong} />}
+            title="Started"
+            trailing={<Text variant="bodyStrong">{formatDate(o.startDate)}</Text>}
           />
         </Card>
+        {o.subscriptionKey ? (
+          <View style={{ marginTop: 12 }}>
+            <SubscriptionKeyCard subscriptionId={o.id} value={o.subscriptionKey} canReveal={can.revealKeys} />
+          </View>
+        ) : null}
         {o.description ? (
           <Text variant="small" tone="muted" style={{ marginTop: 8 }}>
             {o.description}
@@ -198,7 +193,7 @@ function Detail({
           <SectionHeader
             title="Reminder schedule"
             action={canManage ? 'Edit' : undefined}
-            onAction={() => router.push(`/payments/${o.id}/edit`)}
+            onAction={() => router.push(`/subscriptions/${o.id}/edit`)}
           />
           <Card style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 12 }}>
             {o.reminders.map((r) => (
@@ -237,8 +232,8 @@ function Detail({
       <View>
         <SectionHeader
           title="Payment history"
-          action={o.history.length ? 'View all' : undefined}
-          onAction={() => router.push({ pathname: '/history', params: { obligationId: o.id } })}
+          action={o.historyTotal > o.history.length ? `View all ${o.historyTotal}` : undefined}
+          onAction={() => router.push({ pathname: '/history', params: { subscriptionId: o.id, name: o.name } })}
         />
         {o.history.length ? (
           <Card style={{ paddingVertical: 4 }}>
@@ -265,20 +260,12 @@ function Detail({
                   }}
                 />
                 <View style={{ flex: 1 }}>
-                  <Text variant="smallStrong">{formatMoney(p.amountMinor, p.currency)} paid</Text>
+                  <Text variant="smallStrong">{formatUSD(p.amountCents)} paid</Text>
                   <Text variant="caption" tone="muted">
                     {formatDate(p.paidOn)} · {METHOD_LABELS[p.method]}
                     {p.reference ? ` · ${p.reference}` : ''}
                   </Text>
                 </View>
-                {p.attachments[0] ? (
-                  <IconButton
-                    accessibilityLabel="Open receipt"
-                    onPress={() => void share(p.attachments[0]!)}
-                  >
-                    <ReceiptText size={18} color={colors.primaryStrong} />
-                  </IconButton>
-                ) : null}
               </View>
             ))}
           </Card>
@@ -289,51 +276,12 @@ function Detail({
         )}
       </View>
 
-      {o.attachments.length ? (
-        <View>
-          <SectionHeader title="Attachments" />
-          <View style={{ gap: 8 }}>
-            {o.attachments.map((a) => (
-              <Pressable
-                key={a.id}
-                accessibilityRole="button"
-                accessibilityLabel={`Open ${a.fileName}`}
-                onPress={() => void share(a)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 10,
-                  minHeight: 60,
-                  padding: 12,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderStyle: 'dashed',
-                  borderColor: colors.dashed,
-                  backgroundColor: colors.surface,
-                }}
-              >
-                <FileText size={22} color={colors.primaryStrong} />
-                <View style={{ flex: 1 }}>
-                  <Text variant="smallStrong" numberOfLines={1}>
-                    {a.fileName}
-                  </Text>
-                  <Text variant="caption" tone="muted">
-                    {a.mimeType === 'application/pdf' ? 'PDF' : 'Image'} · {fileSize(a.size)}
-                  </Text>
-                </View>
-                <Download size={18} color={colors.primaryStrong} />
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
       {canManage && active ? (
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
           <Button
             variant="secondary"
             style={{ flex: 0.7 }}
-            onPress={() => router.push(`/payments/${o.id}/edit`)}
+            onPress={() => router.push(`/subscriptions/${o.id}/edit`)}
           >
             Edit
           </Button>
@@ -352,7 +300,7 @@ function Detail({
 
       <RecordPaymentSheet
         key={recordKey}
-        obligation={o}
+        subscription={o}
         today={today}
         visible={recordOpen}
         onClose={() => setRecordOpen(false)}
@@ -372,7 +320,7 @@ function Detail({
           onPress={() => {
             setMenuOpen(false);
             mute.mutate(
-              { obligationId: o.id, muted: !muted },
+              { subscriptionId: o.id, muted: !muted },
               { onSuccess: () => toast.info(muted ? 'Reminders back on' : 'Muted for you') },
             );
           }}
@@ -403,12 +351,12 @@ function Detail({
             }}
           />
         ) : null}
-        {(role === 'ADMIN' || role === 'FINANCE') && o.history.length === 0 ? (
+        {canManage && o.historyTotal === 0 ? (
           <ListItem
             divider
             destructive
             icon={<Trash2 size={19} color={colors.red} />}
-            title="Delete payment"
+            title="Delete subscription"
             onPress={() => {
               setMenuOpen(false);
               setConfirmDelete(true);
@@ -423,7 +371,7 @@ function Detail({
         title={`Delete ${o.name}?`}
       >
         <Text variant="body" tone="muted">
-          This removes the payment and its reminders. It can’t be undone.
+          This removes the subscription and its reminders. It can’t be undone.
         </Text>
         <Button
           full
@@ -465,10 +413,10 @@ function TopBarMenu({
   );
 }
 
-export default function PaymentDetailScreen() {
+export default function SubscriptionDetailScreen() {
   const { colors } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const query = useObligation(id);
+  const query = useSubscription(id);
   const [refreshing, setRefreshing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -476,7 +424,7 @@ export default function PaymentDetailScreen() {
     <Screen
       header={
         <TopBar
-          title="Payment detail"
+          title="Subscription"
           action={
             query.data ? (
               <IconButton accessibilityLabel="More options" onPress={() => setMenuOpen(true)}>
@@ -504,7 +452,7 @@ export default function PaymentDetailScreen() {
           o ? (
             <Detail o={o} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
           ) : (
-            <EmptyState illustration="no-results" title="Payment not found" />
+            <EmptyState illustration="no-results" title="Subscription not found" />
           )
         }
       </QueryState>

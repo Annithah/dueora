@@ -10,14 +10,14 @@ import { useTheme } from '@/theme';
 const FAQ: [string, string][] = [
   [
     'When do reminders go out?',
-    'At your workspace’s reminder time (09:00 by default, in its timezone): 30, 14, 7, 3 and 1 day before, on the day, then 1, 3 and 7 days after — and weekly until it’s paid. Change them per payment or in Notifications.',
+    'At your workspace’s reminder time (09:00 by default, in its timezone): 30, 14, 7, 3 and 1 day before, on the day, then 1, 3 and 7 days after — and weekly until it’s paid. Change them per subscription or in Notifications.',
   ],
   [
     'I paid part of a bill. What happens?',
-    'Record a partial payment. The payment stays open as “Partially paid” and reminders mention what’s left. When the rest is recorded, the next cycle begins.',
+    'Record a partial payment. The subscription stays “Partially paid” and reminders mention what’s left. When the rest is recorded, the next due date moves forward automatically.',
   ],
   [
-    'How do I stop reminders for one payment?',
+    'How do I stop reminders for one subscription?',
     'Open it, tap ••• and choose Mute (just for you) or Archive (for everyone, history is kept).',
   ],
   [
@@ -26,11 +26,11 @@ const FAQ: [string, string][] = [
   ],
   [
     'Who can see what?',
-    'Admins see everything. Finance manages payments and reports. Department officers manage their department. Employees see only what’s assigned to them.',
+    'Admins can do everything. Finance manages subscriptions, payments and reports. Viewers can look but not change anything — everyone gets the reminders. Subscription keys are shown in full only to admins and finance.',
   ],
   [
     'Does DueOra work offline?',
-    'Yes, for reading: your latest data is saved on the phone. Recording payments needs a connection.',
+    'Yes, for reading: your latest data is saved on the phone. Adding subscriptions and recording payments needs a connection.',
   ],
 ];
 

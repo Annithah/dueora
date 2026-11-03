@@ -1,45 +1,14 @@
 /**
- * Money is always an integer in the currency's smallest unit (never floats).
- * Display follows the prototype: "$1,523", "$1,523.50", "18,880 RWF", "€40".
+ * DueOra works only in US dollars. Money is always an integer number of cents (never floats)
+ * and is shown like "$1,234.56".
  */
 
-/** ISO 4217 minor-unit exponents for currencies that differ from the default of 2. */
-const MINOR_UNITS: Record<string, number> = {
-  RWF: 0,
-  UGX: 0,
-  JPY: 0,
-  KRW: 0,
-  XAF: 0,
-  XOF: 0,
-  BIF: 0,
-  KWD: 3,
-  BHD: 3,
-  TND: 3,
-};
-
-/** Currencies shown with a leading symbol; everything else shows the code after the number. */
-const SYMBOLS: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-};
-
-export const COMMON_CURRENCIES = ['USD', 'RWF', 'EUR', 'GBP', 'KES', 'UGX', 'TZS'] as const;
-
-export function minorUnits(currency: string): number {
-  return MINOR_UNITS[currency.toUpperCase()] ?? 2;
-}
-
-export function currencySymbol(currency: string): string | undefined {
-  return SYMBOLS[currency.toUpperCase()];
-}
-
-export interface FormatMoneyOptions {
-  /** Always show minor digits ("$240.00"). Default: only when the amount has a fraction. */
-  forceDecimals?: boolean;
-  /** Use "1.2M" style for large values (summary cards, hero totals). */
+export interface FormatUSDOptions {
+  /** Use "$12.5K" style for large values (summary cards, chart axes). */
   compact?: boolean;
-  /** Omit the symbol / code. */
+  /** Drop ".00" when the amount is whole dollars (chart labels). */
+  trimZeroCents?: boolean;
+  /** Omit the "$". */
   bare?: boolean;
 }
 
@@ -47,70 +16,49 @@ function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function compactNumber(value: number): string {
-  const abs = Math.abs(value);
+function compactNumber(dollars: number): string {
   const units: [number, string][] = [
     [1e9, 'B'],
     [1e6, 'M'],
     [1e3, 'K'],
   ];
   for (const [size, suffix] of units) {
-    if (abs >= size) {
-      const scaled = Math.round((value / size) * 10) / 10;
-      return `${scaled.toString()}${suffix}`;
-    }
+    if (dollars >= size) return `${Math.round((dollars / size) * 10) / 10}${suffix}`;
   }
-  return groupThousands(Math.trunc(value).toString());
+  return groupThousands(Math.trunc(dollars).toString());
 }
 
-/** Format integer minor units as a human string. Pure string maths — no float rounding errors. */
-export function formatMoney(
-  amountMinor: number,
-  currency: string,
-  options: FormatMoneyOptions = {},
-): string {
-  if (!Number.isInteger(amountMinor)) {
-    throw new Error(`amountMinor must be an integer, got ${amountMinor}`);
-  }
-  const code = currency.toUpperCase();
-  const exponent = minorUnits(code);
-  const negative = amountMinor < 0;
-  const abs = Math.abs(amountMinor);
+/** Integer cents → "$1,234.56". Pure string maths — no float rounding errors. */
+export function formatUSD(cents: number, options: FormatUSDOptions = {}): string {
+  if (!Number.isInteger(cents)) throw new Error(`cents must be an integer, got ${cents}`);
+  const negative = cents < 0;
+  const abs = Math.abs(cents);
+  const whole = Math.floor(abs / 100);
+  const fraction = abs % 100;
 
   let number: string;
-  if (options.compact && abs / 10 ** exponent >= 10_000) {
-    number = compactNumber(abs / 10 ** exponent);
+  if (options.compact && whole >= 10_000) {
+    number = compactNumber(abs / 100);
   } else {
-    const divisor = 10 ** exponent;
-    const whole = Math.floor(abs / divisor);
-    const fraction = abs % divisor;
     number = groupThousands(whole.toString());
-    if (exponent > 0 && (fraction > 0 || options.forceDecimals)) {
-      number += `.${fraction.toString().padStart(exponent, '0')}`;
-    }
+    if (!(options.trimZeroCents && fraction === 0)) number += `.${fraction.toString().padStart(2, '0')}`;
   }
-
-  const sign = negative ? '-' : '';
-  if (options.bare) return `${sign}${number}`;
-  const symbol = currencySymbol(code);
-  return symbol ? `${sign}${symbol}${number}` : `${sign}${number} ${code}`;
+  return `${negative ? '-' : ''}${options.bare ? '' : '$'}${number}`;
 }
 
 /**
- * Parse user input ("1,523.5", "18 880") into minor units. Returns null when invalid.
+ * Parse what someone typed ("1,234.5", "$ 18 880") into cents. Returns null when invalid.
  * Works on the string so 0.1 + 0.2 style float errors can't creep in.
  */
-export function parseMoneyInput(input: string, currency: string): number | null {
-  const exponent = minorUnits(currency);
-  const cleaned = input.replace(/[\s,]/g, '');
-  if (!/^\d+(\.\d*)?$/.test(cleaned)) return null;
+export function parseUSDInput(input: string): number | null {
+  const cleaned = input.replace(/[\s,$]/g, '');
+  if (!/^\d+(\.\d{0,2})?$/.test(cleaned)) return null;
   const [whole = '0', fraction = ''] = cleaned.split('.');
-  if (fraction.length > exponent) return null;
-  const minor = Number(whole) * 10 ** exponent + Number(fraction.padEnd(exponent, '0') || '0');
-  return Number.isSafeInteger(minor) ? minor : null;
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0') || '0');
+  return Number.isSafeInteger(cents) ? cents : null;
 }
 
-/** Inverse of parseMoneyInput for prefilling inputs ("240.00"). */
-export function minorToInput(amountMinor: number, currency: string): string {
-  return formatMoney(amountMinor, currency, { bare: true, forceDecimals: true }).replace(/,/g, '');
+/** Inverse of parseUSDInput for prefilling inputs: 24000 → "240.00". */
+export function centsToInput(cents: number): string {
+  return formatUSD(cents, { bare: true }).replace(/,/g, '');
 }

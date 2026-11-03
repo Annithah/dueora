@@ -9,6 +9,7 @@ import {
   Moon,
   ReceiptText,
   ShieldCheck,
+  Store,
   Tag,
   UserRound,
   UsersRound,
@@ -38,57 +39,30 @@ export default function MoreTab() {
   const queryClient = useQueryClient();
   const me = useMe();
   const workspace = useWorkspace();
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   const setTheme = usePreferences((s) => s.setTheme);
-  const role = me.data?.workspaces.find((w) => w.id === orgId)?.role;
+  const role = me.data?.workspaces.find((w) => w.id === workspaceId)?.role;
 
   const allItems: Item[] = [
-    { icon: UserRound, title: 'Profile', subtitle: 'Your details and password', href: '/profile' },
+    { icon: UserRound, title: 'Profile', subtitle: 'Your name and password', href: '/profile' },
+    { icon: Building2, title: 'Workspace', subtitle: workspace.data?.name ?? 'Name, type and timezone', href: '/settings/workspace' },
     {
-      icon: Building2,
-      title: 'Company info',
-      subtitle: workspace.data?.name ?? 'Workspace settings',
-      href: '/settings/company',
+      icon: Store,
+      title: 'Companies',
+      subtitle: `${workspace.data?.companyCount ?? 0} compan${workspace.data?.companyCount === 1 ? 'y' : 'ies'}`,
+      href: '/settings/companies',
     },
-    {
-      icon: ReceiptText,
-      title: 'Payment history',
-      subtitle: 'Receipts and recorded payments',
-      href: '/history',
-    },
-    {
-      icon: BarChart3,
-      title: 'Reports',
-      subtitle: 'Spending and forecasts',
-      href: '/reports',
-      roles: ['ADMIN', 'FINANCE'],
-    },
+    { icon: Tag, title: 'Categories', subtitle: 'Defaults and your own', href: '/settings/categories' },
+    { icon: ReceiptText, title: 'Payment history', subtitle: 'Every payment you’ve recorded', href: '/history' },
+    { icon: BarChart3, title: 'Reports', subtitle: 'Spending, forecasts, PDF & Excel', href: '/reports' },
     {
       icon: UsersRound,
       title: 'Team & roles',
       subtitle: `${workspace.data?.memberCount ?? 1} member${workspace.data?.memberCount === 1 ? '' : 's'}`,
       href: '/team',
-      roles: ['ADMIN', 'FINANCE', 'DEPARTMENT'],
     },
-    {
-      icon: Tag,
-      title: 'Categories & projects',
-      subtitle: 'Customise your workspace',
-      href: '/settings/categories',
-      roles: ['ADMIN', 'FINANCE', 'DEPARTMENT'],
-    },
-    {
-      icon: Bell,
-      title: 'Notifications',
-      subtitle: 'Push, email, digest and quiet hours',
-      href: '/settings/notifications',
-    },
-    {
-      icon: ShieldCheck,
-      title: 'Security',
-      subtitle: 'Password and biometric lock',
-      href: '/settings/security',
-    },
+    { icon: Bell, title: 'Notifications', subtitle: 'Push, email, digest and quiet hours', href: '/settings/notifications' },
+    { icon: ShieldCheck, title: 'Security', subtitle: 'Password and biometric lock', href: '/settings/security' },
   ];
   const items = allItems.filter((i) => !i.roles || (role && i.roles.includes(role)));
 
@@ -98,13 +72,13 @@ export default function MoreTab() {
         eyebrow="Workspace"
         title="More"
         right={
-          me.data ? <Avatar name={me.data.name} imageUrl={me.data.avatarUrl} size={42} /> : null
+          me.data ? <Avatar name={me.data.name} size={42} /> : null
         }
       />
 
       {me.data ? (
         <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <Avatar name={me.data.name} imageUrl={me.data.avatarUrl} size={52} />
+          <Avatar name={me.data.name} size={52} />
           <View style={{ flex: 1, gap: 2 }}>
             <Text variant="bodyStrong">{me.data.name}</Text>
             <Text variant="small" tone="muted" numberOfLines={1}>

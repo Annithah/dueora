@@ -25,7 +25,7 @@ if (Platform.OS !== 'web') configureForegroundHandling();
  */
 function useNativePushSetup(): void {
   const queryClient = useQueryClient();
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   const lastResponse = Notifications.useLastNotificationResponse();
 
   useEffect(() => {
@@ -54,10 +54,10 @@ function useNativePushSetup(): void {
         tone: (data as { type?: string })?.type === 'OVERDUE' ? 'warning' : 'info',
         onPress: to ? () => router.push(to as never) : undefined,
       });
-      void queryClient.invalidateQueries({ queryKey: inboxKey(orgId) });
+      void queryClient.invalidateQueries({ queryKey: inboxKey(workspaceId) });
     });
     return () => sub.remove();
-  }, [queryClient, orgId]);
+  }, [queryClient, workspaceId]);
 }
 
 /** Push isn't available in the web preview, so it gets a no-op. */

@@ -187,7 +187,7 @@ export default function AlertsTab() {
                             if (!n.readAt) markRead.mutate(n.id);
                             const to = routeForNotification({
                               ...n.data,
-                              obligationId: n.obligationId ?? undefined,
+                              subscriptionId: n.subscriptionId ?? undefined,
                               type: n.type,
                             });
                             if (to && to !== '/alerts') router.push(to as never);

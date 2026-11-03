@@ -65,13 +65,12 @@ export default function AcceptInvite() {
         <Illustration name="team" size={180} />
         <Card style={{ alignSelf: 'stretch', flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <Avatar
-            name={inv.organization.name}
-            imageUrl={inv.organization.logoUrl}
+            name={inv.workspace.name}
             color={colors.primary}
             size={52}
           />
           <View style={{ flex: 1, gap: 2 }}>
-            <Text variant="section">{inv.organization.name}</Text>
+            <Text variant="section">{inv.workspace.name}</Text>
             <Text variant="small" tone="muted">
               {inv.invitedBy} invited you as {ROLE_LABELS[inv.role]}
             </Text>
@@ -91,7 +90,7 @@ export default function AcceptInvite() {
         />
         {signedIn ? (
           <Button full size="lg" loading={accept.isPending} onPress={onAccept}>
-            Join {inv.organization.name}
+            Join {inv.workspace.name}
           </Button>
         ) : (
           <View style={{ alignSelf: 'stretch', gap: 10 }}>

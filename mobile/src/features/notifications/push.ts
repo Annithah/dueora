@@ -26,12 +26,12 @@ export async function ensureAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('reminders', {
     name: 'Payment reminders',
-    description: 'Upcoming and due-today payments',
+    description: 'Upcoming and due-today subscriptions',
     importance: AndroidImportance.DEFAULT,
     lightColor: '#0F5C5C',
   });
   await Notifications.setNotificationChannelAsync('overdue', {
-    name: 'Overdue payments',
+    name: 'Overdue subscriptions',
     description: 'Payments that are past their due date',
     importance: AndroidImportance.HIGH,
     vibrationPattern: [0, 400, 200, 400],
@@ -98,8 +98,8 @@ export async function unregisterDevice(): Promise<void> {
 /** Where a notification should take the user. */
 export function routeForNotification(data: Record<string, unknown> | undefined): string | null {
   if (!data) return null;
-  if (typeof data.obligationId === 'string' && data.obligationId)
-    return `/payments/${data.obligationId}`;
+  if (typeof data.subscriptionId === 'string' && data.subscriptionId)
+    return `/subscriptions/${data.subscriptionId}`;
   if (data.type === 'DIGEST' || data.type === 'SYSTEM') return '/alerts';
   return null;
 }

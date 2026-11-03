@@ -22,7 +22,7 @@ const SLIDES: { title: string; text: string; illustration: IllustrationName }[] 
     illustration: 'remind',
   },
   {
-    title: 'Track every payment in one place',
+    title: 'Track every subscription in one place',
     text: 'See what is paid, upcoming or overdue at a glance.',
     illustration: 'track',
   },

@@ -1,7 +1,7 @@
 /**
  * Fetch wrapper for the DueOra API.
  * - JSON in/out, typed errors (ApiError)
- * - Bearer access token + X-Org-Id workspace header
+ * - Bearer access token + X-Workspace-Id workspace header
  * - On 401 it refreshes the session once (single-flight: concurrent requests share one
  *   refresh) and retries; if refreshing fails the session is ended.
  */
@@ -44,11 +44,9 @@ export interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined | null>;
   /** Send the access token (default true). */
   auth?: boolean;
-  /** Send X-Org-Id (default true when signed in). */
+  /** Send X-Workspace-Id (default true when signed in). */
   org?: boolean;
   signal?: AbortSignal;
-  /** Raw FormData body (uploads). */
-  formData?: FormData;
 }
 
 export interface ApiClient {
@@ -95,15 +93,13 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   ): Promise<Response> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     let body: BodyInit | undefined;
-    if (options.formData) {
-      body = options.formData;
-    } else if (options.body !== undefined) {
+    if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(options.body);
     }
     if (accessToken && options.auth !== false) headers.Authorization = `Bearer ${accessToken}`;
-    const orgId = deps.getOrgId();
-    if (orgId && options.org !== false) headers['X-Org-Id'] = orgId;
+    const workspaceId = deps.getOrgId();
+    if (workspaceId && options.org !== false) headers['X-Workspace-Id'] = workspaceId;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);

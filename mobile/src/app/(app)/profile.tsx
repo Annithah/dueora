@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Mail, Phone, UserRound } from 'lucide-react-native';
+import { Mail, UserRound } from 'lucide-react-native';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -27,7 +27,6 @@ function ProfileForm({ me }: { me: Me }) {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
   const [name, setName] = useState(me.name);
-  const [phone, setPhone] = useState(me.phone ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,10 +34,7 @@ function ProfileForm({ me }: { me: Me }) {
     setError(null);
     setSaving(true);
     try {
-      const updated = await api.patch<Me>('/me', {
-        name: name.trim(),
-        phone: phone.trim() || null,
-      });
+      const updated = await api.patch<Me>('/me', { name: name.trim() });
       queryClient.setQueryData(meKey, updated);
       toast.success('Profile saved');
     } catch (err) {
@@ -70,14 +66,6 @@ function ProfileForm({ me }: { me: Me }) {
         value={name}
         onChangeText={setName}
         autoComplete="name"
-      />
-      <Input
-        label="Phone (optional)"
-        icon={<Phone size={18} color={colors.muted} />}
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-        placeholder="+250 788 000 000"
       />
       <Card tone="primary" style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
         <Mail size={18} color={colors.primaryStrong} />

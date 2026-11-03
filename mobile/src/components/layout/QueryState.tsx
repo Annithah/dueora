@@ -1,4 +1,3 @@
-import type { UseQueryResult } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 import { ApiError } from '@/api';
@@ -14,7 +13,8 @@ export function QueryState<T>({
   children,
   loading,
 }: {
-  query: UseQueryResult<T>;
+  /** Any TanStack query result (regular or infinite). */
+  query: { data: T | undefined; isError: boolean; error: unknown; refetch: () => unknown };
   children: (data: T) => ReactNode;
   loading?: ReactNode;
 }) {
@@ -27,7 +27,7 @@ export function QueryState<T>({
         title={offline ? "You're offline" : 'Something went wrong'}
         message={
           offline
-            ? "We'll show your payments as soon as you're back online."
+            ? "We'll show your subscriptions as soon as you're back online."
             : 'We couldn’t load this. Please try again.'
         }
         actionLabel="Try again"

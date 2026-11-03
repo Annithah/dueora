@@ -6,7 +6,7 @@ import type { Tokens } from '@/api/client';
 const KEYS = {
   refreshToken: 'dueora.refreshToken',
   accessToken: 'dueora.accessToken',
-  activeOrgId: 'dueora.activeOrgId',
+  activeWorkspaceId: 'dueora.activeWorkspaceId',
   onboarded: 'dueora.onboarded',
 } as const;
 
@@ -15,13 +15,13 @@ export type SessionStatus = 'loading' | 'signedOut' | 'signedIn';
 interface SessionState {
   status: SessionStatus;
   tokens: Tokens | null;
-  activeOrgId: string | null;
+  activeWorkspaceId: string | null;
   hasOnboarded: boolean;
   /** Read persisted session on app start. */
   hydrate: () => Promise<void>;
-  signIn: (tokens: Tokens, activeOrgId?: string | null) => Promise<void>;
+  signIn: (tokens: Tokens, activeWorkspaceId?: string | null) => Promise<void>;
   setTokens: (tokens: Tokens) => Promise<void>;
-  setActiveOrg: (orgId: string | null) => Promise<void>;
+  setActiveWorkspace: (workspaceId: string | null) => Promise<void>;
   markOnboarded: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -35,20 +35,20 @@ async function save(key: string, value: string | null) {
 export const useSession = create<SessionState>((set) => ({
   status: 'loading',
   tokens: null,
-  activeOrgId: null,
+  activeWorkspaceId: null,
   hasOnboarded: false,
 
   hydrate: async () => {
     try {
-      const [refreshToken, accessToken, activeOrgId, onboarded] = await Promise.all([
+      const [refreshToken, accessToken, activeWorkspaceId, onboarded] = await Promise.all([
         SecureStore.getItemAsync(KEYS.refreshToken),
         SecureStore.getItemAsync(KEYS.accessToken),
-        SecureStore.getItemAsync(KEYS.activeOrgId),
+        SecureStore.getItemAsync(KEYS.activeWorkspaceId),
         SecureStore.getItemAsync(KEYS.onboarded),
       ]);
       set({
         tokens: refreshToken ? { refreshToken, accessToken: accessToken ?? '' } : null,
-        activeOrgId,
+        activeWorkspaceId,
         hasOnboarded: onboarded === '1',
         status: refreshToken ? 'signedIn' : 'signedOut',
       });
@@ -57,18 +57,18 @@ export const useSession = create<SessionState>((set) => ({
     }
   },
 
-  signIn: async (tokens, activeOrgId = null) => {
+  signIn: async (tokens, activeWorkspaceId = null) => {
     await Promise.all([
       save(KEYS.refreshToken, tokens.refreshToken),
       save(KEYS.accessToken, tokens.accessToken),
-      activeOrgId ? save(KEYS.activeOrgId, activeOrgId) : Promise.resolve(),
+      activeWorkspaceId ? save(KEYS.activeWorkspaceId, activeWorkspaceId) : Promise.resolve(),
       save(KEYS.onboarded, '1'),
     ]);
     set((s) => ({
       tokens,
       status: 'signedIn',
       hasOnboarded: true,
-      activeOrgId: activeOrgId ?? s.activeOrgId,
+      activeWorkspaceId: activeWorkspaceId ?? s.activeWorkspaceId,
     }));
   },
 
@@ -80,9 +80,9 @@ export const useSession = create<SessionState>((set) => ({
     set({ tokens });
   },
 
-  setActiveOrg: async (orgId) => {
-    await save(KEYS.activeOrgId, orgId);
-    set({ activeOrgId: orgId });
+  setActiveWorkspace: async (workspaceId) => {
+    await save(KEYS.activeWorkspaceId, workspaceId);
+    set({ activeWorkspaceId: workspaceId });
   },
 
   markOnboarded: async () => {
@@ -94,8 +94,8 @@ export const useSession = create<SessionState>((set) => ({
     await Promise.all([
       save(KEYS.refreshToken, null),
       save(KEYS.accessToken, null),
-      save(KEYS.activeOrgId, null),
+      save(KEYS.activeWorkspaceId, null),
     ]);
-    set({ tokens: null, activeOrgId: null, status: 'signedOut' });
+    set({ tokens: null, activeWorkspaceId: null, status: 'signedOut' });
   },
 }));

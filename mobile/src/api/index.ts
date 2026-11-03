@@ -8,7 +8,7 @@ export const api = createApiClient({
   baseUrl: API_URL,
   getTokens: () => useSession.getState().tokens,
   setTokens: (tokens) => useSession.getState().setTokens(tokens),
-  getOrgId: () => useSession.getState().activeOrgId,
+  getOrgId: () => useSession.getState().activeWorkspaceId,
   onSessionExpired: () => {
     void useSession.getState().signOut();
   },

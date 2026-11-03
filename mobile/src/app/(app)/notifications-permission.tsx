@@ -9,7 +9,7 @@ import { Button, Text, toast } from '@/components/ui';
 import { permissionState, registerDevice, requestPermission } from '@/features/notifications/push';
 import { useTheme } from '@/theme';
 
-/** Shown right after the first obligation is created — the moment reminders start to matter. */
+/** Shown right after the first subscription is created — the moment reminders start to matter. */
 export default function NotificationsPermission() {
   const { colors } = useTheme();
   const [busy, setBusy] = useState(false);
@@ -63,7 +63,7 @@ export default function NotificationsPermission() {
           Never miss a due date
         </Text>
         <Text variant="body" tone="muted" align="center">
-          Your first payment is saved. Let DueOra remind you before it&apos;s due — that&apos;s the
+          Your first subscription is saved 🎉 Let DueOra remind you before it&apos;s due — that&apos;s the
           whole point.
         </Text>
       </View>

@@ -76,15 +76,15 @@ describe('Button', () => {
 });
 
 describe('AmountText', () => {
-  it('formats minor units per currency', async () => {
+  it('formats integer cents as US dollars', async () => {
     await renderWithTheme(
       <>
-        <AmountText amountMinor={152300} currency="USD" />
-        <AmountText amountMinor={18880} currency="RWF" />
+        <AmountText amountCents={152300} />
+        <AmountText amountCents={5} />
       </>,
     );
-    expect(screen.getByText('$1,523')).toBeTruthy();
-    expect(screen.getByText('18,880 RWF')).toBeTruthy();
+    expect(screen.getByText('$1,523.00')).toBeTruthy();
+    expect(screen.getByText('$0.05')).toBeTruthy();
   });
 });
 
@@ -197,9 +197,9 @@ describe('EmptyState', () => {
     const onAction = jest.fn();
     await renderWithTheme(
       <EmptyState
-        illustration="empty-payments"
+        illustration="empty-subscriptions"
         title="No payments yet"
-        message="Add your first obligation and DueOra will keep watch."
+        message="Add your first subscription and DueOra will keep watch."
         actionLabel="Add payment"
         onAction={onAction}
       />,

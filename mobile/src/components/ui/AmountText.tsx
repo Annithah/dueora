@@ -1,24 +1,18 @@
-import { formatMoney, type FormatMoneyOptions } from '@/lib/money';
+import { formatUSD, type FormatUSDOptions } from '@/lib/money';
 import type { TypographyVariant } from '@/theme';
 
 import { Text, type TextProps } from './Text';
 
 export interface AmountTextProps extends Omit<TextProps, 'children'> {
-  amountMinor: number;
-  currency: string;
+  /** US dollars in integer cents. */
+  amountCents: number;
   variant?: TypographyVariant;
-  options?: FormatMoneyOptions;
+  options?: FormatUSDOptions;
 }
 
-/** Formats integer minor units for the given ISO 4217 currency ("$1,523", "18,880 RWF"). */
-export function AmountText({
-  amountMinor,
-  currency,
-  variant = 'bodyStrong',
-  options,
-  ...rest
-}: AmountTextProps) {
-  const text = formatMoney(amountMinor, currency, options);
+/** Formats integer cents as US dollars: "$1,234.56". */
+export function AmountText({ amountCents, variant = 'bodyStrong', options, ...rest }: AmountTextProps) {
+  const text = formatUSD(amountCents, options);
   return (
     <Text variant={variant} accessibilityLabel={text} {...rest}>
       {text}

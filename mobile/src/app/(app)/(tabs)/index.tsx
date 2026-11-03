@@ -1,48 +1,30 @@
 import { router } from 'expo-router';
-import { BarChart3, Bell, CalendarDays, Plus, ReceiptText } from 'lucide-react-native';
+import { BarChart3, Bell, CalendarDays, History, Plus } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
+import { BreakdownBars } from '@/components/charts/BreakdownBars';
 import { BarChart, DonutChart, monthShort } from '@/components/charts/Charts';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
-import { PaymentRow } from '@/components/payments/PaymentRow';
-import {
-  Avatar,
-  Card,
-  EmptyState,
-  IconButton,
-  SectionHeader,
-  Skeleton,
-  Text,
-} from '@/components/ui';
+import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import { Avatar, Card, EmptyState, IconButton, SectionHeader, Skeleton, Text } from '@/components/ui';
 import { useMe } from '@/features/auth/api';
-import { useDashboard, type Dashboard, type MoneyBlock } from '@/features/insights/api';
+import { useDashboard, type Dashboard, type MoneyBlock, type SubscriptionLite } from '@/features/insights/api';
 import { useInbox } from '@/features/notifications/api';
+import { useActiveWorkspaceSummary, usePermissions } from '@/features/workspaces/api';
 import { greetingFor } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
-import { useSession } from '@/state/session';
+import { formatUSD } from '@/lib/money';
 import { elevation, radius, spacing, statusBrand, useTheme } from '@/theme';
 
-function SummaryCard({
-  label,
-  block,
-  sub,
-  dot,
-}: {
-  label: string;
-  block: MoneyBlock;
-  sub: string;
-  dot: string;
-}) {
+function SummaryCard({ label, block, sub, dot }: { label: string; block: MoneyBlock; sub: string; dot: string }) {
   const { colors } = useTheme();
-  const primary = block.totals.length === 1 ? block.totals[0]! : block.converted;
   return (
     <View
       accessible
-      accessibilityLabel={`${label}: ${formatMoney(primary.amountMinor, primary.currency)}, ${sub}`}
+      accessibilityLabel={`${label}: ${formatUSD(block.amountCents)}, ${sub}`}
       style={{
         width: 164,
         minHeight: 120,
@@ -62,7 +44,7 @@ function SummaryCard({
         </Text>
       </View>
       <Text variant="title" style={{ marginTop: 14 }} numberOfLines={1} adjustsFontSizeToFit>
-        {formatMoney(primary.amountMinor, primary.currency, { compact: true })}
+        {formatUSD(block.amountCents, { compact: true })}
       </Text>
       <Text variant="caption" tone="muted" style={{ marginTop: 4 }} numberOfLines={2}>
         {sub}
@@ -71,105 +53,105 @@ function SummaryCard({
   );
 }
 
-function subline(block: MoneyBlock): string {
-  const n = `${block.count} ${block.count === 1 ? 'obligation' : 'obligations'}`;
-  if (block.totals.length <= 1)
-    return block.totals[0] && block.totals[0].currency !== block.converted.currency
-      ? `${block.totals[0].currency} · ${n}`
-      : n;
-  return `≈ total in ${block.converted.currency} · ${n}`;
+const countLabel = (n: number) => `${n} ${n === 1 ? 'subscription' : 'subscriptions'}`;
+
+/** One warm sentence about the most urgent subscription. */
+function headline(d: Dashboard): string {
+  const top: SubscriptionLite | undefined = d.needsAttention[0];
+  if (!top) return d.counts.active ? 'All caught up — nothing due this week 🎉' : '';
+  const label = `${top.company.name} · ${top.name}`;
+  const n = Math.abs(top.daysUntilDue);
+  if (top.daysUntilDue < 0) return `${label} is ${n} day${n === 1 ? '' : 's'} overdue ⚠️`;
+  if (top.daysUntilDue === 0) return `${label} is due today 📅`;
+  return `${label} is due in ${n} day${n === 1 ? '' : 's'} ⏰`;
 }
 
 function DashboardBody({ d }: { d: Dashboard }) {
   const { colors } = useTheme();
+  const can = usePermissions();
+
+  if (d.counts.total === 0) {
+    return (
+      <EmptyState
+        illustration="empty-subscriptions"
+        title="No subscriptions yet"
+        message={
+          can.manageSubscriptions
+            ? 'Add your first one — hosting, domains, internet, rent… and DueOra will remind everyone before it’s due.'
+            : 'Nothing has been added to this workspace yet. You’ll get reminders once it has.'
+        }
+        actionLabel={can.manageSubscriptions ? 'Add your first subscription' : undefined}
+        onAction={can.manageSubscriptions ? () => router.push('/subscriptions/new') : undefined}
+      />
+    );
+  }
+
   const quick = [
-    { label: 'Add payment', icon: Plus, onPress: () => router.push('/payments/new') },
-    { label: 'Record', icon: ReceiptText, onPress: () => router.push('/payments') },
+    ...(can.manageSubscriptions ? [{ label: 'Add', icon: Plus, onPress: () => router.push('/subscriptions/new') }] : []),
     { label: 'Calendar', icon: CalendarDays, onPress: () => router.push('/calendar') },
+    { label: 'History', icon: History, onPress: () => router.push('/history') },
     { label: 'Reports', icon: BarChart3, onPress: () => router.push('/reports') },
   ];
   const paidChange = d.summary.paidThisMonth.changePercent;
+  const line = headline(d);
 
   return (
     <>
+      {line ? (
+        <Text variant="bodyStrong" tone={d.summary.overdue.count ? 'danger' : 'primary'}>
+          {line}
+        </Text>
+      ) : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ marginHorizontal: -spacing.screen }}
         contentContainerStyle={{ gap: 10, paddingHorizontal: spacing.screen, paddingBottom: 6 }}
       >
-        <SummaryCard
-          label="Overdue"
-          block={d.summary.overdue}
-          sub={subline(d.summary.overdue)}
-          dot={statusBrand.overdue}
-        />
-        <SummaryCard
-          label="Due this week"
-          block={d.summary.dueThisWeek}
-          sub={subline(d.summary.dueThisWeek)}
-          dot={statusBrand.dueSoon}
-        />
-        <SummaryCard
-          label="Due this month"
-          block={d.summary.dueThisMonth}
-          sub={subline(d.summary.dueThisMonth)}
-          dot={statusBrand.upcoming}
-        />
+        <SummaryCard label="Overdue" block={d.summary.overdue} sub={countLabel(d.summary.overdue.count)} dot={statusBrand.overdue} />
+        <SummaryCard label="Due this week" block={d.summary.dueThisWeek} sub={countLabel(d.summary.dueThisWeek.count)} dot={statusBrand.dueSoon} />
+        <SummaryCard label="Due this month" block={d.summary.dueThisMonth} sub={countLabel(d.summary.dueThisMonth.count)} dot={statusBrand.upcoming} />
         <SummaryCard
           label="Paid this month"
           block={d.summary.paidThisMonth}
           sub={
             paidChange === null
-              ? subline(d.summary.paidThisMonth)
+              ? `${d.summary.paidThisMonth.count} payment${d.summary.paidThisMonth.count === 1 ? '' : 's'}`
               : `${paidChange >= 0 ? '+' : ''}${paidChange}% from last month`
           }
           dot={statusBrand.paid}
         />
       </ScrollView>
-      {d.missingRates.length ? (
-        <Text variant="caption" tone="muted">
-          Totals in {d.defaultCurrency} leave out {d.missingRates.join(', ')} — add a rate in
-          Company settings.
-        </Text>
-      ) : null}
 
       <View>
         <SectionHeader
           title="Needs attention"
-          action={d.needsAttentionCount > 5 ? 'View all' : undefined}
-          onAction={() => router.push('/payments')}
+          action={d.needsAttentionCount > 5 ? `View all ${d.needsAttentionCount}` : undefined}
+          onAction={() => router.push('/subscriptions')}
         />
         {d.needsAttention.length ? (
           <Card padding={0} style={{ overflow: 'hidden' }}>
-            {d.needsAttention.map((o, i) => (
-              <PaymentRow
-                key={o.id}
+            {d.needsAttention.map((s, i) => (
+              <SubscriptionRow
+                key={s.id}
                 compact
                 divider={i > 0}
-                onPress={() => router.push(`/payments/${o.id}`)}
+                onPress={() => router.push(`/subscriptions/${s.id}`)}
                 item={{
-                  id: o.id,
-                  name: o.name,
-                  provider: o.provider,
-                  icon: o.icon,
-                  amountMinor: o.remainingMinor || o.amountMinor,
-                  currency: o.currency,
-                  date: o.nextDueDate,
-                  status: o.paymentStatus,
-                  subtitle: `${o.platform ? `${o.platform.name} · ` : ''}${o.frequencyLabel}`,
+                  id: s.id,
+                  name: s.name,
+                  icon: s.category.icon,
+                  amountCents: s.remainingCents || s.amountCents,
+                  date: s.nextDueDate,
+                  status: s.paymentStatus,
+                  subtitle: `${s.company.name} · ${s.frequencyLabel}`,
                 }}
               />
             ))}
           </Card>
         ) : (
           <Card>
-            <EmptyState
-              compact
-              illustration="all-caught-up"
-              title="All caught up 🎉"
-              message="Nothing is overdue or due this week."
-            />
+            <EmptyState compact illustration="all-caught-up" title="All caught up — nothing due this week 🎉" message="We’ll nudge you before anything is due." />
           </Card>
         )}
       </View>
@@ -194,16 +176,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
                 gap: 7,
               })}
             >
-              <View
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 11,
-                  backgroundColor: colors.primarySoft,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
+              <View style={{ width: 36, height: 36, borderRadius: 11, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
                 <Icon size={20} color={colors.primaryStrong} />
               </View>
               <Text variant="captionStrong" align="center">
@@ -215,32 +188,55 @@ function DashboardBody({ d }: { d: Dashboard }) {
       </View>
 
       <View>
-        <SectionHeader title="Spending overview" action="12 months" />
+        <SectionHeader title="Next 30 days" action="Calendar" onAction={() => router.push('/calendar')} />
+        {d.next30Days.length ? (
+          <View style={{ gap: 10 }}>
+            {d.next30Days.map((t) => (
+              <View key={`${t.subscription.id}-${t.date}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 44, alignItems: 'center' }}>
+                  <Text variant="section">{t.date.slice(8, 10)}</Text>
+                  <Text variant="captionStrong" tone="muted">
+                    {monthShort(t.date).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <SubscriptionRow
+                    bordered
+                    compact
+                    onPress={() => router.push(`/subscriptions/${t.subscription.id}`)}
+                    item={{
+                      id: t.subscription.id,
+                      name: t.subscription.name,
+                      icon: t.subscription.category.icon,
+                      amountCents: t.amountCents,
+                      date: t.date,
+                      status: t.status,
+                      subtitle: `${t.subscription.company.name} · ${t.subscription.frequencyLabel}`,
+                    }}
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Card>
+            <EmptyState compact illustration="empty-calendar" title="A quiet month ahead" message="Nothing is due in the next 30 days." />
+          </Card>
+        )}
+      </View>
+
+      <View>
+        <SectionHeader title="Monthly spending" action="12 months" />
         <Card style={{ gap: 12 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-            }}
-          >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <View>
               <Text variant="small" tone="muted">
                 Paid in the last 12 months
               </Text>
-              <Text variant="title">
-                {formatMoney(d.spending.paidLast12Months, d.defaultCurrency, { compact: true })}
-              </Text>
+              <Text variant="title">{formatUSD(d.spending.paidLast12Months, { compact: true })}</Text>
             </View>
             {d.spending.changePercent !== null ? (
-              <View
-                style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 8,
-                  backgroundColor: colors.greenSoft,
-                }}
-              >
+              <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: colors.greenSoft }}>
                 <Text variant="captionStrong" color={colors.green}>
                   {d.spending.changePercent >= 0 ? '+' : ''}
                   {d.spending.changePercent}%
@@ -249,11 +245,8 @@ function DashboardBody({ d }: { d: Dashboard }) {
             ) : null}
           </View>
           <BarChart
-            accessibilityLabel={`Monthly spending, last 12 months. This month ${formatMoney(d.spending.months.at(-1)?.amountMinor ?? 0, d.defaultCurrency)}`}
-            data={d.spending.months.map((m) => ({
-              label: monthShort(m.month),
-              value: m.amountMinor,
-            }))}
+            accessibilityLabel={`Monthly spending, last 12 months. This month ${formatUSD(d.spending.months.at(-1)?.amountCents ?? 0)}`}
+            data={d.spending.months.map((m) => ({ label: monthShort(m.month), value: m.amountCents }))}
           />
         </Card>
       </View>
@@ -267,75 +260,22 @@ function DashboardBody({ d }: { d: Dashboard }) {
               centerLabel={d.byCategory[0]!.name}
               slices={[
                 ...d.byCategory.slice(0, 4),
-                ...(d.byCategory.length > 4
-                  ? [
-                      {
-                        name: 'Other',
-                        amountMinor: d.byCategory.slice(4).reduce((s, c) => s + c.amountMinor, 0),
-                      },
-                    ]
-                  : []),
-              ].map((c) => ({
-                label: c.name,
-                value: c.amountMinor,
-              }))}
-              formatValue={(v) => formatMoney(v, d.defaultCurrency, { compact: true })}
+                ...(d.byCategory.length > 4 ? [{ name: 'Other', amountCents: d.byCategory.slice(4).reduce((s, c) => s + c.amountCents, 0) }] : []),
+              ].map((c) => ({ label: c.name, value: c.amountCents }))}
+              formatValue={(v) => formatUSD(v, { compact: true })}
             />
           </Card>
         </View>
       ) : null}
 
-      <View>
-        <SectionHeader
-          title="Next 30 days"
-          action="Calendar"
-          onAction={() => router.push('/calendar')}
-        />
-        {d.next30Days.length ? (
-          <View style={{ gap: 10 }}>
-            {d.next30Days.map((t) => (
-              <View
-                key={`${t.obligation.id}-${t.date}`}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-              >
-                <View style={{ width: 44, alignItems: 'center' }}>
-                  <Text variant="section">{t.date.slice(8, 10)}</Text>
-                  <Text variant="captionStrong" tone="muted">
-                    {monthShort(t.date).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <PaymentRow
-                    bordered
-                    compact
-                    onPress={() => router.push(`/payments/${t.obligation.id}`)}
-                    item={{
-                      id: t.obligation.id,
-                      name: t.obligation.name,
-                      provider: t.obligation.provider,
-                      icon: t.obligation.icon,
-                      amountMinor: t.amountMinor,
-                      currency: t.obligation.currency,
-                      date: t.date,
-                      status: t.status,
-                      subtitle: `${t.obligation.provider} · ${t.obligation.frequencyLabel}`,
-                    }}
-                  />
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : (
+      {d.byCompany.length ? (
+        <View>
+          <SectionHeader title="Spending by company" action="12 months" />
           <Card>
-            <EmptyState
-              compact
-              illustration="empty-calendar"
-              title="A quiet month ahead"
-              message="Nothing is due in the next 30 days."
-            />
+            <BreakdownBars items={d.byCompany} />
           </Card>
-        )}
-      </View>
+        </View>
+      ) : null}
     </>
   );
 }
@@ -345,9 +285,8 @@ export default function HomeTab() {
   const me = useMe();
   const dashboard = useDashboard();
   const inbox = useInbox();
+  const active = useActiveWorkspaceSummary();
   const [refreshing, setRefreshing] = useState(false);
-  const activeOrgId = useSession((st) => st.activeOrgId);
-  const active = me.data?.workspaces.find((w) => w.id === activeOrgId);
   const hour = dashboard.data?.localHour ?? new Date().getHours();
   const firstName = me.data?.name.split(' ')[0] ?? '';
 
@@ -377,9 +316,7 @@ export default function HomeTab() {
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          {active ? (
-            <Avatar name={active.name} imageUrl={active.logoUrl} color={colors.primary} size={38} />
-          ) : null}
+          {active ? <Avatar name={active.name} color={colors.primary} size={38} /> : null}
           <IconButton
             accessibilityLabel={`Alerts${inbox.data?.unreadCount ? `, ${inbox.data.unreadCount} unread` : ''}`}
             dot={!!inbox.data?.unreadCount}

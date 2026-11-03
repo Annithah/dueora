@@ -8,7 +8,7 @@ import { monthShort } from '@/components/charts/Charts';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Screen } from '@/components/layout/Screen';
-import { PaymentRow } from '@/components/payments/PaymentRow';
+import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
 import { Card, IconButton, SectionHeader, Segmented, Skeleton, Text } from '@/components/ui';
 import { useCalendar, type CalendarEvent } from '@/features/insights/api';
 import {
@@ -19,7 +19,7 @@ import {
   type CalendarView,
 } from '@/features/insights/calendarMath';
 import { formatDate, parseISODate, toISODate } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
+import { formatUSD } from '@/lib/money';
 import { statusBrand, statusStyle, useTheme, type PaymentStatus } from '@/theme';
 
 const DOT_ORDER: PaymentStatus[] = [
@@ -63,20 +63,18 @@ function EventList({ events, emptyText }: { events: CalendarEvent[]; emptyText: 
   return (
     <Card padding={0} style={{ overflow: 'hidden' }}>
       {events.map((e, i) => (
-        <PaymentRow
-          key={`${e.obligationId}-${e.date}-${e.kind}`}
+        <SubscriptionRow
+          key={`${e.subscriptionId}-${e.date}-${e.kind}`}
           divider={i > 0}
-          onPress={() => router.push(`/payments/${e.obligationId}`)}
+          onPress={() => router.push(`/subscriptions/${e.subscriptionId}`)}
           item={{
-            id: e.obligationId,
+            id: e.subscriptionId,
             name: e.name,
-            provider: e.provider,
-            icon: e.icon,
-            amountMinor: e.amountMinor,
-            currency: e.currency,
+            icon: e.categoryIcon,
+            amountCents: e.amountCents,
             date: e.date,
             status: e.status,
-            subtitle: e.platform ? `${e.platform} · ${e.provider}` : e.provider,
+            subtitle: e.company,
           }}
         />
       ))}
@@ -124,7 +122,7 @@ function MonthGrid({
             );
             const isSelected = date === selected;
             const outside = date.slice(0, 7) !== month;
-            const label = `${formatDate(date)}${events.length ? `, ${events.length} payment${events.length > 1 ? 's' : ''}` : ''}`;
+            const label = `${formatDate(date)}${events.length ? `, ${events.length} due` : ''}`;
             return (
               <Pressable
                 key={date}
@@ -264,7 +262,7 @@ export default function CalendarTab() {
                 <Pressable
                   key={date}
                   accessibilityRole="button"
-                  accessibilityLabel={`${formatDate(date)}, ${n} payments`}
+                  accessibilityLabel={`${formatDate(date)}, ${n} due`}
                   onPress={() => setSelected(date)}
                   style={{
                     flex: 1,
@@ -298,7 +296,7 @@ export default function CalendarTab() {
                 <Pressable
                   key={key}
                   accessibilityRole="button"
-                  accessibilityLabel={`${monthShort(key)}: ${monthEvents.length} payments`}
+                  accessibilityLabel={`${monthShort(key)}: ${monthEvents.length} due`}
                   onPress={() => {
                     setView('month');
                     setFocus(`${key}-01`);
@@ -366,16 +364,9 @@ export default function CalendarTab() {
         <View>
           <SectionHeader title={`Total due in ${focus.slice(0, 4)}`} />
           <Text variant="small" tone="muted">
-            {events.length} payments ·{' '}
-            {[...new Set(events.map((e) => e.currency))]
-              .map((c) =>
-                formatMoney(
-                  events.filter((e) => e.currency === c).reduce((s, e) => s + e.amountMinor, 0),
-                  c,
-                  { compact: true },
-                ),
-              )
-              .join(' + ') || 'nothing scheduled'}
+            {events.length
+              ? `${events.length} due date${events.length === 1 ? '' : 's'} · ${formatUSD(events.reduce((sum, e) => sum + e.amountCents, 0), { compact: true })}`
+              : 'Nothing scheduled'}
           </Text>
         </View>
       ) : (
@@ -384,7 +375,7 @@ export default function CalendarTab() {
             title={
               view === 'week' || view === 'day' || view === 'month' ? formatDate(selected) : ''
             }
-            action={`${byDate.get(selected)?.length ?? 0} payment${(byDate.get(selected)?.length ?? 0) === 1 ? '' : 's'}`}
+            action={`${byDate.get(selected)?.length ?? 0} subscription${(byDate.get(selected)?.length ?? 0) === 1 ? '' : 's'}`}
           />
           <EventList events={byDate.get(selected) ?? []} emptyText="Nothing due on this day" />
         </View>

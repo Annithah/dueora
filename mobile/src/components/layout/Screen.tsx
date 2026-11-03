@@ -26,6 +26,8 @@ export interface ScreenProps {
   contentStyle?: StyleProp<ViewStyle>;
   /** Background override (e.g. teal splash). */
   background?: string;
+  /** Called when the user scrolls near the bottom (infinite lists). */
+  onEndReached?: () => void;
 }
 
 export function Screen({
@@ -38,6 +40,7 @@ export function Screen({
   refreshControl,
   contentStyle,
   background,
+  onEndReached,
 }: ScreenProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -69,6 +72,14 @@ export function Screen({
           keyboardShouldPersistTaps="handled"
           refreshControl={refreshControl}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={200}
+          onScroll={
+            onEndReached
+              ? ({ nativeEvent: e }) => {
+                  if (e.layoutMeasurement.height + e.contentOffset.y >= e.contentSize.height - 400) onEndReached();
+                }
+              : undefined
+          }
         >
           {children}
         </ScrollView>

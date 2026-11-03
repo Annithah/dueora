@@ -1,64 +1,84 @@
 import { router } from 'expo-router';
-import { Plus, Search, X } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { RefreshControl, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 
+import { LoadMore } from '@/components/layout/LoadMore';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
-import { PaymentRow } from '@/components/payments/PaymentRow';
-import { Card, Chip, EmptyState, IconButton, SectionHeader } from '@/components/ui';
-import { useObligations, type Obligation } from '@/features/obligations/api';
-import { radius, spacing, typography, useTheme } from '@/theme';
+import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import {
+  ActiveFilters,
+  Card,
+  countFilters,
+  EMPTY_FILTERS,
+  EmptyState,
+  FilterSheet,
+  IconButton,
+  SearchBar,
+  SortSheet,
+  type ChipSection,
+  type FilterState,
+} from '@/components/ui';
+import { useCategories, useCompanies } from '@/features/catalog/api';
+import {
+  FREQUENCY_FILTERS,
+  STATUS_FILTERS,
+  SUBSCRIPTION_SORTS,
+  useSubscriptionList,
+  type SubscriptionSort,
+} from '@/features/subscriptions/api';
+import { usePermissions } from '@/features/workspaces/api';
+import { useDebounced } from '@/lib/useDebounced';
+import { useTheme } from '@/theme';
 
-const FILTERS = [
-  { label: 'All', status: undefined },
-  { label: 'Overdue', status: 'OVERDUE' },
-  { label: 'Due soon', status: 'DUE_TODAY,DUE_SOON' },
-  { label: 'Partially paid', status: 'PARTIALLY_PAID' },
-  { label: 'Upcoming', status: 'UPCOMING' },
-  { label: 'Paid', status: 'PAID' },
-  { label: 'Archived', status: 'ARCHIVED' },
-] as const;
-
-function groupByPlatform(items: Obligation[]) {
-  const groups = new Map<string, Obligation[]>();
-  for (const o of items) {
-    const key = o.platform?.name ?? 'Other payments';
-    groups.set(key, [...(groups.get(key) ?? []), o]);
-  }
-  // Named platforms alphabetically, ungrouped last.
-  return [...groups.entries()].sort(([a], [b]) =>
-    a === 'Other payments' ? 1 : b === 'Other payments' ? -1 : a.localeCompare(b),
-  );
-}
-
-export default function PaymentsTab() {
+export default function SubscriptionsTab() {
   const { colors } = useTheme();
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>(FILTERS[0]);
+  const can = usePermissions();
+  const companies = useCompanies();
+  const categories = useCategories();
   const [q, setQ] = useState('');
-  const query = useObligations({ status: filter.status });
+  const [sort, setSort] = useState<SubscriptionSort>('due_asc');
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const [sheet, setSheet] = useState<'sort' | 'filter' | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const search = useDebounced(q);
 
-  // Search locally for instant feedback (lists are small and cached for offline use).
-  const visible = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    const items = query.data?.items ?? [];
-    return needle
-      ? items.filter((o) =>
-          [o.name, o.provider, o.platform?.name ?? '', o.category.name].some((s) =>
-            s.toLowerCase().includes(needle),
-          ),
-        )
-      : items;
-  }, [query.data, q]);
+  const sections: ChipSection[] = useMemo(
+    () => [
+      { key: 'status', title: 'Status', options: STATUS_FILTERS },
+      { key: 'company', title: 'Company', options: (companies.data ?? []).map((c) => ({ value: c.id, label: c.name })) },
+      { key: 'category', title: 'Category', options: (categories.data ?? []).map((c) => ({ value: c.id, label: c.name })) },
+      { key: 'frequency', title: 'Frequency', options: FREQUENCY_FILTERS },
+    ],
+    [companies.data, categories.data],
+  );
+
+  const query = useSubscriptionList({
+    q: search,
+    sort,
+    statuses: filters.selections.status,
+    companyIds: filters.selections.company,
+    categoryIds: filters.selections.category,
+    frequencies: filters.selections.frequency,
+    dueFrom: filters.from,
+    dueTo: filters.to,
+  });
+  const items = query.data?.pages.flatMap((p) => p.items) ?? [];
+  const total = query.data?.pages[0]?.total ?? 0;
+  const filtered = !!search || countFilters(filters) > 0;
+  const loadMore = () => {
+    if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+  };
 
   return (
     <Screen
       edges={['top']}
-      contentStyle={{ gap: 18, paddingBottom: 32 }}
+      contentStyle={{ gap: 16, paddingBottom: 32 }}
+      onEndReached={loadMore}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -72,127 +92,98 @@ export default function PaymentsTab() {
       }
     >
       <PageHeader
-        eyebrow="All obligations"
-        title="Payments"
+        eyebrow={total ? `${total} ${total === 1 ? 'subscription' : 'subscriptions'}` : 'Your dues'}
+        title="Subscriptions"
         right={
-          <IconButton
-            accessibilityLabel="Add payment"
-            tone="soft"
-            onPress={() => router.push('/payments/new')}
-          >
-            <Plus size={20} color={colors.primaryStrong} />
-          </IconButton>
+          can.manageSubscriptions ? (
+            <IconButton accessibilityLabel="Add subscription" tone="soft" onPress={() => router.push('/subscriptions/new')}>
+              <Plus size={20} color={colors.primaryStrong} />
+            </IconButton>
+          ) : undefined
         }
       />
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 9,
-          minHeight: 48,
-          paddingHorizontal: 13,
-          borderRadius: radius.md,
-          borderWidth: 1,
-          borderColor: colors.line,
-          backgroundColor: colors.surface,
-        }}
-      >
-        <Search size={18} color={colors.muted} />
-        <TextInput
-          value={q}
-          onChangeText={setQ}
-          placeholder="Search payments"
-          placeholderTextColor={colors.placeholder}
-          accessibilityLabel="Search payments"
-          returnKeyType="search"
-          style={[typography.body, { flex: 1, color: colors.ink, paddingVertical: 10 }]}
-        />
-        {q ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-            hitSlop={12}
-            onPress={() => setQ('')}
-          >
-            <X size={18} color={colors.muted} />
-          </Pressable>
-        ) : null}
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginHorizontal: -spacing.screen, marginTop: -6 }}
-        contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.screen }}
-      >
-        {FILTERS.map((f) => (
-          <Chip
-            key={f.label}
-            label={f.label}
-            selected={f.label === filter.label}
-            onPress={() => setFilter(f)}
-          />
-        ))}
-      </ScrollView>
+      <SearchBar
+        value={q}
+        onChangeText={setQ}
+        placeholder="Search name, company, provider or key"
+        onSortPress={() => setSheet('sort')}
+        onFilterPress={() => setSheet('filter')}
+        sortActive={sort !== 'due_asc'}
+        filterCount={countFilters(filters)}
+      />
+      <ActiveFilters sections={sections} value={filters} onChange={setFilters} />
       <OfflineBanner />
 
       <QueryState query={query}>
         {() =>
-          visible.length === 0 ? (
-            (query.data?.total ?? 0) === 0 && !q && filter.label === 'All' ? (
+          items.length === 0 ? (
+            !filtered ? (
               <EmptyState
-                illustration="empty-payments"
-                title="No payments yet"
-                message="Add your first obligation and DueOra will keep watch."
-                actionLabel="Add payment"
-                onAction={() => router.push('/payments/new')}
+                illustration="empty-subscriptions"
+                title="No subscriptions yet"
+                message={
+                  can.manageSubscriptions
+                    ? 'Add your first one — hosting, domains, internet, rent… DueOra will remind you before it’s due.'
+                    : 'Nothing has been added to this workspace yet.'
+                }
+                actionLabel={can.manageSubscriptions ? 'Add your first subscription' : undefined}
+                onAction={can.manageSubscriptions ? () => router.push('/subscriptions/new') : undefined}
               />
             ) : (
               <EmptyState
                 illustration="no-results"
-                title="No matching payments"
+                title="Nothing matches"
                 message="Try another search or clear your filters."
-                actionLabel="Clear filters"
+                actionLabel="Clear search and filters"
                 actionVariant="secondary"
                 onAction={() => {
                   setQ('');
-                  setFilter(FILTERS[0]);
+                  setFilters(EMPTY_FILTERS);
                 }}
               />
             )
           ) : (
-            <View style={{ gap: 20 }}>
-              {groupByPlatform(visible).map(([name, items]) => (
-                <Animated.View key={name} entering={FadeIn} layout={LinearTransition}>
-                  <SectionHeader
-                    title={name}
-                    action={`${items.length} ${items.length === 1 ? 'item' : 'items'}`}
-                  />
-                  <Card padding={0} style={{ overflow: 'hidden' }}>
-                    {items.map((o, i) => (
-                      <PaymentRow
-                        key={o.id}
-                        divider={i > 0}
-                        onPress={() => router.push(`/payments/${o.id}`)}
-                        item={{
-                          id: o.id,
-                          name: o.name,
-                          provider: o.provider,
-                          icon: o.icon,
-                          amountMinor: o.remainingMinor || o.amountMinor,
-                          currency: o.currency,
-                          date: o.nextDueDate,
-                          status: o.paymentStatus,
-                          subtitle: `${o.provider} · ${o.frequencyLabel}`,
-                        }}
-                      />
-                    ))}
-                  </Card>
-                </Animated.View>
-              ))}
+            <View style={{ gap: 14 }}>
+              <Card padding={0} style={{ overflow: 'hidden' }}>
+                {items.map((s, i) => (
+                  <Animated.View key={s.id} entering={FadeIn} layout={LinearTransition}>
+                    <SubscriptionRow
+                      divider={i > 0}
+                      onPress={() => router.push(`/subscriptions/${s.id}`)}
+                      item={{
+                        id: s.id,
+                        name: s.name,
+                        icon: s.category.icon,
+                        amountCents: s.remainingCents || s.amountCents,
+                        date: s.nextDueDate,
+                        status: s.paymentStatus,
+                        subtitle: `${s.company.name} · ${s.frequencyLabel}`,
+                      }}
+                    />
+                  </Animated.View>
+                ))}
+              </Card>
+              <LoadMore
+                shown={items.length}
+                total={total}
+                hasMore={!!query.hasNextPage}
+                loading={query.isFetchingNextPage}
+                onLoadMore={loadMore}
+              />
             </View>
           )
         }
       </QueryState>
+
+      <SortSheet visible={sheet === 'sort'} onClose={() => setSheet(null)} options={SUBSCRIPTION_SORTS} value={sort} onChange={setSort} />
+      <FilterSheet
+        visible={sheet === 'filter'}
+        onClose={() => setSheet(null)}
+        sections={sections}
+        dateRangeTitle="Next due date"
+        value={filters}
+        onApply={setFilters}
+      />
     </Screen>
   );
 }

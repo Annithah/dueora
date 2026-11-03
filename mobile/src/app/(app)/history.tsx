@@ -1,213 +1,169 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { Search, X } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { RefreshControl, View } from 'react-native';
 
+import { LoadMore } from '@/components/layout/LoadMore';
+import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
-import { PaymentRow } from '@/components/payments/PaymentRow';
-import { Card, Chip, EmptyState, SectionHeader, Select, Text } from '@/components/ui';
-import { usePlatforms, useCategories } from '@/features/catalog/api';
-import { useHistory, type HistoryItem } from '@/features/insights/api';
-import { METHOD_LABELS } from '@/features/obligations/api';
-import { toISODate } from '@/lib/dates';
-import { formatMoney } from '@/lib/money';
-import { radius, spacing, typography, useTheme } from '@/theme';
+import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import {
+  ActiveFilters,
+  Card,
+  countFilters,
+  EMPTY_FILTERS,
+  EmptyState,
+  FilterSheet,
+  SearchBar,
+  SortSheet,
+  Text,
+  type ChipSection,
+  type FilterState,
+} from '@/components/ui';
+import { useCategories, useCompanies } from '@/features/catalog/api';
+import { HISTORY_SORTS, useHistory, type HistorySort } from '@/features/insights/api';
+import { METHOD_LABELS } from '@/features/subscriptions/api';
+import { formatUSD } from '@/lib/money';
+import { useDebounced } from '@/lib/useDebounced';
+import { useTheme } from '@/theme';
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-function rangeFor(key: string): { from?: string; to?: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  if (key === 'month') return { from: toISODate(new Date(y, now.getMonth(), 1)) };
-  if (key === '3m') return { from: toISODate(new Date(y, now.getMonth() - 2, 1)) };
-  if (key === 'year') return { from: `${y}-01-01`, to: `${y}-12-31` };
-  if (key === 'lastYear') return { from: `${y - 1}-01-01`, to: `${y - 1}-12-31` };
-  return {};
-}
-
-const RANGES = [
-  { key: 'all', label: 'All time' },
-  { key: 'month', label: 'This month' },
-  { key: '3m', label: 'Last 3 months' },
-  { key: 'year', label: 'This year' },
-  { key: 'lastYear', label: 'Last year' },
-];
-
-export default function History() {
+export default function HistoryScreen() {
   const { colors } = useTheme();
-  const params = useLocalSearchParams<{ obligationId?: string }>();
-  const [q, setQ] = useState('');
-  const [range, setRange] = useState('all');
-  const [categoryId, setCategoryId] = useState('');
-  const [platformId, setPlatformId] = useState('');
+  const params = useLocalSearchParams<{ subscriptionId?: string; name?: string }>();
+  const companies = useCompanies({ includeArchived: true });
   const categories = useCategories();
-  const platforms = usePlatforms();
-  const query = useHistory({
-    q: q.trim() || undefined,
-    ...rangeFor(range),
-    categoryId: categoryId || undefined,
-    platformId: platformId || undefined,
-    ...(params.obligationId ? { obligationId: params.obligationId } : {}),
-  });
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState<HistorySort>('paid_desc');
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const [sheet, setSheet] = useState<'sort' | 'filter' | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const search = useDebounced(q);
 
-  const groups = useMemo(() => {
-    const map = new Map<string, HistoryItem[]>();
-    for (const p of query.data?.items ?? []) {
-      const key = p.paidOn.slice(0, 7);
-      map.set(key, [...(map.get(key) ?? []), p]);
-    }
-    return [...map.entries()];
-  }, [query.data]);
+  const sections: ChipSection[] = useMemo(
+    () => [
+      { key: 'company', title: 'Company', options: (companies.data ?? []).map((c) => ({ value: c.id, label: c.name })) },
+      { key: 'category', title: 'Category', options: (categories.data ?? []).map((c) => ({ value: c.id, label: c.name })) },
+    ],
+    [companies.data, categories.data],
+  );
+
+  const query = useHistory({
+    q: search,
+    sort,
+    from: filters.from,
+    to: filters.to,
+    companyIds: filters.selections.company,
+    categoryIds: filters.selections.category,
+    subscriptionId: params.subscriptionId,
+  });
+  const items = query.data?.pages.flatMap((p) => p.items) ?? [];
+  const first = query.data?.pages[0];
+  const filtered = !!search || countFilters(filters) > 0;
+  const loadMore = () => {
+    if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+  };
 
   return (
     <Screen
-      header={<TopBar title="Payment history" />}
+      header={<TopBar title={params.name ? `${params.name} · history` : 'Payment history'} />}
       contentStyle={{ gap: 16, paddingBottom: 32 }}
+      onEndReached={loadMore}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          tintColor={colors.primary}
+          onRefresh={async () => {
+            setRefreshing(true);
+            await query.refetch();
+            setRefreshing(false);
+          }}
+        />
+      }
     >
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 9,
-          minHeight: 48,
-          paddingHorizontal: 13,
-          borderRadius: radius.md,
-          borderWidth: 1,
-          borderColor: colors.line,
-          backgroundColor: colors.surface,
-        }}
-      >
-        <Search size={18} color={colors.muted} />
-        <TextInput
-          value={q}
-          onChangeText={setQ}
-          placeholder="Search history"
-          placeholderTextColor={colors.placeholder}
-          accessibilityLabel="Search history"
-          style={[typography.body, { flex: 1, color: colors.ink, paddingVertical: 10 }]}
-        />
-        {q ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-            hitSlop={12}
-            onPress={() => setQ('')}
-          >
-            <X size={18} color={colors.muted} />
-          </Pressable>
-        ) : null}
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginHorizontal: -spacing.screen }}
-        contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.screen }}
-      >
-        {RANGES.map((r) => (
-          <Chip
-            key={r.key}
-            label={r.label}
-            selected={range === r.key}
-            onPress={() => setRange(r.key)}
-          />
-        ))}
-      </ScrollView>
-      <View style={{ flexDirection: 'row', gap: 12 }}>
-        <Select
-          label="Category"
-          value={categoryId}
-          onChange={setCategoryId}
-          options={[
-            { value: '', label: 'All categories' },
-            ...(categories.data ?? []).map((c) => ({ value: c.id, label: c.name })),
-          ]}
-        />
-        <Select
-          label="Project"
-          value={platformId}
-          onChange={setPlatformId}
-          options={[
-            { value: '', label: 'All projects' },
-            ...(platforms.data ?? []).map((p) => ({ value: p.id, label: p.name })),
-          ]}
-        />
-      </View>
+      <SearchBar
+        value={q}
+        onChangeText={setQ}
+        placeholder="Search subscription, company or reference"
+        onSortPress={() => setSheet('sort')}
+        onFilterPress={() => setSheet('filter')}
+        sortActive={sort !== 'paid_desc'}
+        filterCount={countFilters(filters)}
+      />
+      <ActiveFilters sections={sections} value={filters} onChange={setFilters} />
+      <OfflineBanner />
 
       <QueryState query={query}>
-        {(data) =>
-          data.items.length === 0 ? (
-            <EmptyState
-              illustration="no-results"
-              title="No payments found"
-              message="Recorded payments will show up here."
-            />
+        {() =>
+          items.length === 0 ? (
+            filtered ? (
+              <EmptyState
+                illustration="no-results"
+                title="No payments match"
+                message="Try another search or clear your filters."
+                actionLabel="Clear search and filters"
+                actionVariant="secondary"
+                onAction={() => {
+                  setQ('');
+                  setFilters(EMPTY_FILTERS);
+                }}
+              />
+            ) : (
+              <EmptyState
+                illustration="all-caught-up"
+                title="No payments recorded yet"
+                message="When you record a payment it lands here — history is kept forever, even after a new cycle starts."
+              />
+            )
           ) : (
-            <View style={{ gap: 18 }}>
-              <Card style={{ gap: 6 }}>
+            <View style={{ gap: 14 }}>
+              <Card style={{ gap: 4 }}>
                 <Text variant="small" tone="muted">
-                  Total recorded · {data.total} payment{data.total === 1 ? '' : 's'}
+                  {filtered ? 'Total for this filter' : 'Total recorded'} · {first?.total ?? 0} payment{first?.total === 1 ? '' : 's'}
                 </Text>
-                <Text variant="title">
-                  {data.totals
-                    .map((t) => formatMoney(t.amountMinor, t.currency, { compact: true }))
-                    .join(' + ')}
-                </Text>
+                <Text variant="title">{formatUSD(first?.totalCents ?? 0)}</Text>
               </Card>
-              {groups.map(([key, items]) => {
-                const totals = new Map<string, number>();
-                for (const p of items)
-                  totals.set(p.currency, (totals.get(p.currency) ?? 0) + p.amountMinor);
-                return (
-                  <View key={key}>
-                    <SectionHeader
-                      title={`${MONTHS[Number(key.slice(5)) - 1]} ${key.slice(0, 4)}`}
-                      action={[...totals]
-                        .map(([c, a]) => formatMoney(a, c, { compact: true }))
-                        .join(' + ')}
-                    />
-                    <Card padding={0} style={{ overflow: 'hidden' }}>
-                      {items.map((p, i) => (
-                        <PaymentRow
-                          key={p.id}
-                          compact
-                          divider={i > 0}
-                          onPress={() => router.push(`/payments/${p.obligationId}`)}
-                          item={{
-                            id: p.id,
-                            name: p.obligation.name,
-                            provider: p.obligation.provider,
-                            icon: p.obligation.icon,
-                            amountMinor: p.amountMinor,
-                            currency: p.currency,
-                            date: p.paidOn,
-                            status: 'PAID',
-                            subtitle: `${p.obligation.platform ? `${p.obligation.platform.name} · ` : ''}${METHOD_LABELS[p.method]} · ${p.recordedBy.name.split(' ')[0]}`,
-                          }}
-                        />
-                      ))}
-                    </Card>
-                  </View>
-                );
-              })}
+              <Card padding={0} style={{ overflow: 'hidden' }}>
+                {items.map((p, i) => (
+                  <SubscriptionRow
+                    key={p.id}
+                    compact
+                    divider={i > 0}
+                    onPress={() => router.push(`/subscriptions/${p.subscriptionId}`)}
+                    item={{
+                      id: p.id,
+                      name: p.subscription.name,
+                      icon: p.subscription.category.icon,
+                      amountCents: p.amountCents,
+                      date: p.paidOn,
+                      status: 'PAID',
+                      subtitle: `${p.subscription.company.name} · ${METHOD_LABELS[p.method]}${p.reference ? ` · ${p.reference}` : ''}`,
+                    }}
+                  />
+                ))}
+              </Card>
+              <LoadMore
+                shown={items.length}
+                total={first?.total ?? 0}
+                hasMore={!!query.hasNextPage}
+                loading={query.isFetchingNextPage}
+                onLoadMore={loadMore}
+                noun="payments"
+              />
             </View>
           )
         }
       </QueryState>
+
+      <SortSheet visible={sheet === 'sort'} onClose={() => setSheet(null)} options={HISTORY_SORTS} value={sort} onChange={setSort} />
+      <FilterSheet
+        visible={sheet === 'filter'}
+        onClose={() => setSheet(null)}
+        sections={sections}
+        dateRangeTitle="Date paid"
+        value={filters}
+        onApply={setFilters}
+      />
     </Screen>
   );
 }

@@ -7,17 +7,19 @@ import { Button, Card, SuccessCheck, Text, toast } from '@/components/ui';
 import { formatDate } from '@/lib/dates';
 import { useTheme } from '@/theme';
 
-export default function PaymentRecorded() {
+export default function PaymentRecordedScreen() {
   const { colors } = useTheme();
   const p = useLocalSearchParams<{
     id: string;
     name: string;
+    company?: string;
     amount: string;
     paidOn: string;
     next?: string;
     completed?: string;
   }>();
   const cycleDone = p.completed === '1';
+  const label = p.company ? `${p.company} · ${p.name}` : p.name;
 
   const rows: [string, string][] = [
     ['Amount paid', p.amount ?? ''],
@@ -37,8 +39,8 @@ export default function PaymentRecorded() {
         </Text>
         <Text variant="body" tone="muted" align="center">
           {cycleDone
-            ? `Great work. ${p.name} is now up to date.`
-            : `Saved. Part of ${p.name} is still open.`}
+            ? `Great work 🎉 ${label} is up to date.`
+            : `Saved. Part of ${label} is still open.`}
         </Text>
       </View>
       <Card style={{ alignSelf: 'stretch', paddingVertical: 4 }}>

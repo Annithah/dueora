@@ -3,11 +3,12 @@ import { ArrowLeft, ArrowRight, Download, FileText } from 'lucide-react-native';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { BreakdownBars } from '@/components/charts/BreakdownBars';
 import { DonutChart, LineChart, monthShort } from '@/components/charts/Charts';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
-import { PaymentRow } from '@/components/payments/PaymentRow';
+import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
 import {
   Button,
   Card,
@@ -19,7 +20,7 @@ import {
   toast,
 } from '@/components/ui';
 import { downloadAndShare, useReport, type Report } from '@/features/insights/api';
-import { formatMoney } from '@/lib/money';
+import { formatUSD } from '@/lib/money';
 import { palette, spacing, useTheme } from '@/theme';
 
 const MONTHS = [
@@ -39,10 +40,8 @@ const MONTHS = [
 
 function Body({ r }: { r: Report }) {
   const { colors } = useTheme();
-  const cur = r.defaultCurrency;
-  const m = (v: number) => formatMoney(v, cur, { compact: true });
+  const m = (v: number) => formatUSD(v, { compact: true });
   const committed = r.totals.committed;
-  const secondary = committed.totals.filter((t) => t.currency !== cur);
 
   return (
     <>
@@ -61,13 +60,11 @@ function Body({ r }: { r: Report }) {
           {r.period === 'year' ? r.year : `${MONTHS[(r.month ?? 1) - 1]!.toUpperCase()} ${r.year}`}
         </Text>
         <Text variant="amountXL" color="#FFFFFF">
-          {formatMoney(committed.converted.amountMinor, cur, { forceDecimals: true })}
+          {formatUSD(committed.amountCents)}
         </Text>
-        {secondary.length ? (
-          <Text variant="small" color="rgba(255,255,255,0.75)">
-            incl. {secondary.map((t) => formatMoney(t.amountMinor, t.currency)).join(' + ')}
-          </Text>
-        ) : null}
+        <Text variant="small" color="rgba(255,255,255,0.75)">
+          {committed.count} due date{committed.count === 1 ? '' : 's'} · all amounts in USD
+        </Text>
         <View
           style={{
             flexDirection: 'row',
@@ -93,25 +90,18 @@ function Body({ r }: { r: Report }) {
                 </Text>
               </View>
               <Text variant="bodyStrong" color="#FFFFFF">
-                {m(block.converted.amountMinor)}
+                {m(block.amountCents)}
               </Text>
             </View>
           ))}
         </View>
       </View>
-      {r.missingRates.length ? (
-        <Text variant="caption" tone="muted">
-          Converted totals leave out {r.missingRates.join(', ')} — add an exchange rate in Company
-          info.
-        </Text>
-      ) : null}
-
       <View>
-        <SectionHeader title="12-month forecast" action={cur} />
+        <SectionHeader title="12-month forecast" action="USD" />
         <Card>
           <LineChart
-            accessibilityLabel={`Expected payments for the next 12 months, ${r.forecast.map((f) => `${monthShort(f.month)} ${m(f.amountMinor)}`).join(', ')}`}
-            data={r.forecast.map((f) => ({ label: monthShort(f.month), value: f.amountMinor }))}
+            accessibilityLabel={`Expected payments for the next 12 months, ${r.forecast.map((f) => `${monthShort(f.month)} ${m(f.amountCents)}`).join(', ')}`}
+            data={r.forecast.map((f) => ({ label: monthShort(f.month), value: f.amountCents }))}
           />
         </Card>
       </View>
@@ -125,9 +115,18 @@ function Body({ r }: { r: Report }) {
               centerLabel={r.byCategory[0]!.name}
               slices={r.byCategory
                 .slice(0, 5)
-                .map((c) => ({ label: c.name, value: c.amountMinor }))}
+                .map((c) => ({ label: c.name, value: c.amountCents }))}
               formatValue={m}
             />
+          </Card>
+        </View>
+      ) : null}
+
+      {r.byCompany.length ? (
+        <View>
+          <SectionHeader title="By company" />
+          <Card>
+            <BreakdownBars items={r.byCompany} />
           </Card>
         </View>
       ) : null}
@@ -155,10 +154,10 @@ function Body({ r }: { r: Report }) {
                   color={colors.green}
                   style={{ width: 90, textAlign: 'right' }}
                 >
-                  {m(row.paidMinor)}
+                  {m(row.paidCents)}
                 </Text>
                 <Text variant="small" tone="muted" style={{ width: 90, textAlign: 'right' }}>
-                  {row.outstandingMinor ? m(row.outstandingMinor) : '—'}
+                  {row.outstandingCents ? m(row.outstandingCents) : '—'}
                 </Text>
               </View>
             ))}
@@ -174,20 +173,19 @@ function Body({ r }: { r: Report }) {
           <SectionHeader title="Overdue now" action={`${r.overdue.length}`} />
           <Card padding={0} style={{ overflow: 'hidden' }}>
             {r.overdue.map((o, i) => (
-              <PaymentRow
+              <SubscriptionRow
                 key={o.id}
                 compact
                 divider={i > 0}
-                onPress={() => router.push(`/payments/${o.id}`)}
+                onPress={() => router.push(`/subscriptions/${o.id}`)}
                 item={{
                   id: o.id,
                   name: o.name,
-                  provider: o.provider,
-                  icon: o.icon,
-                  amountMinor: o.remainingMinor,
-                  currency: o.currency,
+                  icon: o.category.icon,
+                  amountCents: o.remainingCents,
                   date: o.nextDueDate,
                   status: 'OVERDUE',
+                  subtitle: `${o.company.name} · ${o.frequencyLabel}`,
                 }}
               />
             ))}

@@ -21,7 +21,7 @@ export type IllustrationName =
   | 'add'
   | 'remind'
   | 'track'
-  | 'empty-payments'
+  | 'empty-subscriptions'
   | 'all-caught-up'
   | 'empty-calendar'
   | 'no-results'
@@ -43,7 +43,7 @@ const SCENES: Record<IllustrationName, Scene> = {
   add: { icon: Plus, badge: 'check', tone: 'teal', decoration: 'sparkle' },
   remind: { icon: Bell, badge: 'check', tone: 'teal', decoration: 'waves' },
   track: { icon: BarChart3, badge: 'check', tone: 'teal', decoration: 'dots' },
-  'empty-payments': { icon: ReceiptText, badge: 'check', tone: 'teal' },
+  'empty-subscriptions': { icon: ReceiptText, badge: 'check', tone: 'teal' },
   'all-caught-up': { icon: PartyPopper, badge: 'check', tone: 'teal', decoration: 'confetti' },
   'empty-calendar': { icon: CalendarDays, badge: 'none', tone: 'teal', decoration: 'dots' },
   'no-results': { icon: Search, badge: 'none', tone: 'teal' },

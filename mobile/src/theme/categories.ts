@@ -9,6 +9,7 @@ import {
   Megaphone,
   Package,
   Server,
+  Share2,
   ShieldCheck,
   Sparkles,
   Tag,
@@ -115,6 +116,13 @@ const visuals = {
     fgDark: '#B497FF',
     bgDark: '#2A2045',
   },
+  share: {
+    icon: Share2,
+    fgLight: '#BE185D',
+    bgLight: '#FCE7F3',
+    fgDark: '#F9A8D4',
+    bgDark: '#3D1A2E',
+  },
   tag: { icon: Tag, fgLight: '#667373', bgLight: '#EEF1F1', fgDark: '#A5B2B1', bgDark: '#243030' },
 } satisfies Record<string, CategoryVisual>;
 
@@ -131,7 +139,8 @@ export const DEFAULT_CATEGORY_ICONS: Record<string, CategoryIconKey> = {
   'Technology & software': 'cpu',
   'Hosting & domains': 'server',
   'Communication & internet': 'wifi',
-  Office: 'house',
+  'Social media': 'share',
+  'Office & rent': 'house',
   Insurance: 'shield',
   Marketing: 'megaphone',
   Utilities: 'bulb',

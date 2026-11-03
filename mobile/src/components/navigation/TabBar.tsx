@@ -17,7 +17,7 @@ import { useTheme } from '@/theme';
 
 const ICONS: Record<string, { icon: LucideIcon; label: string }> = {
   index: { icon: House, label: 'Home' },
-  payments: { icon: WalletCards, label: 'Payments' },
+  subscriptions: { icon: WalletCards, label: 'Subscriptions' },
   calendar: { icon: CalendarDays, label: 'Calendar' },
   alerts: { icon: Bell, label: 'Alerts' },
   more: { icon: Menu, label: 'More' },
@@ -26,10 +26,12 @@ const ICONS: Record<string, { icon: LucideIcon; label: string }> = {
 export interface TabBarProps extends BottomTabBarProps {
   /** Unread alerts count for the badge. */
   unreadAlerts?: number;
+  /** Show the floating "+" (hidden for read-only viewers). */
+  canAdd?: boolean;
 }
 
-/** Prototype bottom navigation: five tabs with a raised "+" button between Payments and Calendar. */
-export function TabBar({ state, emitter, navigateToTab, unreadAlerts = 0 }: TabBarProps) {
+/** Prototype bottom navigation: five tabs with a raised "+" button between Subscriptions and Calendar. */
+export function TabBar({ state, emitter, navigateToTab, unreadAlerts = 0, canAdd = true }: TabBarProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -118,14 +120,14 @@ export function TabBar({ state, emitter, navigateToTab, unreadAlerts = 0 }: TabB
         );
 
         // Leave room for the FAB after the second tab.
-        if (index === 1) {
+        if (index === 1 && canAdd) {
           return [
             tab,
             <View key="fab-slot" style={{ width: 64, alignItems: 'center' }}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Add payment"
-                onPress={() => router.push('/payments/new')}
+                accessibilityLabel="Add subscription"
+                onPress={() => router.push('/subscriptions/new')}
                 style={({ pressed }) => ({
                   position: 'absolute',
                   bottom: 14,

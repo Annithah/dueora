@@ -13,8 +13,8 @@ export default function AppLayout() {
   const { colors } = useTheme();
   const me = useMe();
   const segments = useSegments();
-  const activeOrgId = useSession((s) => s.activeOrgId);
-  const setActiveOrg = useSession((s) => s.setActiveOrg);
+  const activeWorkspaceId = useSession((s) => s.activeWorkspaceId);
+  const setActiveWorkspace = useSession((s) => s.setActiveWorkspace);
   const pendingInvite = usePendingInvite((s) => s.token);
   const workspaces = me.data?.workspaces;
   usePushSetup();
@@ -22,8 +22,8 @@ export default function AppLayout() {
   // Keep the active workspace valid (e.g. after being removed from one).
   useEffect(() => {
     if (!workspaces) return;
-    if (!workspaces.some((w) => w.id === activeOrgId)) void setActiveOrg(workspaces[0]?.id ?? null);
-  }, [workspaces, activeOrgId, setActiveOrg]);
+    if (!workspaces.some((w) => w.id === activeWorkspaceId)) void setActiveWorkspace(workspaces[0]?.id ?? null);
+  }, [workspaces, activeWorkspaceId, setActiveWorkspace]);
 
   if (me.isPending) {
     return (
@@ -64,8 +64,8 @@ export default function AppLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="setup" />
-      <Stack.Screen name="payments/new" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="payments/[id]" />
+      <Stack.Screen name="subscriptions/new" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="subscriptions/[id]" />
       <Stack.Screen name="notifications-permission" options={{ presentation: 'modal' }} />
       <Stack.Screen name="settings/notifications" />
     </Stack>

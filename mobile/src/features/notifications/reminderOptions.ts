@@ -1,4 +1,4 @@
-/** Reminder offset chips used in the add-payment form and notification settings. */
+/** Reminder offset chips used in the add-subscription form and notification settings. */
 export const REMINDER_CHOICES: { label: string; offsets: number[] }[] = [
   { label: '1 month', offsets: [30] },
   { label: '2 weeks', offsets: [14] },

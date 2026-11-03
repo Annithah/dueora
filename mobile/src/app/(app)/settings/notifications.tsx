@@ -50,7 +50,7 @@ const QUIET_END = [5, 6, 7, 8].map((h) => ({ value: String(h * 60), label: hourL
 export default function NotificationSettings() {
   const { colors } = useTheme();
   const queryClient = useQueryClient();
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   const prefs = usePrefs();
   const updatePrefs = useUpdatePrefs();
   const workspace = useWorkspace();
@@ -68,7 +68,7 @@ export default function NotificationSettings() {
   const updateWorkspace = async (patch: Partial<Workspace>) => {
     try {
       const ws = await api.patch<Workspace>('/workspaces/current', patch);
-      queryClient.setQueryData(workspaceKey(orgId), { ...workspace.data, ...ws });
+      queryClient.setQueryData(workspaceKey(workspaceId), { ...workspace.data, ...ws });
     } catch (err) {
       toast.error('Could not save', err instanceof ApiError ? err.message : undefined);
     }
@@ -232,7 +232,7 @@ export default function NotificationSettings() {
         <SectionHeader title="Default reminders" />
         <Card style={{ gap: 12 }}>
           <Text variant="small" tone="muted">
-            New payments start with these. You can change them per payment.
+            New subscriptions start with these. You can change them per subscription.
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {REMINDER_CHOICES.map((c) => (
@@ -281,7 +281,7 @@ export default function NotificationSettings() {
       >
         <BellRing size={14} color={colors.muted} />
         <Text variant="caption" tone="muted">
-          Muted a payment? Unmute it from its detail screen.
+          Muted a subscription? Unmute it from its detail screen.
         </Text>
       </View>
     </Screen>

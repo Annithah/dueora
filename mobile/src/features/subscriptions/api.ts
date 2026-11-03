@@ -1,4 +1,11 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 
 import { api } from '@/api';
 import { useSession } from '@/state/session';
@@ -7,14 +14,33 @@ import type { PaymentStatus } from '@/theme';
 export type FrequencyUnit = 'WEEK' | 'MONTH' | 'YEAR' | 'ONCE';
 export type PaymentMethod = 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'CARD' | 'CASH' | 'OTHER';
 
-export interface Obligation {
+export interface CompanyRef {
   id: string;
   name: string;
-  provider: string;
-  description: string | null;
+  color: string;
+}
+
+export interface CategoryRef {
+  id: string;
+  name: string;
   icon: string;
-  amountMinor: number;
-  currency: string;
+  color: string;
+}
+
+/** Masked subscription key; the plain value only comes from useRevealKey (ADMIN/FINANCE). */
+export interface MaskedKey {
+  hasKey: true;
+  last4: string;
+  masked: string;
+}
+
+export interface Subscription {
+  id: string;
+  name: string;
+  provider: string | null;
+  description: string | null;
+  /** US dollars, integer cents. */
+  amountCents: number;
   frequencyUnit: FrequencyUnit;
   frequencyInterval: number;
   frequencyLabel: string;
@@ -26,186 +52,191 @@ export interface Obligation {
   paymentStatus: PaymentStatus;
   daysUntilDue: number;
   cycleLengthDays: number;
-  paidMinor: number;
-  remainingMinor: number;
-  platform: { id: string; name: string; color: string } | null;
-  category: { id: string; name: string; icon: string; color: string };
-  department: { id: string; name: string } | null;
-  assignee: { id: string; name: string; avatarUrl: string | null } | null;
-}
-
-export interface AttachmentInfo {
-  id: string;
-  fileName: string;
-  mimeType: string;
-  size: number;
+  paidCents: number;
+  remainingCents: number;
+  subscriptionKey: MaskedKey | null;
+  company: CompanyRef;
+  category: CategoryRef;
+  createdAt: string;
 }
 
 export interface PaymentRecord {
   id: string;
-  obligationId: string;
   cycleDueDate: string;
-  amountMinor: number;
-  currency: string;
+  amountCents: number;
   paidOn: string;
   method: PaymentMethod;
   reference: string | null;
   notes: string | null;
-  recordedBy: { id: string; name: string };
-  attachments: AttachmentInfo[];
   createdAt: string;
 }
 
-export interface ObligationDetail extends Obligation {
+export interface SubscriptionDetail extends Subscription {
+  muted: boolean;
   reminders: { offsetDays: number; date: string; sent: boolean }[];
   history: PaymentRecord[];
-  attachments: (AttachmentInfo & { createdAt: string })[];
+  historyTotal: number;
 }
 
+/** Server-side page: 10 items by default. */
 export interface Page<T> {
   items: T[];
-  total: number;
   page: number;
-  pageSize: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
 }
 
-export interface ObligationFilters {
+export const PAGE_SIZE = 10;
+
+export const SUBSCRIPTION_SORTS = [
+  { value: 'due_asc', label: 'Due date — soonest first' },
+  { value: 'due_desc', label: 'Due date — latest first' },
+  { value: 'amount_desc', label: 'Amount — high to low' },
+  { value: 'amount_asc', label: 'Amount — low to high' },
+  { value: 'name_asc', label: 'Name A–Z' },
+  { value: 'recent', label: 'Recently added' },
+] as const;
+export type SubscriptionSort = (typeof SUBSCRIPTION_SORTS)[number]['value'];
+
+export interface SubscriptionQuery {
   q?: string;
-  status?: string;
-  platformId?: string;
-  assignedToMe?: boolean;
+  sort: SubscriptionSort;
+  statuses?: string[];
+  companyIds?: string[];
+  categoryIds?: string[];
+  frequencies?: string[];
+  dueFrom?: string;
+  dueTo?: string;
 }
 
-export interface ObligationInput {
+export interface SubscriptionInput {
   name: string;
-  provider: string;
+  companyId: string;
+  categoryId: string;
+  provider?: string | null;
   description?: string | null;
-  icon?: string | null;
-  amountMinor: number;
-  currency: string;
+  /** Plain key typed by the user; omit to keep the stored one, null to remove it. */
+  subscriptionKey?: string | null;
+  amountCents: number;
   frequencyUnit: FrequencyUnit;
   frequencyInterval: number;
   startDate: string;
   nextDueDate?: string;
   anchorDay?: number;
   reminderOffsets?: number[];
-  platformId?: string | null;
-  categoryId: string;
-  departmentId?: string | null;
-  assigneeUserId?: string | null;
 }
 
-const useOrg = () => useSession((s) => s.activeOrgId);
+const useWorkspaceId = () => useSession((s) => s.activeWorkspaceId);
+const csv = (v?: string[]) => (v && v.length ? v.join(',') : undefined);
 
-export const obligationKeys = {
-  all: (orgId: string | null) => ['obligations', orgId] as const,
-  list: (orgId: string | null, f: ObligationFilters) => ['obligations', orgId, 'list', f] as const,
-  detail: (orgId: string | null, id: string) => ['obligations', orgId, 'detail', id] as const,
+export const subscriptionKeys = {
+  all: (workspaceId: string | null) => ['subscriptions', workspaceId] as const,
+  list: (workspaceId: string | null, q: SubscriptionQuery) => ['subscriptions', workspaceId, 'list', q] as const,
+  detail: (workspaceId: string | null, id: string) => ['subscriptions', workspaceId, 'detail', id] as const,
 };
 
-export function useObligations(filters: ObligationFilters) {
-  const orgId = useOrg();
-  return useQuery({
-    queryKey: obligationKeys.list(orgId, filters),
-    queryFn: () =>
-      api.get<Page<Obligation>>('/obligations', {
-        q: filters.q,
-        status: filters.status,
-        platformId: filters.platformId,
-        assignedToMe: filters.assignedToMe ? 'true' : undefined,
-        pageSize: 200,
+/** Subscriptions, 10 per page from the server ("load more" / infinite scroll). */
+export function useSubscriptionList(query: SubscriptionQuery) {
+  const workspaceId = useWorkspaceId();
+  return useInfiniteQuery({
+    queryKey: subscriptionKeys.list(workspaceId, query),
+    queryFn: ({ pageParam }) =>
+      api.get<Page<Subscription>>('/subscriptions', {
+        page: pageParam,
+        limit: PAGE_SIZE,
+        sort: query.sort,
+        q: query.q?.trim() || undefined,
+        status: csv(query.statuses),
+        companyId: csv(query.companyIds),
+        categoryId: csv(query.categoryIds),
+        frequency: csv(query.frequencies),
+        dueFrom: query.dueFrom,
+        dueTo: query.dueTo,
       }),
-    enabled: !!orgId,
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
+    placeholderData: keepPreviousData,
+    enabled: !!workspaceId,
   });
 }
 
-export function useObligation(id: string | undefined) {
-  const orgId = useOrg();
+export function useSubscription(id: string | undefined) {
+  const workspaceId = useWorkspaceId();
   return useQuery({
-    queryKey: obligationKeys.detail(orgId, id ?? ''),
-    queryFn: () => api.get<ObligationDetail>(`/obligations/${id}`),
-    enabled: !!orgId && !!id,
+    queryKey: subscriptionKeys.detail(workspaceId, id ?? ''),
+    queryFn: () => api.get<SubscriptionDetail>(`/subscriptions/${id}`),
+    enabled: !!workspaceId && !!id,
   });
 }
 
-/** Everything derived from obligations (lists, dashboard, calendar, reports, inbox) goes stale together. */
-export function invalidateMoney(queryClient: QueryClient, orgId: string | null) {
+/** Everything derived from subscriptions (lists, dashboard, calendar, reports, history, inbox) goes stale together. */
+export function invalidateMoney(queryClient: QueryClient, workspaceId: string | null) {
   return Promise.all(
-    ['obligations', 'dashboard', 'calendar', 'reports', 'payments', 'inbox'].map((k) =>
-      queryClient.invalidateQueries({ queryKey: [k, orgId] }),
+    ['subscriptions', 'dashboard', 'calendar', 'reports', 'payments', 'inbox', 'companies', 'categories'].map((k) =>
+      queryClient.invalidateQueries({ queryKey: [k, workspaceId] }),
     ),
   );
 }
 
-export function useSaveObligation(id?: string) {
+export function useSaveSubscription(id?: string) {
   const queryClient = useQueryClient();
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useMutation({
-    mutationFn: (input: ObligationInput) =>
-      id
-        ? api.patch<Obligation>(`/obligations/${id}`, input)
-        : api.post<Obligation>('/obligations', input),
-    onSuccess: () => invalidateMoney(queryClient, orgId),
+    mutationFn: (input: SubscriptionInput) =>
+      id ? api.patch<Subscription>(`/subscriptions/${id}`, input) : api.post<Subscription>('/subscriptions', input),
+    onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
 }
 
-export function useArchiveObligation() {
+export function useArchiveSubscription() {
   const queryClient = useQueryClient();
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
-      api.post<Obligation>(`/obligations/${id}/${archived ? 'archive' : 'unarchive'}`),
-    onSuccess: () => invalidateMoney(queryClient, orgId),
+      api.post<Subscription>(`/subscriptions/${id}/${archived ? 'archive' : 'unarchive'}`),
+    onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
 }
 
-export function useDeleteObligation() {
+export function useDeleteSubscription() {
   const queryClient = useQueryClient();
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useMutation({
-    mutationFn: (id: string) => api.del(`/obligations/${id}`),
-    onSuccess: () => invalidateMoney(queryClient, orgId),
+    mutationFn: (id: string) => api.del(`/subscriptions/${id}`),
+    onSuccess: () => invalidateMoney(queryClient, workspaceId),
+  });
+}
+
+/**
+ * The plain subscription key (ADMIN/FINANCE only). Deliberately a mutation, not a query:
+ * the value is never written to the TanStack cache, so it isn't persisted to device storage.
+ */
+export function useRevealKey() {
+  return useMutation({
+    mutationFn: (id: string) => api.get<{ value: string }>(`/subscriptions/${id}/key`),
   });
 }
 
 export interface RecordResult {
   payment: PaymentRecord;
-  obligation: Obligation;
+  subscription: Subscription;
   cycleCompleted: boolean;
 }
 
-export function useRecordPayment(obligationId: string) {
+export function useRecordPayment(subscriptionId: string) {
   const queryClient = useQueryClient();
-  const orgId = useOrg();
+  const workspaceId = useWorkspaceId();
   return useMutation({
     mutationFn: (input: {
-      amountMinor?: number;
+      amountCents?: number;
       paidOn?: string;
       method: PaymentMethod;
       reference?: string | null;
       notes?: string | null;
-    }) => api.post<RecordResult>(`/obligations/${obligationId}/payments`, input),
-    onSuccess: () => invalidateMoney(queryClient, orgId),
+    }) => api.post<RecordResult>(`/subscriptions/${subscriptionId}/payments`, input),
+    onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
-}
-
-export interface UploadableFile {
-  uri: string;
-  name: string;
-  mimeType: string;
-}
-
-/** Upload a receipt (payment) or contract (obligation). */
-export function uploadAttachment(
-  target: { paymentId?: string; obligationId?: string },
-  file: UploadableFile,
-) {
-  const form = new FormData();
-  form.append('file', { uri: file.uri, name: file.name, type: file.mimeType } as unknown as Blob);
-  const path = target.paymentId
-    ? `/payments/${target.paymentId}/attachments`
-    : `/obligations/${target.obligationId}/attachments`;
-  return api.request<AttachmentInfo>(path, { method: 'POST', formData: form });
 }
 
 export const METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -215,3 +246,20 @@ export const METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: 'Cash',
   OTHER: 'Other',
 };
+
+export const STATUS_FILTERS = [
+  { value: 'OVERDUE', label: 'Overdue' },
+  { value: 'DUE_TODAY', label: 'Due today' },
+  { value: 'DUE_SOON', label: 'Due soon' },
+  { value: 'PARTIALLY_PAID', label: 'Partially paid' },
+  { value: 'UPCOMING', label: 'Upcoming' },
+  { value: 'PAID', label: 'Paid' },
+  { value: 'ARCHIVED', label: 'Archived' },
+] as const;
+
+export const FREQUENCY_FILTERS = [
+  { value: 'WEEK', label: 'Weekly' },
+  { value: 'MONTH', label: 'Monthly / quarterly' },
+  { value: 'YEAR', label: 'Yearly' },
+  { value: 'ONCE', label: 'One-time' },
+] as const;

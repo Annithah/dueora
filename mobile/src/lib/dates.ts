@@ -1,4 +1,5 @@
 import { differenceInCalendarDays, format, isValid, parse } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 
 /**
  * Due dates are calendar dates without a time ("2027-10-02"), exchanged with the API
@@ -17,6 +18,16 @@ export function parseISODate(value: ISODate): Date {
 
 export function toISODate(date: Date): ISODate {
   return format(date, ISO);
+}
+
+/** Today (YYYY-MM-DD) in an IANA timezone; falls back to the device date when unknown. */
+export function todayInTimeZone(timeZone: string | undefined, now: Date = new Date()): ISODate {
+  if (!timeZone) return toISODate(now);
+  try {
+    return formatInTimeZone(now, timeZone, ISO);
+  } catch {
+    return toISODate(now);
+  }
 }
 
 /** "02 Oct 2027" — the prototype's date style. */

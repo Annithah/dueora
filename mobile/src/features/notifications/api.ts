@@ -12,7 +12,7 @@ export interface InboxItem {
   title: string;
   body: string;
   data: Record<string, unknown>;
-  obligationId: string | null;
+  subscriptionId: string | null;
   cycleDueDate: string | null;
   offsetDays: number | null;
   readAt: string | null;
@@ -29,31 +29,31 @@ export interface NotificationPrefs {
   pushEnabled: boolean;
   emailEnabled: boolean;
   digestEnabled: boolean;
-  mutedObligationIds: string[];
+  mutedSubscriptionIds: string[];
 }
 
-export const inboxKey = (orgId: string | null) => ['inbox', orgId] as const;
-export const prefsKey = (orgId: string | null) => ['notification-prefs', orgId] as const;
+export const inboxKey = (workspaceId: string | null) => ['inbox', workspaceId] as const;
+export const prefsKey = (workspaceId: string | null) => ['notification-prefs', workspaceId] as const;
 
 export function useInbox() {
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   return useQuery({
-    queryKey: inboxKey(orgId),
+    queryKey: inboxKey(workspaceId),
     queryFn: () => api.get<Inbox>('/notifications', { pageSize: 100 }),
-    enabled: !!orgId,
+    enabled: !!workspaceId,
     refetchInterval: 60_000,
   });
 }
 
 export function useMarkRead() {
   const queryClient = useQueryClient();
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   return useMutation({
     mutationFn: (id: string | 'all') =>
       id === 'all' ? api.post('/notifications/read-all') : api.post(`/notifications/${id}/read`),
     onMutate: (id) => {
       // Optimistic: clear the badge immediately.
-      queryClient.setQueryData<Inbox>(inboxKey(orgId), (old) => {
+      queryClient.setQueryData<Inbox>(inboxKey(workspaceId), (old) => {
         if (!old) return old;
         const now = new Date().toISOString();
         const items = old.items.map((n) =>
@@ -62,36 +62,39 @@ export function useMarkRead() {
         return { ...old, items, unreadCount: items.filter((n) => !n.readAt).length };
       });
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: inboxKey(orgId) }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: inboxKey(workspaceId) }),
   });
 }
 
 export function usePrefs() {
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   return useQuery({
-    queryKey: prefsKey(orgId),
+    queryKey: prefsKey(workspaceId),
     queryFn: () => api.get<NotificationPrefs>('/notifications/preferences'),
-    enabled: !!orgId,
+    enabled: !!workspaceId,
   });
 }
 
 export function useUpdatePrefs() {
   const queryClient = useQueryClient();
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   return useMutation({
     mutationFn: (patch: Partial<NotificationPrefs>) =>
       api.patch<NotificationPrefs>('/notifications/preferences', patch),
-    onSuccess: (prefs) => queryClient.setQueryData(prefsKey(orgId), prefs),
+    onSuccess: (prefs) => queryClient.setQueryData(prefsKey(workspaceId), prefs),
   });
 }
 
 export function useMute() {
   const queryClient = useQueryClient();
-  const orgId = useSession((s) => s.activeOrgId);
+  const workspaceId = useSession((s) => s.activeWorkspaceId);
   return useMutation({
-    mutationFn: ({ obligationId, muted }: { obligationId: string; muted: boolean }) =>
-      api.post<NotificationPrefs>(`/obligations/${obligationId}/${muted ? 'mute' : 'unmute'}`),
-    onSuccess: (prefs) => queryClient.setQueryData(prefsKey(orgId), prefs),
+    mutationFn: ({ subscriptionId, muted }: { subscriptionId: string; muted: boolean }) =>
+      api.post<NotificationPrefs>(`/subscriptions/${subscriptionId}/${muted ? 'mute' : 'unmute'}`),
+    onSuccess: (prefs) => {
+      queryClient.setQueryData(prefsKey(workspaceId), prefs);
+      return queryClient.invalidateQueries({ queryKey: ['subscriptions', workspaceId] });
+    },
   });
 }
 
