@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 
 import { renderWithTheme } from '@/test/render';
 
-import { TabBar } from './TabBar';
+import { TabBar, tabLabelSize } from './TabBar';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (href: string) => mockPush(href) } }));
@@ -51,5 +51,15 @@ describe('TabBar', () => {
     const viewer = makeProps(0, false);
     await renderWithTheme(<TabBar {...viewer.props} />);
     expect(screen.queryByRole('button', { name: 'Add subscription' })).toBeNull();
+  });
+});
+
+describe('tabLabelSize', () => {
+  it('uses 11px where the longest label fits and shrinks only on narrow phones', () => {
+    // 5 slots: 430px → 86px slots, 412px → 82px, 360px → 72px, 320px → 64px.
+    expect(tabLabelSize(86)).toBe(11);
+    expect(tabLabelSize(82)).toBe(11);
+    expect(tabLabelSize(72)).toBe(10.3);
+    expect(tabLabelSize(64)).toBe(9.5);
   });
 });

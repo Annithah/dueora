@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/tabs';
 import { CalendarDays, House, Menu, Plus, WalletCards, type LucideIcon } from 'lucide-react-native';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fontFamily, useTheme } from '@/theme';
@@ -19,6 +19,19 @@ export const TAB_ROW_HEIGHT = 58;
 const FAB_RAISE = 14;
 const FAB_SIZE = 54;
 const ICON_SIZE = 24;
+const LABEL_SIZE = 11;
+/** Width of the longest label ("Subscriptions") in bold at 11px with -0.2 letter spacing. */
+const LONGEST_LABEL_WIDTH = 72;
+
+/**
+ * Label size for a given slot width: 11px wherever the longest label fits with a few px to
+ * spare, otherwise scaled down just enough (≈10.4px on a 360px-wide phone, never below 9.5px).
+ * Computed up front because adjustsFontSizeToFit is native-only and not guaranteed.
+ */
+export function tabLabelSize(slotWidth: number): number {
+  const fit = (LABEL_SIZE * (slotWidth - 4)) / LONGEST_LABEL_WIDTH;
+  return Math.max(9.5, Math.min(LABEL_SIZE, Math.floor(fit * 10) / 10));
+}
 
 export interface TabBarProps extends BottomTabBarProps {
   /** Show the centre "+" (hidden for read-only viewers). */
@@ -38,12 +51,16 @@ export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarP
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
+  const { width } = useWindowDimensions();
   const raise = canAdd ? FAB_RAISE : 0;
   const slotHeight = TAB_ROW_HEIGHT + raise;
 
   const tabs = state.routes
     .map((route, index) => ({ route, index, meta: TABS[route.name] }))
     .filter((t): t is typeof t & { meta: { icon: LucideIcon; label: string } } => !!t.meta);
+
+  const slotCount = tabs.length + (canAdd ? 1 : 0);
+  const labelSize = tabLabelSize((width - insets.left - insets.right) / Math.max(slotCount, 1));
 
   const renderTab = ({ route, index, meta }: (typeof tabs)[number]) => {
     const focused = state.index === index;
@@ -89,10 +106,10 @@ export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarP
           allowFontScaling={false}
           style={{
             width: '100%',
-            paddingHorizontal: 2,
             textAlign: 'center',
             fontFamily: focused ? fontFamily.bold : fontFamily.semibold,
-            fontSize: 11,
+            fontSize: labelSize,
+            letterSpacing: labelSize < LABEL_SIZE ? -0.2 : 0,
             lineHeight: 14,
             color,
           }}
