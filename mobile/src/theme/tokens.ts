@@ -16,6 +16,14 @@ export const palette = {
   black: '#000000',
 } as const;
 
+/** Text and lines on the brand-teal screens (splash, app lock), which are teal in both schemes. */
+export const onBrand = {
+  text: palette.white,
+  muted: 'rgba(255,255,255,0.85)',
+  subtle: 'rgba(255,255,255,0.7)',
+  ring: 'rgba(255,255,255,0.11)',
+} as const;
+
 /** Brand status colours (dots, icons, charts). */
 export const statusBrand = {
   paid: '#22A06B',

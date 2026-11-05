@@ -40,9 +40,11 @@ function RootNavigator() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="invite" />
+        {/* Reachable signed in too: Help → "View intro again". */}
+        <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
         <Stack.Protected guard={!signedIn}>
+          <Stack.Screen name="splash" options={{ animation: 'fade' }} />
           <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
-          <Stack.Screen name="onboarding" />
           <Stack.Screen name="(auth)" />
         </Stack.Protected>
         <Stack.Protected guard={signedIn}>

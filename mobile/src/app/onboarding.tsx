@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ArrowRight } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { Illustration, type IllustrationName } from '@/components/illustrations/Illustration';
@@ -22,31 +22,45 @@ const SLIDES: { title: string; text: string; illustration: IllustrationName }[] 
     illustration: 'remind',
   },
   {
-    title: 'Track every subscription in one place',
+    title: 'Track every payment in one place',
     text: 'See what is paid, upcoming or overdue at a glance.',
     illustration: 'track',
   },
 ];
 
+/**
+ * Three intro slides. First launch: Skip or "Get started" leads to the Welcome screen.
+ * Replayed from Help ("View intro again") while signed in: both just close the intro.
+ */
 export default function Onboarding() {
   const { colors } = useTheme();
   const [index, setIndex] = useState(0);
+  const signedIn = useSession((s) => s.status === 'signedIn');
   const markOnboarded = useSession((s) => s.markOnboarded);
   const slide = SLIDES[index] ?? SLIDES[0]!;
   const last = index === SLIDES.length - 1;
 
-  const finish = async (to: '/signup' | '/login') => {
+  const finish = async () => {
+    if (signedIn) {
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+      return;
+    }
     await markOnboarded();
-    router.replace(to);
+    router.replace('/welcome');
   };
 
   return (
     <Screen scroll={false} contentStyle={{ gap: 0 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Logo size={40} markOnly />
-        <Button variant="ghost" onPress={() => void finish('/signup')}>
-          Skip
-        </Button>
+        {last ? (
+          <View style={{ minHeight: 44 }} />
+        ) : (
+          <Button variant="ghost" onPress={() => void finish()}>
+            Skip
+          </Button>
+        )}
       </View>
 
       <Animated.View
@@ -70,7 +84,7 @@ export default function Onboarding() {
       </Animated.View>
 
       <View
-        accessibilityRole="adjustable"
+        accessible
         accessibilityLabel={`Step ${index + 1} of ${SLIDES.length}`}
         style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginVertical: 22 }}
       >
@@ -90,23 +104,11 @@ export default function Onboarding() {
       <Button
         full
         size="lg"
-        onPress={() => (last ? void finish('/signup') : setIndex(index + 1))}
+        onPress={() => (last ? void finish() : setIndex(index + 1))}
         trailingIcon={<ArrowRight size={18} color={colors.onPrimary} />}
       >
-        {last ? 'Set up my workspace' : 'Continue'}
+        {last ? 'Get started' : 'Next'}
       </Button>
-      <Pressable
-        accessibilityRole="link"
-        onPress={() => void finish('/login')}
-        style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}
-      >
-        <Text variant="small" tone="muted">
-          Already have an account?{' '}
-          <Text variant="smallStrong" tone="primary">
-            Log in
-          </Text>
-        </Text>
-      </Pressable>
     </Screen>
   );
 }

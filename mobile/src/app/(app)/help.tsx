@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { ChevronDown, ChevronUp, Mail } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
@@ -89,6 +90,16 @@ export default function Help() {
           Email support
         </Button>
       </Card>
+      {/* Low-key on purpose: most people never need the intro again. */}
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => router.push('/onboarding')}
+        style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text variant="small" tone="muted">
+          View intro again
+        </Text>
+      </Pressable>
     </Screen>
   );
 }

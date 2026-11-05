@@ -34,7 +34,7 @@ export default function Signup() {
   });
 
   return (
-    <Screen header={<TopBar onBack={() => router.replace('/onboarding')} />}>
+    <Screen header={<TopBar onBack={() => router.replace('/welcome')} />}>
       <View style={{ gap: 18, paddingTop: 10 }}>
         <Logo size={36} />
         <View style={{ gap: 6 }}>

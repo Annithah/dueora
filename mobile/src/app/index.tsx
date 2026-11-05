@@ -2,11 +2,16 @@ import { Redirect } from 'expo-router';
 
 import { useSession } from '@/state/session';
 
-/** Entry gate: signed-in users go to the app, returning users to login, new users to the welcome screen. */
+/**
+ * Entry gate:
+ * - signed in → dashboard
+ * - first launch on this install → splash → intro slides → welcome
+ * - seen the intro before (e.g. after logging out) → login
+ */
 export default function Index() {
   const status = useSession((s) => s.status);
   const hasOnboarded = useSession((s) => s.hasOnboarded);
 
   if (status === 'signedIn') return <Redirect href="/(app)/(tabs)" />;
-  return <Redirect href={hasOnboarded ? '/login' : '/welcome'} />;
+  return <Redirect href={hasOnboarded ? '/login' : '/splash'} />;
 }
