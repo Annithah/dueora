@@ -19,6 +19,8 @@ function textPairs(c: ColorScheme): [string, string, string][] {
     ['red on redSoft', c.red, c.redSoft],
     ['purple on purpleSoft', c.purple, c.purpleSoft],
     ['red on surface (danger text)', c.red, c.surface],
+    ['onDanger on danger (danger button)', c.onDanger, c.danger],
+    ['onBadge on badge (unread count)', c.onBadge, c.badge],
   ];
 }
 

@@ -6,7 +6,7 @@ import {
   Building2,
   CircleHelp,
   LogOut,
-  Moon,
+  Palette,
   ReceiptText,
   ShieldCheck,
   Store,
@@ -19,12 +19,14 @@ import { View } from 'react-native';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Screen } from '@/components/layout/Screen';
-import { Avatar, Card, ListItem, Switch, Text } from '@/components/ui';
+import { Avatar, Card, ListItem, Text } from '@/components/ui';
 import { signOut, useMe } from '@/features/auth/api';
 import { ROLE_LABELS, useWorkspace } from '@/features/workspaces/api';
 import { usePreferences } from '@/state/preferences';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
+
+const THEME_LABELS = { light: 'Light', dark: 'Dark', system: 'Match phone' } as const;
 
 interface Item {
   icon: LucideIcon;
@@ -35,12 +37,12 @@ interface Item {
 }
 
 export default function MoreTab() {
-  const { colors, scheme } = useTheme();
+  const { colors } = useTheme();
   const queryClient = useQueryClient();
   const me = useMe();
   const workspace = useWorkspace();
   const workspaceId = useSession((s) => s.activeWorkspaceId);
-  const setTheme = usePreferences((s) => s.setTheme);
+  const theme = usePreferences((s) => s.theme);
   const role = me.data?.workspaces.find((w) => w.id === workspaceId)?.role;
 
   const allItems: Item[] = [
@@ -63,6 +65,7 @@ export default function MoreTab() {
     },
     { icon: Bell, title: 'Notifications', subtitle: 'Push, email, digest and quiet hours', href: '/settings/notifications' },
     { icon: ShieldCheck, title: 'Security', subtitle: 'Password and biometric lock', href: '/settings/security' },
+    { icon: Palette, title: 'Appearance', subtitle: THEME_LABELS[theme], href: '/settings/appearance' },
   ];
   const items = allItems.filter((i) => !i.roles || (role && i.roles.includes(role)));
 
@@ -113,19 +116,6 @@ export default function MoreTab() {
             onPress={() => router.push(i.href)}
           />
         ))}
-        <ListItem
-          divider
-          icon={<Moon size={19} color={colors.primaryStrong} />}
-          title="Dark mode"
-          subtitle="Gentler in low light"
-          trailing={
-            <Switch
-              accessibilityLabel="Dark mode"
-              value={scheme === 'dark'}
-              onValueChange={(on) => setTheme(on ? 'dark' : 'light')}
-            />
-          }
-        />
       </Card>
 
       <Card padding={0} style={{ overflow: 'hidden' }}>

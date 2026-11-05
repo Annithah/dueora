@@ -14,7 +14,7 @@ import { ToastHost } from '@/components/ui';
 import { AppLock } from '@/components/layout/AppLock';
 import { usePreferences } from '@/state/preferences';
 import { useSession } from '@/state/session';
-import { ThemeProvider, useTheme } from '@/theme';
+import { ThemeProvider, useNativeAppearance, useTheme } from '@/theme';
 import { appFonts } from '@/theme/fonts';
 
 void SplashScreen.preventAutoHideAsync();
@@ -30,6 +30,7 @@ function RootNavigator() {
   const { colors, scheme } = useTheme();
   const status = useSession((s) => s.status);
   const signedIn = status === 'signedIn';
+  useNativeAppearance(colors.canvas);
 
   return (
     <>

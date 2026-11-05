@@ -58,6 +58,9 @@ export interface ColorScheme {
   redSoft: string;
   purple: string;
   purpleSoft: string;
+  /** Solid destructive button and the text on it (≥ 4.5:1 in both schemes). */
+  danger: string;
+  onDanger: string;
   /** Solid count badge (unread alerts) and the text on it. */
   badge: string;
   onBadge: string;
@@ -95,6 +98,8 @@ export const lightColors: ColorScheme = {
   redSoft: '#FFE8E7',
   purple: '#6D36CC',
   purpleSoft: '#F0EAFF',
+  danger: '#C82020',
+  onDanger: palette.white,
   badge: '#C82020',
   onBadge: palette.white,
   shadow: '#143131',
@@ -132,6 +137,9 @@ export const darkColors: ColorScheme = {
   redSoft: '#3A1F1F',
   purple: '#B497FF',
   purpleSoft: '#2A2045',
+  // The dark scheme's `red` is a light text tone; solid fills need a deeper red for white text.
+  danger: '#C73434',
+  onDanger: palette.white,
   badge: '#D33A3A',
   onBadge: palette.white,
   shadow: '#000000',

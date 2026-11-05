@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
-import { useThemePreference, type ThemePreference } from '@/theme';
+import { DEFAULT_THEME_PREFERENCE, useThemePreference, type ThemePreference } from '@/theme';
 
 const KEY = 'dueora.preferences';
+const THEMES: readonly ThemePreference[] = ['light', 'dark', 'system'];
 
 interface Prefs {
   theme: ThemePreference;
@@ -23,14 +24,14 @@ function persist(p: Prefs) {
 
 /** Device-level preferences (not tied to an account): appearance and biometric lock. */
 export const usePreferences = create<PreferencesState>((set, get) => ({
-  theme: 'system',
+  theme: DEFAULT_THEME_PREFERENCE,
   biometricLock: false,
   hydrated: false,
   hydrate: async () => {
     try {
       const raw = await AsyncStorage.getItem(KEY);
       const saved = raw ? (JSON.parse(raw) as Partial<Prefs>) : {};
-      const theme = saved.theme ?? 'system';
+      const theme = saved.theme && THEMES.includes(saved.theme) ? saved.theme : DEFAULT_THEME_PREFERENCE;
       useThemePreference.getState().setPreference(theme);
       set({ theme, biometricLock: !!saved.biometricLock, hydrated: true });
     } catch {

@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { elevation, radius, useTheme, type ColorScheme } from '@/theme';
+import { elevation, palette, radius, useTheme, type ColorScheme } from '@/theme';
 
 import { Text } from './Text';
 
@@ -35,9 +35,10 @@ function variantColors(variant: ButtonVariant, colors: ColorScheme) {
     case 'ghost':
       return { bg: 'transparent', fg: colors.primaryStrong, border: 'transparent' };
     case 'danger':
-      return { bg: colors.red, fg: '#FFFFFF', border: colors.red };
+      return { bg: colors.danger, fg: colors.onDanger, border: colors.danger };
     case 'inverse':
-      return { bg: '#FFFFFF', fg: '#0F5C5C', border: '#FFFFFF' };
+      // For use on the brand-teal screens (splash, app lock), which are teal in both schemes.
+      return { bg: palette.white, fg: palette.teal800, border: palette.white };
   }
 }
 

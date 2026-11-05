@@ -11,9 +11,12 @@ interface ThemePreferenceState {
   setPreference: (preference: ThemePreference) => void;
 }
 
+/** New installs open in light mode, whatever the phone's setting; "system" is opt-in. */
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'light';
+
 /** The user's appearance choice (persisted by the app's storage layer). */
 export const useThemePreference = create<ThemePreferenceState>((set) => ({
-  preference: 'system',
+  preference: DEFAULT_THEME_PREFERENCE,
   setPreference: (preference) => set({ preference }),
 }));
 
