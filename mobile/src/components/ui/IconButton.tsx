@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import { Pressable, View, type PressableProps } from 'react-native';
+import { Pressable, Text, View, type PressableProps } from 'react-native';
 
-import { HIT_SIZE, useTheme } from '@/theme';
+import { fontFamily, HIT_SIZE, useTheme } from '@/theme';
 
 export interface IconButtonProps extends Omit<PressableProps, 'children'> {
   /** Required: icon-only buttons need a spoken label. */
@@ -9,10 +9,12 @@ export interface IconButtonProps extends Omit<PressableProps, 'children'> {
   children: ReactNode;
   /** Small red dot (e.g. unread notifications). */
   dot?: boolean;
+  /** Count badge (e.g. unread alerts); hidden when 0. Shows "99+" above 99. */
+  badge?: number;
   tone?: 'plain' | 'soft';
 }
 
-export function IconButton({ children, dot, tone = 'plain', style, ...rest }: IconButtonProps) {
+export function IconButton({ children, dot, badge = 0, tone = 'plain', style, ...rest }: IconButtonProps) {
   const { colors } = useTheme();
   return (
     <Pressable
@@ -32,7 +34,32 @@ export function IconButton({ children, dot, tone = 'plain', style, ...rest }: Ic
       ]}
     >
       {children}
-      {dot ? (
+      {badge > 0 ? (
+        <View
+          testID="icon-button-badge"
+          style={{
+            position: 'absolute',
+            top: 4,
+            right: 2,
+            minWidth: 18,
+            height: 18,
+            paddingHorizontal: 4,
+            borderRadius: 9,
+            backgroundColor: colors.badge,
+            borderWidth: 2,
+            borderColor: colors.canvas,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text
+            allowFontScaling={false}
+            style={{ fontFamily: fontFamily.extrabold, fontSize: 10, lineHeight: 12, color: colors.onBadge }}
+          >
+            {badge > 99 ? '99+' : badge}
+          </Text>
+        </View>
+      ) : dot ? (
         <View
           testID="icon-button-dot"
           style={{
@@ -42,7 +69,7 @@ export function IconButton({ children, dot, tone = 'plain', style, ...rest }: Ic
             width: 9,
             height: 9,
             borderRadius: 5,
-            backgroundColor: colors.red,
+            backgroundColor: colors.badge,
             borderWidth: 2,
             borderColor: colors.canvas,
           }}

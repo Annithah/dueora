@@ -58,6 +58,9 @@ export interface ColorScheme {
   redSoft: string;
   purple: string;
   purpleSoft: string;
+  /** Solid count badge (unread alerts) and the text on it. */
+  badge: string;
+  onBadge: string;
   shadow: string;
 }
 
@@ -92,6 +95,8 @@ export const lightColors: ColorScheme = {
   redSoft: '#FFE8E7',
   purple: '#6D36CC',
   purpleSoft: '#F0EAFF',
+  badge: '#C82020',
+  onBadge: palette.white,
   shadow: '#143131',
 };
 
@@ -127,6 +132,8 @@ export const darkColors: ColorScheme = {
   redSoft: '#3A1F1F',
   purple: '#B497FF',
   purpleSoft: '#2A2045',
+  badge: '#D33A3A',
+  onBadge: palette.white,
   shadow: '#000000',
 };
 

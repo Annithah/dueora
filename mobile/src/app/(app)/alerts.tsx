@@ -6,9 +6,9 @@ import { Pressable, RefreshControl, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
-import { PageHeader } from '@/components/layout/PageHeader';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
+import { TopBar } from '@/components/layout/TopBar';
 import {
   Button,
   Card,
@@ -116,7 +116,7 @@ function AlertRow({
   );
 }
 
-export default function AlertsTab() {
+export default function AlertsScreen() {
   const { colors } = useTheme();
   const inbox = useInbox();
   const markRead = useMarkRead();
@@ -124,7 +124,19 @@ export default function AlertsTab() {
 
   return (
     <Screen
-      edges={['top']}
+      header={
+        <TopBar
+          title="Alerts"
+          action={
+            <IconButton
+              accessibilityLabel="Notification settings"
+              onPress={() => router.push('/settings/notifications')}
+            >
+              <Settings size={20} color={colors.ink} />
+            </IconButton>
+          }
+        />
+      }
       contentStyle={{ gap: 18, paddingBottom: 32 }}
       refreshControl={
         <RefreshControl
@@ -138,18 +150,6 @@ export default function AlertsTab() {
         />
       }
     >
-      <PageHeader
-        eyebrow="Keep watch"
-        title="Alerts"
-        right={
-          <IconButton
-            accessibilityLabel="Notification settings"
-            onPress={() => router.push('/settings/notifications')}
-          >
-            <Settings size={20} color={colors.ink} />
-          </IconButton>
-        }
-      />
       <OfflineBanner message="You're offline. Showing your latest alerts." />
       <QueryState query={inbox}>
         {(data) =>

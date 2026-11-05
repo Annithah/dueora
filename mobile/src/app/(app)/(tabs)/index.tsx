@@ -319,7 +319,7 @@ export default function HomeTab() {
           {active ? <Avatar name={active.name} color={colors.primary} size={38} /> : null}
           <IconButton
             accessibilityLabel={`Alerts${inbox.data?.unreadCount ? `, ${inbox.data.unreadCount} unread` : ''}`}
-            dot={!!inbox.data?.unreadCount}
+            badge={inbox.data?.unreadCount ?? 0}
             onPress={() => router.push('/alerts')}
           >
             <Bell size={21} color={colors.ink} />
