@@ -45,12 +45,10 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/auth/register` | `{ name, email, password (≥8) }` | 201 `{ accessToken, refreshToken, expiresIn, user }`; emails a 6-digit verification code |
+| POST | `/auth/register` | `{ name, email, password (≥8) }` | 201 `{ accessToken, refreshToken, expiresIn, user }` — signed in straight away, no email verification |
 | POST | `/auth/login` | `{ email, password }` | `{ accessToken, refreshToken, expiresIn, user }` |
 | POST | `/auth/refresh` | `{ refreshToken }` | New pair. Each refresh token works once (stored hashed); reusing an old one revokes the whole session family. |
 | POST | `/auth/logout` | `{ refreshToken }` | 204 |
-| POST | `/auth/verify-email/request` 🔒 | — | 202 (max one code per minute) |
-| POST | `/auth/verify-email` 🔒 | `{ code }` | Updated `user` |
 | POST | `/auth/password/forgot` | `{ email }` | Always 202 (never reveals whether the account exists) |
 | POST | `/auth/password/reset` | `{ email, code, newPassword }` | 204; signs out all sessions |
 

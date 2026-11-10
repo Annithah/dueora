@@ -16,7 +16,6 @@ const code = z.string().regex(/^\d{6}$/, 'Enter the 6-digit code');
 const RegisterBody = z.object({ name: z.string().trim().min(1, 'Enter your name').max(100), email, password });
 const LoginBody = z.object({ email, password: z.string().min(1).max(128) });
 const RefreshBody = z.object({ refreshToken: z.string().min(20).max(200) });
-const CodeBody = z.object({ code });
 const ForgotBody = z.object({ email });
 const ResetBody = z.object({ email, code, newPassword: password });
 const ProfileBody = z.object({ name: z.string().trim().min(1, 'Enter your name').max(100) }).strict();
@@ -45,16 +44,6 @@ export function authRouter(ctx: AppContext): Router {
     const { refreshToken } = parseBody(req, RefreshBody);
     await revokeRefreshToken(ctx, refreshToken);
     res.status(204).end();
-  });
-
-  router.post('/verify-email/request', requireAuth(ctx), codeLimit, async (req, res) => {
-    await auth.requestEmailVerification(ctx, userIdOf(req));
-    res.status(202).json({ sent: true });
-  });
-
-  router.post('/verify-email', requireAuth(ctx), codeLimit, async (req, res) => {
-    await auth.verifyEmail(ctx, userIdOf(req), parseBody(req, CodeBody).code);
-    res.json(await auth.publicUser(ctx, userIdOf(req)));
   });
 
   router.post('/password/forgot', authLimiter(ctx, { limit: 5, windowMinutes: 15 }), async (req, res) => {

@@ -70,7 +70,19 @@ export default function RootLayout() {
     void hydratePrefs();
   }, [hydrate, hydratePrefs]);
 
-  const ready = (fontsLoaded || !!fontError) && status !== 'loading' && prefsReady;
+  // Never leave the user staring at the splash: if fonts or storage stall on a device,
+  // continue after a few seconds (system font / signed-out state are safe fallbacks).
+  const [gateTimedOut, setGateTimedOut] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (useSession.getState().status === 'loading') useSession.setState({ status: 'signedOut' });
+      setGateTimedOut(true);
+    }, 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const ready =
+    gateTimedOut || ((fontsLoaded || !!fontError) && status !== 'loading' && prefsReady);
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync();
   }, [ready]);

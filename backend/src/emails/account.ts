@@ -6,20 +6,6 @@ function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? name;
 }
 
-export function verifyEmailMessage(to: string, name: string, code: string): EmailMessage {
-  return {
-    to,
-    tag: 'verify-email',
-    subject: `${code} is your DueOra verification code`,
-    html: renderLayout({
-      preheader: `Your code is ${code}. It expires in 15 minutes.`,
-      heading: `Welcome to DueOra, ${firstName(name)} 👋`,
-      bodyHtml: `<p style="margin:0">Enter this code in the app to confirm your email address:</p>${codeBlock(code)}<p style="margin:0;color:#667373">It expires in 15 minutes. If you didn't create a DueOra account, you can ignore this email.</p>`,
-    }),
-    text: `Welcome to DueOra, ${firstName(name)}!\n\nYour verification code is ${code}. It expires in 15 minutes.\n\nIf you didn't create a DueOra account, you can ignore this email.`,
-  };
-}
-
 export function resetPasswordMessage(to: string, name: string, code: string): EmailMessage {
   return {
     to,

@@ -22,7 +22,7 @@ Screens from the Figma prototype (https://rouge-warm-77431112.figma.site/), capt
 ## Navigation overview
 
 ```
-Splash ──► Onboarding (3 slides) ──► Sign up ─► Verify email ─► Workspace setup ─► Invite team ─► Main tabs
+Splash ──► Onboarding (3 slides) ──► Sign up ─► Workspace setup ─► Invite team ─► Main tabs
                      └─ "Log in" ─► Login ─┬─► Main tabs
                                            └─► Forgot password ─► (email code) ─► Reset password
 
@@ -41,7 +41,7 @@ Main tabs: Home · Subscriptions · [ + FAB, hidden for viewers ] · Calendar ·
 |---|--------|------------|-------|--------------|
 | 1 | Splash | `01-splash.png` | `welcome` | Teal full-bleed, logo, "Your dues, on time.", Get started |
 | 2 | Onboarding ×3 | `02–04` | `onboarding` | Original illustrations (add / remind / track), dots, Skip, Log in |
-| 3–6 | Login, Forgot, Sign up, Verify | `05–08` | `(auth)/*`, `(app)/setup/verify-email` | Inputs with icons, 6-digit code input, resend timer |
+| 3–5 | Login, Forgot, Sign up | `05–07` | `(auth)/*` | Inputs with icons, 6-digit code input (password reset), resend timer |
 | 7 | Workspace setup | `09` | `(app)/setup/workspace` | Company/Personal cards, workspace name, **first company**, timezone (no logo, no currency) |
 | 8 | Invite team | `10` | `(app)/setup/invite` | Email + role (Finance / Viewer / Admin), add another, skip |
 | 9 | Home | `11–14` | `(tabs)/index` | "Good morning, <name> 👋", workspace switcher, a one-line headline about the most urgent subscription, summary cards (Overdue, Due this week, Due this month, Paid this month — USD), Needs attention, Quick actions, Next 30 days (by due date), Monthly spending bars, Spending by category donut, **Spending by company** bars; empty state when there's no data |

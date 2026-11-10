@@ -55,9 +55,6 @@ function ProfileForm({ me }: { me: Me }) {
     >
       <View style={{ alignItems: 'center', gap: 8 }}>
         <Avatar name={name || me.name} size={72} />
-        <Text variant="small" tone="muted">
-          {me.emailVerified ? 'Email verified ✓' : 'Email not verified yet'}
-        </Text>
       </View>
       <FormMessage message={error} />
       <Input

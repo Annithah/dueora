@@ -57,7 +57,7 @@ export default function AppLayout() {
   if (pendingInvite)
     return <Redirect href={{ pathname: '/invite', params: { token: pendingInvite } }} />;
   if (!inSetup && me.data && me.data.workspaces.length === 0) {
-    return <Redirect href={me.data.emailVerified ? '/setup/workspace' : '/setup/verify-email'} />;
+    return <Redirect href="/setup/workspace" />;
   }
 
   return (

@@ -15,7 +15,7 @@ afterAll(async () => {
 });
 
 describe('register', () => {
-  it('creates the account, returns tokens and emails a verification code', async () => {
+  it('creates the account and returns tokens without any email verification step', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
       .send({ name: 'Anitha Uwase', email: '  Anitha@Example.com ', password: 'correct-horse-9' });
@@ -26,9 +26,8 @@ describe('register', () => {
     expect(res.body.user).toMatchObject({ email: 'anitha@example.com', emailVerified: false, workspaces: [] });
     expect(res.body.user.passwordHash).toBeUndefined();
 
-    const mail = ctx.mailer.lastTo('anitha@example.com');
-    expect(mail?.subject).toMatch(/^\d{6} is your DueOra verification code$/);
-    expect(mail?.html).toContain('Welcome to DueOra, Anitha');
+    expect(ctx.mailer.lastTo('anitha@example.com')).toBeUndefined();
+    expect((await request(app).post('/api/v1/auth/verify-email').send({ code: '123456' })).status).toBe(404);
   });
 
   it('stores only hashes of passwords and refresh tokens', async () => {
@@ -53,50 +52,44 @@ describe('register', () => {
   });
 });
 
-describe('email verification', () => {
-  it('accepts the right code once and rejects wrong codes', async () => {
-    const s = await register(app, 'Verify Me', 'verify@example.com');
-    const code = lastCode(ctx, 'verify@example.com');
-    const wrong = code === '000000' ? '111111' : '000000';
+describe('reset codes', () => {
+  const forgot = (email: string) => request(app).post('/api/v1/auth/password/forgot').send({ email });
+  const reset = (email: string, code: string) =>
+    request(app).post('/api/v1/auth/password/reset').send({ email, code, newPassword: 'new-password-2' });
 
-    const bad = await client(app, s).post('/api/v1/auth/verify-email').send({ code: wrong });
-    expect(bad.status).toBe(400);
-    expect(bad.body.error.code).toBe('INVALID_CODE');
-
-    const ok = await client(app, s).post('/api/v1/auth/verify-email').send({ code });
-    expect(ok.status).toBe(200);
-    expect(ok.body.emailVerified).toBe(true);
-
-    const again = await client(app, s).post('/api/v1/auth/verify-email').send({ code });
+  it('works once only', async () => {
+    await register(app, 'Once', 'once@example.com');
+    await forgot('once@example.com');
+    const code = lastCode(ctx, 'once@example.com');
+    expect((await reset('once@example.com', code)).status).toBe(204);
+    const again = await reset('once@example.com', code);
     expect(again.status).toBe(400);
+    expect(again.body.error.code).toBe('INVALID_CODE');
   });
 
   it('throttles resends and locks a code after 5 wrong attempts', async () => {
-    const s = await register(app, 'Lock Me', 'lock@example.com');
-    const resend = await client(app, s).post('/api/v1/auth/verify-email/request');
-    expect(resend.status).toBe(429);
+    await register(app, 'Lock Me', 'lock@example.com');
+    await forgot('lock@example.com');
+    const sent = ctx.mailer.sent.length;
+    expect((await forgot('lock@example.com')).status).toBe(202);
+    expect(ctx.mailer.sent.length).toBe(sent); // silently throttled
 
     ctx.clock.advance(61_000);
-    expect((await client(app, s).post('/api/v1/auth/verify-email/request')).status).toBe(202);
+    await forgot('lock@example.com');
     const code = lastCode(ctx, 'lock@example.com');
     const wrong = code === '000000' ? '111111' : '000000';
-    for (let i = 0; i < 5; i++) {
-      await client(app, s).post('/api/v1/auth/verify-email').send({ code: wrong });
-    }
-    const locked = await client(app, s).post('/api/v1/auth/verify-email').send({ code });
+    for (let i = 0; i < 5; i++) await reset('lock@example.com', wrong);
+    const locked = await reset('lock@example.com', code);
     expect(locked.body.error.code).toBe('CODE_LOCKED');
   });
 
   it('expires codes after 15 minutes', async () => {
-    const s = await register(app, 'Slow', 'slow@example.com');
+    await register(app, 'Slow', 'slow@example.com');
+    await forgot('slow@example.com');
     const code = lastCode(ctx, 'slow@example.com');
     ctx.clock.advance(16 * 60_000);
-    const res = await client(app, s).post('/api/v1/auth/verify-email').send({ code });
-    // Access token also expired (15 min) → 401; refresh and retry still rejects the code.
-    expect(res.status).toBe(401);
-    const refreshed = await request(app).post('/api/v1/auth/refresh').send({ refreshToken: s.refreshToken });
-    const retry = await client(app, refreshed.body).post('/api/v1/auth/verify-email').send({ code });
-    expect(retry.body.error.code).toBe('INVALID_CODE');
+    const res = await reset('slow@example.com', code);
+    expect(res.body.error.code).toBe('INVALID_CODE');
   });
 });
 

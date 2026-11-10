@@ -67,8 +67,6 @@ const PUBLIC = new Set([
 
 /** Account-level routes (signed in, but not tied to a workspace). */
 const ACCOUNT = new Set([
-  'post /api/v1/auth/verify-email/request',
-  'post /api/v1/auth/verify-email',
   'get /api/v1/me',
   'patch /api/v1/me',
   'post /api/v1/me/password',

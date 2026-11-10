@@ -26,7 +26,7 @@ export default function Signup() {
     setFormError(null);
     try {
       await registerUser.mutateAsync(values);
-      // Signed in now; the app layout routes to email verification next.
+      // Signed in now; the app layout routes to workspace setup next.
       router.replace('/');
     } catch (err) {
       setFormError(applyApiError(err, setError, ['name', 'email', 'password']));

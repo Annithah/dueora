@@ -15,7 +15,7 @@ Android version and build number at the top of your notes.
 - [ ] No notification permission prompt on first launch.
 
 ## 2. Accounts & workspace
-- [ ] Sign up → code arrives by email → verifying continues. Wrong code → clear error; Resend after 60 s.
+- [ ] Sign up → goes straight to workspace setup (no email verification step).
 - [ ] Workspace setup: name, Company/Personal, **first company**, timezone. No currency, no logo upload.
 - [ ] Invite step: send to the Finance and Viewer emails (roles Finance / Viewer), or Skip.
 - [ ] Forgot password → code → new password → old one no longer works.

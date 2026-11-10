@@ -1,7 +1,7 @@
 import type { AppContext } from '../../context.js';
-import { verifyEmailMessage, resetPasswordMessage } from '../../emails/account.js';
+import { resetPasswordMessage } from '../../emails/account.js';
 import type { EmailTokenPurpose } from '../../generated/prisma/client.js';
-import { AppError, badRequest, conflict, tooMany, unauthorized } from '../../http/errors.js';
+import { AppError, conflict, tooMany, unauthorized } from '../../http/errors.js';
 import { safeEqualHex, sha256, sixDigitCode } from '../../lib/crypto.js';
 import { hashPassword, verifyPassword } from '../../lib/password.js';
 
@@ -84,8 +84,6 @@ export async function register(
   const user = await ctx.db.user.create({
     data: { name: input.name.trim(), email, passwordHash: await hashPassword(input.password) },
   });
-  const code = await createCode(ctx, user.id, 'VERIFY_EMAIL');
-  await ctx.mailer.send(verifyEmailMessage(email, user.name, code));
   const { refreshTokenId: _id, ...tokens } = await issueTokens(ctx, user.id, { userAgent });
   return { ...tokens, user: await publicUser(ctx, user.id) };
 }
@@ -106,18 +104,6 @@ export async function login(
   }
   const { refreshTokenId: _id, ...tokens } = await issueTokens(ctx, user.id, { userAgent });
   return { ...tokens, user: await publicUser(ctx, user.id) };
-}
-
-export async function requestEmailVerification(ctx: AppContext, userId: string): Promise<void> {
-  const user = await ctx.db.user.findUniqueOrThrow({ where: { id: userId } });
-  if (user.emailVerifiedAt) throw badRequest('Your email is already verified');
-  const code = await createCode(ctx, userId, 'VERIFY_EMAIL');
-  await ctx.mailer.send(verifyEmailMessage(user.email, user.name, code));
-}
-
-export async function verifyEmail(ctx: AppContext, userId: string, code: string): Promise<void> {
-  await consumeCode(ctx, userId, 'VERIFY_EMAIL', code);
-  await ctx.db.user.update({ where: { id: userId }, data: { emailVerifiedAt: ctx.clock.now() } });
 }
 
 /** Always succeeds from the caller's view so it can't be used to discover accounts. */

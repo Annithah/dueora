@@ -194,3 +194,11 @@ Files under `mobile/` (excluding `node_modules`) were rewritten in place to make
 unchanged). `mobile/node_modules` still has ~62k placeholders; rewriting them would trigger a large OneDrive
 re-upload, so that was left to the owner: mark the folder "Always keep on this device", or move the project
 outside OneDrive (recommended), or reinstall `node_modules` after pausing sync.
+
+## D24 — No email verification at sign-up (4 Nov 2026)
+The owner asked to remove email verification: without a configured email provider the code never reached
+users and blocked sign-up. Sign-up now signs the user in and goes straight to workspace setup. The
+`/auth/verify-email` endpoints, the verify screen and the verification email were removed. The
+`emailVerifiedAt` column and `VERIFY_EMAIL` enum value stay (no migration); accepting an invite or resetting
+a password still marks the address verified. Password reset keeps its emailed code, so it still needs
+`RESEND_API_KEY` in production.

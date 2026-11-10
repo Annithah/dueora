@@ -69,22 +69,6 @@ export function useRegister() {
   });
 }
 
-export function useVerifyEmail() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (code: string) =>
-      api.request<Me>('/auth/verify-email', { method: 'POST', body: { code }, org: false }),
-    onSuccess: (me) => queryClient.setQueryData(meKey, me),
-  });
-}
-
-export function useResendVerification() {
-  return useMutation({
-    mutationFn: () =>
-      api.request<{ sent: boolean }>('/auth/verify-email/request', { method: 'POST', org: false }),
-  });
-}
-
 export function useForgotPassword() {
   return useMutation({
     mutationFn: (email: string) =>

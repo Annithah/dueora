@@ -237,7 +237,7 @@ App identity (already configured): name **DueOra**, Android package **`com.dueor
 ## 9. After deploying — smoke test
 
 1. `GET https://api…/health` → ok.
-2. Install the preview APK, sign up with a real email → the verification code arrives (Resend works).
+2. Install the preview APK, sign up, then use **Forgot password** with a real email → the reset code arrives (Resend works).
 3. Create the workspace and first company; add a subscription due tomorrow with a subscription key.
 4. Accept the notification prompt → More → Notifications → **Send test notification** (push works).
 5. Next morning at 09:00 (workspace timezone) you should get "⏰ <Company> · <Subscription> is due tomorrow — $…".
