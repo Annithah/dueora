@@ -128,8 +128,8 @@ describe('nextDueDate', () => {
   });
 
   it('seed subscriptions advance correctly', () => {
-    expect(advance('2026-01-30', 'YEAR', 1, 30)).toBe('2027-01-30'); // Cloudflare
-    expect(advance('2026-10-20', 'YEAR', 1, 20)).toBe('2027-10-20'); // KigaliToday hosting
+    expect(advance('2026-01-30', 'YEAR', 1, 30)).toBe('2027-01-30'); // yearly CDN plan
+    expect(advance('2026-10-20', 'YEAR', 1, 20)).toBe('2027-10-20'); // yearly hosting
     expect(advance('2026-11-30', 'MONTH', 1, 31)).toBe('2026-12-31'); // rent anchored to month end
     expect(advance('2027-02-26', 'YEAR', 1, 26)).toBe('2028-02-26');
   });

@@ -202,3 +202,51 @@ users and blocked sign-up. Sign-up now signs the user in and goes straight to wo
 `emailVerifiedAt` column and `VERIFY_EMAIL` enum value stay (no migration); accepting an invite or resetting
 a password still marks the address verified. Password reset keeps its emailed code, so it still needs
 `RESEND_API_KEY` in production.
+
+---
+
+# Master prompt (10 Nov 2026)
+
+The owner issued `DUEORA_MASTER_PROMPT` as the single source of truth. Where it differs from earlier briefs or
+decisions, the master prompt wins, except where noted below.
+
+## D25 — Production database: managed PostgreSQL (supersedes D14 for production)
+The master prompt asks for PostgreSQL in production. The Postgres flavour already existed (D13/D14): schema
+and migrations generated from the SQLite schema and kept in sync by a test. Production now deploys with
+`DB_PROVIDER=postgres` against the host's managed Postgres. Development and tests stay on SQLite (fast,
+no server needed, already 500+ tests). The database-backed job queue (D2) stays instead of pg-boss: it gives
+the same guarantees (atomic claims, backoff, max 5 attempts, singleton keys) and works on both databases, so
+the test suite keeps exercising the real queue. Swapping to pg-boss later only touches `src/jobs/queue.ts`.
+
+## D26 — Email verification is optional, never blocking (refines D24)
+The master prompt lists email verification; the owner removed it on 4 Nov because it blocked sign-up when
+email wasn't configured. Both hold: sign-up goes straight to workspace setup, and Profile offers
+"Verify my email" (6-digit code). `/auth/verify-email/request` and `/auth/verify-email` are back.
+
+## D27 — Event notifications go to ADMIN and FINANCE (supersedes D20's payment rule)
+PAYMENT_RECORDED, PRICE_CHANGE, AUTO_RENEW_NOTICE and BUDGET_ALERT go to ADMIN and FINANCE members only
+(never the person who caused them); TEAM goes to ADMIN. They are in-app + push, no email, built by one helper
+(`notifications/events.ts`). Dedupe keys now include the notification type.
+
+## D28 — Budgets
+"Spent" for a month = paid in the month + still due in the month (unpaid parts of cycles whose due date falls
+in it), so an alert arrives before the money is gone. One alert at the chosen percentage and one at 100% per
+budget per month (only the highest threshold crossed is sent). A budget is unique per (workspace, scope)
+where scope is `all` or the category id, because NULLs never collide in unique indexes.
+
+## D29 — Spreadsheet import
+- Preview and commit both re-read the uploaded file with the same mapping, so the server never trusts rows
+  sent back by the client. Nothing is written until commit; only valid rows are imported.
+- Templates are header-only (no sample rows, rule 13). Up to 1,000 rows and 2 MB per file.
+- Slashed dates are read day-first (20/10/2026) unless impossible. A past date on a recurring row means the
+  last renewal and rolls forward to the next one. Unknown companies and categories are created; an empty
+  category is guessed from keywords (shown as a warning, editable afterwards).
+
+## D30 — Account deletion
+Password + typing DELETE. Workspaces where the user is the only member are deleted. Shared workspaces are
+left; if the user was their only admin, the longest-standing member becomes admin. Personal data is erased
+and the user row becomes an anonymous tombstone so the internal audit log of shared workspaces stays intact.
+
+## D31 — Default categories
+The 11 defaults from the master prompt: Transport and Education & training were added; the 9 existing ones
+kept their ids, so no data moves.

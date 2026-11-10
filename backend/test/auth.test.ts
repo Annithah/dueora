@@ -27,7 +27,8 @@ describe('register', () => {
     expect(res.body.user.passwordHash).toBeUndefined();
 
     expect(ctx.mailer.lastTo('anitha@example.com')).toBeUndefined();
-    expect((await request(app).post('/api/v1/auth/verify-email').send({ code: '123456' })).status).toBe(404);
+    // Verification exists but is optional (DECISIONS.md D26): it needs a signed-in user and never blocks sign-up.
+    expect((await request(app).post('/api/v1/auth/verify-email').send({ code: '123456' })).status).toBe(401);
   });
 
   it('stores only hashes of passwords and refresh tokens', async () => {

@@ -11,6 +11,7 @@ import * as svc from './service.js';
 
 const STATUSES = ['UPCOMING', 'DUE_SOON', 'DUE_TODAY', 'OVERDUE', 'PARTIALLY_PAID', 'PAID', 'ARCHIVED'] as const;
 const UNITS = ['WEEK', 'MONTH', 'YEAR', 'ONCE'] as const;
+export const METHODS = ['MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CASH', 'OTHER'] as const;
 const optionalText = (max: number) => z.string().trim().max(max).nullable();
 
 const fields = {
@@ -27,6 +28,10 @@ const fields = {
   startDate: isoDate,
   nextDueDate: isoDate,
   reminderOffsets,
+  autoRenew: z.boolean(),
+  isTrial: z.boolean(),
+  trialEndsOn: isoDate.nullable(),
+  defaultPaymentMethod: z.enum(METHODS).nullable(),
 };
 
 const CreateBody = z
@@ -40,8 +45,13 @@ const CreateBody = z
     startDate: fields.startDate.optional(),
     nextDueDate: fields.nextDueDate.optional(),
     reminderOffsets: fields.reminderOffsets.optional(),
+    autoRenew: fields.autoRenew.optional(),
+    isTrial: fields.isTrial.optional(),
+    trialEndsOn: fields.trialEndsOn.optional(),
+    defaultPaymentMethod: fields.defaultPaymentMethod.optional(),
   })
   .strict()
+  .refine((b) => !b.isTrial || !!b.trialEndsOn, { message: 'When does the free trial end?', path: ['trialEndsOn'] })
   .refine((b) => !b.nextDueDate || !b.startDate || b.nextDueDate >= b.startDate, {
     message: 'The next due date cannot be before the start date',
     path: ['nextDueDate'],
@@ -71,6 +81,11 @@ const ListQuery = pagination.extend({
 });
 
 const Params = z.object({ id });
+
+const SnoozeBody = z
+  .object({ days: z.number().int().min(1).max(60).optional(), until: isoDate.optional() })
+  .strict()
+  .refine((b) => (b.days === undefined) !== (b.until === undefined), 'Send either days or until');
 
 export function subscriptionsRouter(ctx: AppContext): Router {
   const router = Router();
@@ -124,6 +139,17 @@ export function subscriptionsRouter(ctx: AppContext): Router {
 
   router.post('/:id/unarchive', manage, async (req, res) => {
     res.json(await svc.setArchived(ctx, req, parseParams(req, Params).id, false));
+  });
+
+  /** Snooze reminders for this cycle (any role; only affects the caller). */
+  router.post('/:id/snooze', async (req, res) => {
+    const body = parseBody(req, SnoozeBody);
+    res.json(await svc.snooze(ctx, req, parseParams(req, Params).id, body));
+  });
+
+  router.delete('/:id/snooze', async (req, res) => {
+    await svc.unsnooze(ctx, req, parseParams(req, Params).id);
+    res.status(204).end();
   });
 
   router.delete('/:id', manage, async (req, res) => {

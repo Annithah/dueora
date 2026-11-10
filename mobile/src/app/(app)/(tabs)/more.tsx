@@ -5,6 +5,9 @@ import {
   Bell,
   Building2,
   CircleHelp,
+  Database,
+  FileUp,
+  PiggyBank,
   LogOut,
   Palette,
   ReceiptText,
@@ -57,6 +60,8 @@ export default function MoreTab() {
     { icon: Tag, title: 'Categories', subtitle: 'Defaults and your own', href: '/settings/categories' },
     { icon: ReceiptText, title: 'Payment history', subtitle: 'Every payment you’ve recorded', href: '/history' },
     { icon: BarChart3, title: 'Reports', subtitle: 'Spending, forecasts, PDF & Excel', href: '/reports' },
+    { icon: PiggyBank, title: 'Budgets', subtitle: 'Monthly limits and alerts', href: '/settings/budgets' },
+    { icon: FileUp, title: 'Import from spreadsheet', subtitle: 'CSV or Excel, in one step', href: '/settings/import', roles: ['ADMIN', 'FINANCE'] },
     {
       icon: UsersRound,
       title: 'Team & roles',
@@ -66,6 +71,7 @@ export default function MoreTab() {
     { icon: Bell, title: 'Notifications', subtitle: 'Push, email, digest and quiet hours', href: '/settings/notifications' },
     { icon: ShieldCheck, title: 'Security', subtitle: 'Password and biometric lock', href: '/settings/security' },
     { icon: Palette, title: 'Appearance', subtitle: THEME_LABELS[theme], href: '/settings/appearance' },
+    { icon: Database, title: 'Data & privacy', subtitle: 'Export, sign out everywhere, delete account', href: '/settings/privacy' },
   ];
   const items = allItems.filter((i) => !i.roles || (role && i.roles.includes(role)));
 

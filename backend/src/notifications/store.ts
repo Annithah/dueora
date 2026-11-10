@@ -81,17 +81,46 @@ export async function createNotification(
 export interface Prefs {
   pushEnabled: boolean;
   emailEnabled: boolean;
+  inAppEnabled: boolean;
   digestEnabled: boolean;
+  weeklySummary: boolean;
+  monthlySummary: boolean;
+  budgetAlerts: boolean;
+  teamActivity: boolean;
   muted: Set<string>;
 }
 
-export const DEFAULT_PREFS: Omit<Prefs, 'muted'> = { pushEnabled: true, emailEnabled: true, digestEnabled: true };
+export const DEFAULT_PREFS: Omit<Prefs, 'muted'> = {
+  pushEnabled: true,
+  emailEnabled: true,
+  inAppEnabled: true,
+  digestEnabled: true,
+  weeklySummary: true,
+  monthlySummary: true,
+  budgetAlerts: true,
+  teamActivity: true,
+};
 
 export async function prefsFor(ctx: AppContext, userId: string, workspaceId: string): Promise<Prefs> {
   const p = await ctx.db.notificationPreference.findUnique({ where: { userId_workspaceId: { userId, workspaceId } } });
-  return p
-    ? { pushEnabled: p.pushEnabled, emailEnabled: p.emailEnabled, digestEnabled: p.digestEnabled, muted: new Set(p.mutedSubscriptionIds as string[]) }
-    : { ...DEFAULT_PREFS, muted: new Set() };
+  if (!p) return { ...DEFAULT_PREFS, muted: new Set() };
+  return {
+    pushEnabled: p.pushEnabled,
+    emailEnabled: p.emailEnabled,
+    inAppEnabled: p.inAppEnabled,
+    digestEnabled: p.digestEnabled,
+    weeklySummary: p.weeklySummary,
+    monthlySummary: p.monthlySummary,
+    budgetAlerts: p.budgetAlerts,
+    teamActivity: p.teamActivity,
+    muted: new Set(p.mutedSubscriptionIds as string[]),
+  };
+}
+
+/** Snoozes for one user still in effect on `today`, keyed "subscriptionId:cycleDueDate". */
+export async function activeSnoozes(ctx: AppContext, userId: string, today: string): Promise<Map<string, string>> {
+  const rows = await ctx.db.reminderSnooze.findMany({ where: { userId, snoozedUntil: { gt: today } } });
+  return new Map(rows.map((r) => [`${r.subscriptionId}:${r.cycleDueDate}`, r.snoozedUntil]));
 }
 
 /**

@@ -51,13 +51,17 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 | POST | `/auth/logout` | `{ refreshToken }` | 204 |
 | POST | `/auth/password/forgot` | `{ email }` | Always 202 (never reveals whether the account exists) |
 | POST | `/auth/password/reset` | `{ email, code, newPassword }` | 204; signs out all sessions |
+| POST | `/auth/logout-all` 🔒 | — | 204; revokes every session and deactivates push tokens |
+| POST | `/auth/verify-email/request` 🔒 | — | 202; emails a 6-digit code. Optional — never blocks sign-up (D26) |
+| POST | `/auth/verify-email` 🔒 | `{ code }` | Updated user (`emailVerified: true`) |
 
 ## Me — `/me` 🔒
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/me` | — | `{ id, name, email, emailVerified, workspaces: [{ id, name, type, timezone, role }] }` |
-| PATCH | `/me` | `{ name }` | Updated user |
+| GET | `/me` | — | `{ id, name, email, emailVerified, locale, workspaces: [{ id, name, type, timezone, role }] }` |
+| PATCH | `/me` | `{ name?, locale? (en\|fr\|rw) }` | Updated user |
+| DELETE | `/me` | `{ password, confirm: "DELETE" }` | `{ deletedWorkspaces, leftWorkspaces }` — see DECISIONS D30 |
 | POST | `/me/password` | `{ currentPassword, newPassword }` | 204; signs out all sessions |
 
 ## Workspaces — `/workspaces` 🔒
@@ -65,10 +69,11 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 | Method | Path | Role | Body / notes |
 |---|---|---|---|
 | GET | `/workspaces` | any | My workspaces |
-| POST | `/workspaces` | any | `{ name, type: COMPANY\|PERSONAL, timezone (IANA, default Africa/Kigali), firstCompanyName? }` → creator becomes ADMIN; a first company is created (named `firstCompanyName`, else the workspace name, or "Personal") |
+| POST | `/workspaces` | any | `{ name, type: COMPANY\|PERSONAL, timezone (IANA — the app sends the phone's; default UTC), firstCompanyName? }` → creator becomes ADMIN; a first company is created (named `firstCompanyName`, else the workspace name, or "Personal") |
 | POST | `/workspaces/accept-invite` | any | `{ token }` — the signed-in user's email must match the invite |
 | GET | `/workspaces/current` | member | `{ id, name, type, timezone, reminderHour, quietHoursStart, quietHoursEnd, defaultReminderOffsets, memberCount, companyCount, subscriptionCount, myRole }` |
-| PATCH | `/workspaces/current` | ADMIN | `{ name?, type?, timezone?, reminderHour (0–23)?, quietHoursStart?, quietHoursEnd? (minutes after midnight, both or neither), defaultReminderOffsets? (int days, negative = after due) }` |
+| PATCH | `/workspaces/current` | ADMIN | `{ name?, type?, timezone?, reminderHour (0–23)?, quietHoursStart?, quietHoursEnd? (minutes after midnight, both or neither), defaultReminderOffsets? (int days, negative = after due), aiEnabled? }` |
+| GET | `/workspaces/current/export?format=json\|xlsx` | ADMIN, FINANCE | Everything in the workspace as a download. Subscription keys only masked. |
 | DELETE | `/workspaces/current` | ADMIN | `{ confirmName }` must equal the workspace name. Permanent. |
 | GET | `/workspaces/current/members` | member | `[{ id, userId, name, email, role, joinedAt }]` |
 | PATCH | `/workspaces/current/members/:membershipId` | ADMIN | `{ role }`; the last admin can't be demoted (409 `LAST_ADMIN`) |
@@ -82,6 +87,7 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/public/invites/preview?token=` | `{ workspace: { name }, invitedBy, email, role, expiresAt }`; 410 if invalid/expired |
+| GET · POST | `/public/unsubscribe?token=` | Signed one-click link from every email footer; turns email off for that workspace. HTML page; 400 for a bad token. |
 
 ## Companies & categories 🔒 (workspace)
 
@@ -92,7 +98,7 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 | PATCH | `/companies/:id` | ADMIN, FINANCE | `{ name?, color? }` |
 | DELETE | `/companies/:id` | ADMIN, FINANCE | Deleted when unused → `{ deleted: true, archived: false }`; **archived** when it has subscriptions → `{ deleted: false, archived: true }` |
 | POST | `/companies/:id/unarchive` | ADMIN, FINANCE | |
-| GET | `/categories` | member | 9 built-in (`isDefault: true`) + this workspace's custom ones, with `subscriptionCount` |
+| GET | `/categories` | member | 11 built-in (`isDefault: true`) + this workspace's custom ones, with `subscriptionCount` |
 | POST · PATCH /:id · DELETE /:id | `/categories` | ADMIN, FINANCE | `{ name, icon, color }`. Built-ins can't be changed; in-use categories can't be deleted (409). |
 
 ## Subscriptions — `/subscriptions` 🔒 (workspace)
@@ -136,9 +142,17 @@ Create body:
   "amountCents": 152300,
   "frequencyUnit": "YEAR", "frequencyInterval": 1,
   "startDate": "2026-11-03", "nextDueDate": "2027-11-03", "anchorDay": 3,
-  "reminderOffsets": [30, 14, 7, 3, 1, 0, -1, -3, -7]
+  "reminderOffsets": [30, 14, 7, 3, 1, 0, -1, -3, -7],
+  "autoRenew": false, "isTrial": false, "trialEndsOn": null,
+  "defaultPaymentMethod": "BANK_TRANSFER"
 }
 ```
+
+`isTrial: true` requires `trialEndsOn`. Changing `amountCents` records a PriceChange (shown as
+`priceHistory` on the detail) and notifies the other ADMIN/FINANCE members. Recording a payment without
+`method` uses `defaultPaymentMethod` (else OTHER). `POST /subscriptions/:id/snooze { days | until }` and
+`DELETE /subscriptions/:id/snooze` pause the caller's reminders for the current cycle (any role); the detail
+returns `snoozedUntil`.
 
 Only `name`, `companyId`, `categoryId`, `amountCents` and `frequencyUnit` are required. `startDate` defaults
 to today (workspace timezone). `nextDueDate` defaults to the **first due date on or after today**, counting
@@ -148,6 +162,27 @@ whole cycles from `startDate` (`calculateNextDueDate`). `anchorDay` defaults to 
 Frequencies: weekly (`WEEK`,1), every 2 weeks (`WEEK`,2), monthly (`MONTH`,1), every 2 months (`MONTH`,2),
 quarterly (`MONTH`,3), every 6 months (`MONTH`,6), yearly (`YEAR`,1), custom (any unit × N), one-time (`ONCE`).
 Month-end anchors are kept: anchor 31 → 31 Jan, 28/29 Feb, 31 Mar, 30 Apr …
+
+## Budgets — `/budgets` 🔒 (workspace)
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/budgets` | member | `[{ id, categoryId, category, monthlyLimitCents, alertAtPercent, month, paidCents, dueCents, spentCents, percent, state: OK\|WARNING\|OVER }]` — spent = paid this month + still due this month |
+| PUT | `/budgets` | ADMIN, FINANCE | `{ categoryId: null (whole workspace) \| id, monthlyLimitCents, alertAtPercent? (10–100, default 80) }` — creates or replaces; checks alerts at once |
+| DELETE | `/budgets/:id` | ADMIN, FINANCE | |
+
+## Import — `/import` 🔒 (workspace, ADMIN/FINANCE)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/import/template?format=xlsx\|csv` | Header-only template |
+| POST | `/import/preview` | `{ fileName, contentBase64 (≤ 2 MB), mapping? { company, category, name, provider, amount, frequency, nextDueDate: columnIndex } }` → `{ headers, mapping (suggested when omitted), missingColumns, total, valid, rows: [{ line, values, parsed, errors, warnings }] }`. Writes nothing. |
+| POST | `/import/commit` | Same body → 201 `{ imported, skipped, createdCompanies, createdCategories }` |
+
+## Feedback — `/feedback` 🔒
+
+| POST | `/feedback` | `{ message, appVersion?, platform? }` → 201. Rate limited 10/h. |
+|---|---|---|
 
 ## Payments 🔒 (workspace)
 

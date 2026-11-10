@@ -41,7 +41,7 @@ export function RecordPaymentSheet({
   const [mode, setMode] = useState<'full' | 'partial'>('full');
   const [amount, setAmount] = useState(centsToInput(remaining));
   const [paidOn, setPaidOn] = useState(today);
-  const [method, setMethod] = useState<PaymentMethod>('BANK_TRANSFER');
+  const [method, setMethod] = useState<PaymentMethod>(subscription.defaultPaymentMethod ?? 'BANK_TRANSFER');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);

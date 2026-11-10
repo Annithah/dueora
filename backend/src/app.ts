@@ -38,7 +38,9 @@ export function createApp(ctx: AppContext): Express {
     .map((o) => o.trim())
     .filter(Boolean);
   app.use(cors({ origin: origins.length ? origins : true, maxAge: 600 }));
-  app.use(express.json({ limit: '1mb' }));
+  // Spreadsheet imports carry a base64 file; they get their own 3 MB parser (modules/import/routes.ts).
+  const json = express.json({ limit: '1mb' });
+  app.use((req, res, next) => (req.path.startsWith('/api/v1/import/') ? next() : json(req, res, next)));
 
   if (env.NODE_ENV !== 'test') {
     app.use(

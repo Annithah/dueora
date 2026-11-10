@@ -6,6 +6,7 @@ import { AppError, badRequest, notFound } from '../../http/errors.js';
 import { actorOf, workspaceIdOf } from '../../http/middleware/auth.js';
 import { pageOf } from '../../http/schemas.js';
 import { notifyPaymentRecorded } from '../../notifications/paymentRecorded.js';
+import { checkBudgetAlerts } from '../budgets/service.js';
 import { loadSubscription, viewsFor, workspaceToday } from '../subscriptions/service.js';
 import { subscriptionInclude } from '../subscriptions/view.js';
 import { audit } from '../workspaces/service.js';
@@ -26,7 +27,7 @@ export interface PaymentRecordedEvent {
 export interface RecordInput {
   amountCents?: number;
   paidOn?: string;
-  method: PaymentMethod;
+  method?: PaymentMethod;
   reference?: string | null;
   notes?: string | null;
 }
@@ -84,7 +85,7 @@ export async function recordPayment(ctx: AppContext, req: Request, subscriptionI
         cycleDueDate,
         amountCents,
         paidOn: input.paidOn ?? today,
-        method: input.method,
+        method: input.method ?? s.defaultPaymentMethod ?? 'OTHER',
         reference: input.reference || null,
         notes: input.notes || null,
         createdAt: ctx.clock.now(),
@@ -99,6 +100,12 @@ export async function recordPayment(ctx: AppContext, req: Request, subscriptionI
     cycleDueDate,
     completedCycle: change.completedCycle,
   });
+
+  try {
+    await checkBudgetAlerts(ctx, workspaceId, today);
+  } catch (err) {
+    ctx.logger.error({ err }, 'Budget check failed');
+  }
 
   try {
     await notifyPaymentRecorded(ctx, {

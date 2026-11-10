@@ -14,6 +14,10 @@ const matrix: Record<WorkspaceAction, Role[]> = {
   'payments:record': ['ADMIN', 'FINANCE'],
   'payments:edit': ['ADMIN', 'FINANCE'],
   'reports:view': ['ADMIN', 'FINANCE', 'VIEWER'],
+  'budgets:manage': ['ADMIN', 'FINANCE'],
+  'data:export': ['ADMIN', 'FINANCE'],
+  'import:run': ['ADMIN', 'FINANCE'],
+  'ai:configure': ['ADMIN'],
   'audit:view': ['ADMIN', 'FINANCE'],
 };
 

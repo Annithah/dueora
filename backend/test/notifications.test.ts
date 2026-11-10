@@ -296,13 +296,13 @@ describe('digest', () => {
 });
 
 describe('payment recorded', () => {
-  it('tells every other member, without naming who recorded it', async () => {
+  it('tells the other admins and finance members, without naming who recorded it', async () => {
     const { ctx, fx, at, notes, who } = await setup();
     ctx.clock.set('2026-11-02T08:00:00Z');
     await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds['beta-hosting']}/payments`).send({ method: 'CARD', paidOn: '2026-11-02' });
     await at('2026-11-02T08:01:00Z');
     const recorded = await notes({ type: 'PAYMENT_RECORDED' });
-    expect(recorded.map((n) => `${who(n.userId)}:${n.channel}`).sort()).toEqual(['admin:IN_APP', 'admin:PUSH', 'viewer:IN_APP']);
+    expect(recorded.map((n) => `${who(n.userId)}:${n.channel}`).sort()).toEqual(['admin:IN_APP', 'admin:PUSH']);
     expect(recorded[0]!.body).toBe('✅ $132.00 recorded for Beta Radio · Hosting. Next due: 02 Oct 2028.');
     expect(recorded[0]!.body).not.toContain(USERS.finance.name.split(' ')[0]);
     expect(ctx.push.to(TOKENS.admin).some((m) => m.body === recorded[0]!.body)).toBe(true);

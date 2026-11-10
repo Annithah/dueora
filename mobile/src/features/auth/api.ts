@@ -19,6 +19,7 @@ export interface Me {
   name: string;
   email: string;
   emailVerified: boolean;
+  locale: 'en' | 'fr' | 'rw';
   workspaces: WorkspaceSummary[];
 }
 

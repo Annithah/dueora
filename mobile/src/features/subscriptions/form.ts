@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { centsToInput, parseUSDInput } from '@/lib/money';
 import { calculateNextDueDate } from '@/lib/schedule';
 
-import type { FrequencyUnit, Subscription, SubscriptionInput } from './api';
+import type { FrequencyUnit, PaymentMethod, Subscription, SubscriptionInput } from './api';
 
 /** Frequency presets shown as chips. "Custom" exposes unit + interval. */
 export const FREQUENCIES = [
@@ -43,8 +43,13 @@ export const formSchema = z
     nextDueManual: z.boolean(),
     reminderOffsets: z.array(z.number().int()),
     description: z.string().max(2000),
+    autoRenew: z.boolean(),
+    isTrial: z.boolean(),
+    trialEndsOn: z.string(),
+    defaultPaymentMethod: z.enum(['', 'MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CASH', 'OTHER']),
   })
   .superRefine((v, ctx) => {
+    if (v.isTrial && !v.trialEndsOn) ctx.addIssue({ code: 'custom', path: ['trialEndsOn'], message: 'When does the free trial end?' });
     const cents = parseUSDInput(v.amount);
     if (cents === null || cents <= 0) ctx.addIssue({ code: 'custom', path: ['amount'], message: 'Enter an amount in US dollars, e.g. 49.99' });
     if (v.nextDueDate < v.startDate) {
@@ -87,6 +92,10 @@ export function defaultsFrom(
       nextDueManual: false,
       reminderOffsets: fallback.offsets,
       description: '',
+      autoRenew: false,
+      isTrial: false,
+      trialEndsOn: '',
+      defaultPaymentMethod: '',
     };
   }
   return {
@@ -106,6 +115,10 @@ export function defaultsFrom(
     nextDueManual: true,
     reminderOffsets: s.reminderOffsets,
     description: s.description ?? '',
+    autoRenew: s.autoRenew,
+    isTrial: s.isTrial,
+    trialEndsOn: s.trialEndsOn ?? '',
+    defaultPaymentMethod: s.defaultPaymentMethod ?? '',
   };
 }
 
@@ -123,6 +136,10 @@ export function toInput(v: FormValues, existing?: Subscription): SubscriptionInp
     frequencyInterval: interval,
     startDate: v.startDate,
     reminderOffsets: v.reminderOffsets,
+    autoRenew: v.autoRenew,
+    isTrial: v.isTrial,
+    trialEndsOn: v.isTrial ? v.trialEndsOn : null,
+    defaultPaymentMethod: (v.defaultPaymentMethod || null) as PaymentMethod | null,
   };
   // New: always send the date shown. Edit: only when changed, so the server can re-derive it.
   if (!existing || v.nextDueDate !== existing.nextDueDate) input.nextDueDate = v.nextDueDate;

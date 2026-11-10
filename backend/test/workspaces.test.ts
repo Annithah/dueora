@@ -132,7 +132,7 @@ describe('companies', () => {
 });
 
 describe('categories', () => {
-  it('lists the nine defaults first, then custom ones', async () => {
+  it('lists the eleven defaults first, then custom ones', async () => {
     const res = await asAdmin().get('/api/v1/categories');
     const defaults = res.body.filter((c: { isDefault: boolean }) => c.isDefault).map((c: { name: string }) => c.name);
     expect(defaults.sort()).toEqual(
@@ -145,6 +145,8 @@ describe('categories', () => {
         'Insurance',
         'Marketing',
         'Utilities',
+        'Transport',
+        'Education & training',
         'Other',
       ].sort(),
     );

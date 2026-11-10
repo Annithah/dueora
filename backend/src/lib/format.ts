@@ -1,10 +1,10 @@
 /**
  * Display formatting for notification copy, emails and reports. Mirrors mobile/src/lib/money.ts
- * so a reminder reads exactly like the app: "$1,523.00", "Tue, 20 Oct".
+ * so a reminder reads exactly like the app: "$1,234.50", "Tue, 20 Oct".
  * DueOra works only in US dollars; amounts are integer cents.
  */
 
-/** Integer cents → "$1,523.00" (negative → "-$5.00"). */
+/** Integer cents → "$1,234.50" (negative → "-$5.00"). */
 export function formatUSD(cents: number): string {
   const abs = Math.abs(Math.trunc(cents));
   const dollars = Math.floor(abs / 100)

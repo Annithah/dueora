@@ -19,7 +19,7 @@ describe('seed: default categories only', () => {
     expect(result).toEqual({
       ok: true,
       counts: { users: 0, workspaces: 0, companies: 0, subscriptions: 0, payments: 0, notifications: 0 },
-      defaultCategories: 9,
+      defaultCategories: 11,
       customCategories: 0,
     });
     const names = (await ctx.db.category.findMany({ orderBy: { name: 'asc' } })).map((c) => c.name);

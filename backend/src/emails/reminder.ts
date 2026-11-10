@@ -29,7 +29,7 @@ function badgeHtml(b: Badge): string {
 
 /** One subscription in a reminder or digest email. Never contains the subscription key. */
 export interface ReminderEmailItem {
-  /** "KigaliToday · Hosting" */
+  /** "{Company} · {Subscription}" */
   label: string;
   company: string;
   provider: string | null;
@@ -50,7 +50,9 @@ function itemRow(i: ReminderEmailItem): string {
   </td></tr>`;
 }
 
-export function reminderEmail(opts: { to: string; orgName: string; title: string; body: string; item: ReminderEmailItem }): EmailMessage {
+export type EmailLinks = { preferencesUrl?: string; unsubscribeUrl?: string };
+
+export function reminderEmail(opts: { to: string; orgName: string; title: string; body: string; item: ReminderEmailItem; links?: EmailLinks }): EmailMessage {
   const i = opts.item;
   const amount = formatUSD(i.amountCents);
   const lines = [opts.body, '', i.label, `Amount: ${amount}`, `Due: ${formatLongDate(i.dueDate)}`, '', `Open in DueOra: ${i.url}`];
@@ -68,9 +70,10 @@ export function reminderEmail(opts: { to: string; orgName: string; title: string
         </table>
         <p style="margin:16px 0 8px;color:#667373;font-size:13px">Amount: <b style="color:#172121">${esc(amount)}</b> · Due ${esc(formatLongDate(i.dueDate))}</p>`,
       button: { label: 'Open in DueOra', url: i.url },
-      footerNote: `You're receiving this because you're part of ${opts.orgName} on DueOra. Change email reminders in Settings → Notifications.`,
+      footerNote: `You're receiving this because you're part of ${opts.orgName} on DueOra.`,
+      links: opts.links,
     }),
-    text: lines.join('\n'),
+    text: [...lines, ...linkLines(opts.links)].join('\n'),
   };
 }
 
@@ -80,6 +83,7 @@ export function digestEmail(opts: {
   orgName: string;
   items: ReminderEmailItem[];
   appUrl: string;
+  links?: EmailLinks;
 }): EmailMessage {
   const first = opts.name.trim().split(/\s+/)[0] ?? opts.name;
   const n = opts.items.length;
@@ -97,10 +101,50 @@ export function digestEmail(opts: {
       bodyHtml: `<p style="margin:0 0 12px">Hi ${esc(first)}, here's what's coming up for ${esc(opts.orgName)}:</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${opts.items.map(itemRow).join('')}</table>`,
       button: { label: 'Open in DueOra', url: opts.appUrl },
-      footerNote: 'We group reminders like this so your inbox stays calm. Turn digests off in Settings → Notifications.',
+      footerNote: 'We group reminders like this so your inbox stays calm.',
+      links: opts.links,
     }),
-    text: [`Hi ${first}, ${n} subscriptions need attention at ${opts.orgName}:`, '', ...list, '', `Open DueOra: ${opts.appUrl}`].join('\n'),
+    text: [`Hi ${first}, ${n} subscriptions need attention at ${opts.orgName}:`, '', ...list, '', `Open DueOra: ${opts.appUrl}`, ...linkLines(opts.links)].join('\n'),
   };
+}
+
+function linkLines(links?: EmailLinks): string[] {
+  if (!links) return [];
+  return [
+    '',
+    ...(links.preferencesUrl ? [`Notification preferences: ${links.preferencesUrl}`] : []),
+    ...(links.unsubscribeUrl ? [`Unsubscribe from emails: ${links.unsubscribeUrl}`] : []),
+  ];
+}
+
+/** Any other notification (summaries, trials, budgets, team, system): heading, text and a button. */
+export function notificationEmail(opts: {
+  to: string;
+  tag: string;
+  title: string;
+  body: string;
+  url: string;
+  extraHtml?: string;
+  links?: EmailLinks;
+}): EmailMessage {
+  return {
+    to: opts.to,
+    tag: opts.tag,
+    subject: opts.title,
+    html: renderLayout({
+      preheader: opts.body,
+      heading: opts.title,
+      bodyHtml: `<p style="margin:0 0 12px">${esc(opts.body)}</p>${opts.extraHtml ?? ''}`,
+      button: { label: 'Open in DueOra', url: opts.url },
+      links: opts.links,
+    }),
+    text: [opts.body, '', `Open in DueOra: ${opts.url}`, ...linkLines(opts.links)].join('\n'),
+  };
+}
+
+/** Rows for summary emails (weekly digest, monthly summary). */
+export function itemsHtml(items: ReminderEmailItem[]): string {
+  return items.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${items.map(itemRow).join('')}</table>` : '';
 }
 
 export function paymentRecordedEmail(opts: { to: string; orgName: string; title: string; body: string; url: string }): EmailMessage {

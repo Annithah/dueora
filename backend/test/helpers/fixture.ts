@@ -28,7 +28,7 @@ export const SUBSCRIPTIONS = [
   { key: 'insurance', name: 'Insurance', company: 'alpha', category: 'Insurance', amountCents: 90_000, unit: 'YEAR', interval: 1, due: '2027-01-10' },
   { key: 'alpha-domain', name: 'Domain', company: 'alpha', category: 'Hosting & domains', amountCents: 1_300, unit: 'YEAR', interval: 1, due: '2027-03-10' },
   { key: 'alpha-hosting', name: 'Hosting', company: 'alpha', category: 'Hosting & domains', amountCents: 152_300, unit: 'YEAR', interval: 1, due: '2026-10-20' },
-  { key: 'alpha-cdn', name: 'Cloudflare', company: 'alpha', category: 'Hosting & domains', amountCents: 24_000, unit: 'YEAR', interval: 1, due: '2026-01-30' },
+  { key: 'alpha-cdn', name: 'CDN plan', company: 'alpha', category: 'Hosting & domains', amountCents: 24_000, unit: 'YEAR', interval: 1, due: '2026-01-30' },
   { key: 'beta-x', name: 'X subscription', company: 'beta', category: 'Social media', amountCents: 800, unit: 'MONTH', interval: 1, due: '2026-11-20' },
   { key: 'beta-hosting', name: 'Hosting', company: 'beta', category: 'Hosting & domains', amountCents: 13_200, unit: 'YEAR', interval: 1, due: '2027-10-02' },
   { key: 'beta-domain', name: 'Domain renewal', company: 'beta', category: 'Hosting & domains', amountCents: 1_300, unit: 'YEAR', interval: 1, due: '2027-02-26' },

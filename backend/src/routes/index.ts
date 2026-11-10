@@ -1,7 +1,10 @@
 import { Router } from 'express';
 
 import type { AppContext } from '../context.js';
+import { feedbackRouter } from '../modules/account/routes.js';
 import { authRouter, meRouter } from '../modules/auth/routes.js';
+import { budgetsRouter } from '../modules/budgets/routes.js';
+import { importRouter } from '../modules/import/routes.js';
 import { catalogRouter } from '../modules/catalog/routes.js';
 import { insightsRouter } from '../modules/insights/routes.js';
 import { subscriptionsRouter } from '../modules/subscriptions/routes.js';
@@ -21,6 +24,9 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/me', meRouter(ctx));
   router.use('/workspaces', workspacesRouter(ctx));
   router.use('/subscriptions', subscriptionsRouter(ctx));
+  router.use('/budgets', budgetsRouter(ctx));
+  router.use('/import', importRouter(ctx));
+  router.use('/feedback', feedbackRouter(ctx));
   router.use('/', catalogRouter(ctx));
   router.use('/', paymentsRouter(ctx));
   router.use('/', notificationsRouter(ctx));

@@ -58,7 +58,19 @@ enum NotificationType {
   OVERDUE
   PAYMENT_RECORDED
   DIGEST
+  TRIAL_ENDING
+  AUTO_RENEW_NOTICE
+  PRICE_CHANGE
+  BUDGET_ALERT
+  WEEKLY_DIGEST
+  MONTHLY_SUMMARY
+  TEAM
   SYSTEM
+}
+
+enum AiRole {
+  USER
+  ASSISTANT
 }
 
 enum NotificationChannel {
@@ -92,6 +104,10 @@ model User {
   email           String    @unique
   passwordHash    String
   emailVerifiedAt DateTime?
+  /// UI and message language: en | fr | rw
+  locale          String    @default("en")
+  /// Set when the account is deleted; personal data is erased at the same time.
+  deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -103,6 +119,9 @@ model User {
   notifications     Notification[]
   auditLogs         AuditLog[]
   invitesSent       Invite[]
+  snoozes           ReminderSnooze[]
+  feedback          Feedback[]
+  aiConversations   AiConversation[]
 }
 
 model Workspace {
@@ -110,7 +129,7 @@ model Workspace {
   name                   String
   type                   WorkspaceType @default(COMPANY)
   /// IANA timezone; "today" for this workspace is always computed here.
-  timezone               String        @default("Africa/Kigali")
+  timezone               String        @default("UTC")
   /// Local hour (0–23) at which daily reminders go out.
   reminderHour           Int           @default(9)
   /// Quiet hours as minutes after local midnight (e.g. 1320 = 22:00). Both null = no quiet hours.
@@ -118,6 +137,8 @@ model Workspace {
   quietHoursEnd          Int?
   /// Default reminder offsets in days (JSON int[]; negative = after due date).
   defaultReminderOffsets Json
+  /// ADMIN can switch DueOra AI off for the whole workspace.
+  aiEnabled              Boolean       @default(true)
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
 
@@ -130,6 +151,11 @@ model Workspace {
   auditLogs         AuditLog[]
   invites           Invite[]
   reminderRuns      WorkspaceReminderRun[]
+  budgets           Budget[]
+  aiMemories        AiMemory[]
+  aiConversations   AiConversation[]
+  aiUsage           AiUsage[]
+  aiInsights        AiInsight[]
 }
 
 model Membership {
@@ -200,7 +226,7 @@ model EmailToken {
   @@index([userId, purpose])
 }
 
-/// A company inside a workspace (e.g. "KT Radio", "KigaliToday"). Every subscription belongs to one.
+/// A company inside a workspace. Every subscription belongs to exactly one.
 model Company {
   id          String    @id @default(cuid())
   workspaceId String
@@ -228,6 +254,7 @@ model Category {
 
   workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   subscriptions Subscription[]
+  budgets       Budget[]
 
   @@unique([workspaceId, name])
 }
@@ -258,15 +285,24 @@ model Subscription {
   nextDueDate              String
   /// JSON int[] of days relative to the due date (negative = after).
   reminderOffsets          Json
+  /// Renews (and charges) automatically: triggers an AUTO_RENEW_NOTICE before the due date.
+  autoRenew                Boolean            @default(false)
+  /// A free trial; trialEndsOn ("YYYY-MM-DD") triggers TRIAL_ENDING reminders.
+  isTrial                  Boolean            @default(false)
+  trialEndsOn              String?
+  /// Pre-selected method when recording a payment.
+  defaultPaymentMethod     PaymentMethod?
   status                   SubscriptionStatus @default(ACTIVE)
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
 
-  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  company       Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  category      Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company       Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category      Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   payments      PaymentRecord[]
   notifications Notification[]
+  priceChanges  PriceChange[]
+  snoozes       ReminderSnooze[]
 
   @@index([workspaceId, nextDueDate])
   @@index([workspaceId, status])
@@ -318,7 +354,12 @@ model NotificationPreference {
   workspaceId          String
   pushEnabled          Boolean  @default(true)
   emailEnabled         Boolean  @default(true)
+  inAppEnabled         Boolean  @default(true)
   digestEnabled        Boolean  @default(true)
+  weeklySummary        Boolean  @default(true)
+  monthlySummary       Boolean  @default(true)
+  budgetAlerts         Boolean  @default(true)
+  teamActivity         Boolean  @default(true)
   /// JSON string[] of subscription ids the user muted.
   mutedSubscriptionIds Json
   updatedAt            DateTime @updatedAt
@@ -343,7 +384,7 @@ model Notification {
   offsetDays     Int?
   channel        NotificationChannel
   status         NotificationStatus  @default(PENDING)
-  /// workspaceId:subscriptionId:cycleDueDate:offsetDays:userId:channel — unique so a reminder can never be sent twice.
+  /// workspaceId:subscriptionId:type:cycleDueDate:offsetDays:userId:channel — unique so nothing is ever sent twice.
   dedupeKey      String              @unique
   attempts       Int                 @default(0)
   error          String?
@@ -415,4 +456,155 @@ model Job {
   updatedAt    DateTime  @updatedAt
 
   @@index([queue, status, runAt])
+}
+
+/// Every change of a subscription's amount, for the price history ("$40.00 → $48.00 on 3 Mar").
+model PriceChange {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  subscriptionId String
+  oldAmountCents Int
+  newAmountCents Int
+  changedAt      DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, changedAt])
+  @@index([workspaceId, changedAt])
+}
+
+/// Optional monthly budget for the whole workspace (categoryId null) or one category.
+model Budget {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  /// Null = the whole workspace.
+  categoryId        String?
+  /// "all" or the category id, so (workspaceId, scope) is unique on every database (nulls never collide).
+  scope             String
+  monthlyLimitCents Int
+  alertAtPercent    Int      @default(80)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, scope])
+}
+
+/// "Remind me later" for one cycle of one subscription.
+model ReminderSnooze {
+  id             String   @id @default(cuid())
+  userId         String
+  subscriptionId String
+  /// "YYYY-MM-DD" cycle the snooze applies to.
+  cycleDueDate   String
+  /// "YYYY-MM-DD" (workspace-local): reminders resume on this date.
+  snoozedUntil   String
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subscriptionId, cycleDueDate])
+}
+
+/// "Send feedback" from Help & feedback.
+model Feedback {
+  id          String   @id @default(cuid())
+  userId      String?
+  workspaceId String?
+  message     String
+  appVersion  String?
+  platform    String?
+  createdAt   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model AiConversation {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  title       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+
+  @@index([workspaceId, userId, updatedAt])
+}
+
+model AiMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           AiRole
+  text           String
+  /// Cards (subscriptions, totals, pending actions) shown with the reply.
+  cards          Json
+  createdAt      DateTime @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  feedback     AiFeedback[]
+
+  @@index([conversationId, createdAt])
+}
+
+/// Facts a workspace taught DueOra AI ("we always pay by bank transfer").
+model AiMemory {
+  id          String   @id @default(cuid())
+  workspaceId String
+  text        String
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model AiFeedback {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  /// 1 = 👍, -1 = 👎
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  message AiMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+}
+
+model AiUsage {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  userId       String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  /// chat | insight | suggest
+  kind         String
+  createdAt    DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+/// Cached daily dashboard insight (one per workspace and local date).
+model AiInsight {
+  id          String   @id @default(cuid())
+  workspaceId String
+  localDate   String
+  text        String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, localDate])
 }

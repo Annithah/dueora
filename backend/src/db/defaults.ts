@@ -4,7 +4,7 @@ import type { Db } from './client.js';
 export const DEFAULT_REMINDER_OFFSETS = [30, 14, 7, 3, 1, 0, -1, -3, -7] as const;
 
 /**
- * Built-in categories shared by every workspace (workspaceId = null).
+ * Built-in categories shared by every workspace (workspaceId = null) — the 11 from the master prompt.
  * This list is the ONLY seed data DueOra ever inserts. Icon keys match mobile/src/theme/categories.ts.
  */
 export const DEFAULT_CATEGORIES = [
@@ -16,6 +16,8 @@ export const DEFAULT_CATEGORIES = [
   { name: 'Insurance', icon: 'shield', color: '#157A53' },
   { name: 'Marketing', icon: 'megaphone', color: '#BE185D' },
   { name: 'Utilities', icon: 'bulb', color: '#2469CF' },
+  { name: 'Transport', icon: 'car', color: '#0E7490' },
+  { name: 'Education & training', icon: 'graduation', color: '#7C3AED' },
   { name: 'Other', icon: 'tag', color: '#667373' },
 ] as const;
 

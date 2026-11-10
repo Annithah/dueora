@@ -15,7 +15,8 @@ const RecordBody = z
   .object({
     amountCents: amountCents.optional(),
     paidOn: isoDate.optional(),
-    method,
+    /** Defaults to the subscription's default payment method (or OTHER). */
+    method: method.optional(),
     reference: text(100).optional(),
     notes: text(2000).optional(),
   })

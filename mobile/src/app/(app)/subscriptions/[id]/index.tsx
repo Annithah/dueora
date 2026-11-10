@@ -9,6 +9,11 @@ import {
   Building2,
   Clock3,
   Ellipsis,
+  Gift,
+  Moon,
+  Repeat,
+  TrendingDown,
+  TrendingUp,
   ReceiptText,
   Store,
   Tag,
@@ -39,7 +44,9 @@ import { ApiError } from '@/api';
 import { useMute } from '@/features/notifications/api';
 import {
   METHOD_LABELS,
+  SNOOZE_CHOICES,
   useArchiveSubscription,
+  useSnooze,
   useDeleteSubscription,
   useSubscription,
   type SubscriptionDetail,
@@ -78,6 +85,8 @@ function Detail({
   // A new key per opening gives the sheet fresh fields every time.
   const [recordKey, setRecordKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const snooze = useSnooze(o.id);
   const muted = o.muted;
   const today = useWorkspaceToday();
   const days = o.daysUntilDue;
@@ -134,6 +143,38 @@ function Detail({
           </Text>
         </Card>
       )}
+
+      {active && (o.isTrial || o.autoRenew || o.snoozedUntil) ? (
+        <View style={{ gap: 8 }}>
+          {o.isTrial && o.trialEndsOn ? (
+            <Card tone="primary" style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <Gift size={20} color={colors.primaryStrong} />
+              <Text variant="small" style={{ flex: 1 }}>
+                🎁 Free trial ends {formatDate(o.trialEndsOn)} — we’ll remind you 3 days and 1 day before.
+              </Text>
+            </Card>
+          ) : null}
+          {o.autoRenew ? (
+            <Card style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <Repeat size={20} color={colors.primaryStrong} />
+              <Text variant="small" style={{ flex: 1 }}>
+                Renews automatically. Admins and finance get a heads-up 7 days before the charge.
+              </Text>
+            </Card>
+          ) : null}
+          {o.snoozedUntil ? (
+            <Card style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <Moon size={20} color={colors.primaryStrong} />
+              <Text variant="small" style={{ flex: 1 }}>
+                Reminders snoozed until {formatDate(o.snoozedUntil)} (just for you).
+              </Text>
+              <Button variant="ghost" onPress={() => snooze.mutate(null, { onSuccess: () => toast.info('Snooze cancelled') })}>
+                Undo
+              </Button>
+            </Card>
+          ) : null}
+        </View>
+      ) : null}
 
       <View>
         <SectionHeader title="Renewal details" />
@@ -276,6 +317,30 @@ function Detail({
         )}
       </View>
 
+      {o.priceHistory.length ? (
+        <View>
+          <SectionHeader title="Price history" />
+          <Card style={{ paddingVertical: 4 }}>
+            {o.priceHistory.map((c, i) => {
+              const up = c.newAmountCents > c.oldAmountCents;
+              const Icon = up ? TrendingUp : TrendingDown;
+              return (
+                <View
+                  key={c.id}
+                  accessible
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, borderTopWidth: i ? 1 : 0, borderTopColor: colors.line }}
+                >
+                  <Icon size={18} color={up ? colors.red : colors.green} />
+                  <Text variant="small" style={{ flex: 1 }}>
+                    Price went from {formatUSD(c.oldAmountCents)} to {formatUSD(c.newAmountCents)} on {formatDate(c.changedAt.slice(0, 10))}
+                  </Text>
+                </View>
+              );
+            })}
+          </Card>
+        </View>
+      ) : null}
+
       {canManage && active ? (
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
           <Button
@@ -306,8 +371,46 @@ function Detail({
         onClose={() => setRecordOpen(false)}
       />
 
+      <BottomSheet visible={snoozeOpen} onClose={() => setSnoozeOpen(false)} title="Snooze reminders">
+        <View style={{ gap: 4 }}>
+          <Text variant="small" tone="muted" style={{ marginBottom: 8 }}>
+            Pause reminders for this payment — only for you. 😴
+          </Text>
+          {SNOOZE_CHOICES.map((c, i) => (
+            <ListItem
+              key={c.days}
+              divider={i > 0}
+              icon={<Moon size={19} color={colors.primaryStrong} />}
+              title={c.label}
+              onPress={() => {
+                setSnoozeOpen(false);
+                snooze.mutate(
+                  { days: c.days },
+                  {
+                    onSuccess: (r) => toast.info(`Snoozed until ${formatDate(r!.snoozedUntil)}`),
+                    onError: (e) => toast.error('Could not snooze', e instanceof ApiError ? e.message : undefined),
+                  },
+                );
+              }}
+            />
+          ))}
+        </View>
+      </BottomSheet>
+
       <TopBarMenu open={menuOpen} onClose={() => setMenuOpen(false)}>
+        {active ? (
+          <ListItem
+            icon={<Moon size={19} color={colors.primaryStrong} />}
+            title="Snooze reminders"
+            subtitle="Tomorrow, in 3 days or next week"
+            onPress={() => {
+              setMenuOpen(false);
+              setSnoozeOpen(true);
+            }}
+          />
+        ) : null}
         <ListItem
+          divider={active}
           icon={
             muted ? (
               <Bell size={19} color={colors.primaryStrong} />

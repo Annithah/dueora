@@ -1,13 +1,13 @@
 import type { AppContext } from '../context.js';
-import { digestEmail, paymentRecordedEmail, reminderEmail, type ReminderEmailItem } from '../emails/reminder.js';
-import { renderLayout, esc } from '../emails/layout.js';
-import type { Prisma } from '../generated/prisma/client.js';
+import { digestEmail, itemsHtml, notificationEmail, reminderEmail, type ReminderEmailItem } from '../emails/reminder.js';
+import type { NotificationType, Prisma } from '../generated/prisma/client.js';
 import { enqueue, PermanentJobError, type JobHandler } from '../jobs/queue.js';
 import { TransientEmailError, type EmailMessage } from '../services/mailer.js';
 
 import type { PushMessage } from './push.js';
 import { TransientPushError } from './push.js';
 import { cancellationReason, createNotification, markCancelled, prefsFor, QUEUES } from './store.js';
+import { unsubscribeUrl } from './unsubscribe.js';
 
 const MAX_ATTEMPTS = 5;
 const RECEIPT_DELAY_MS = 15 * 60_000;
@@ -15,6 +15,31 @@ const RECEIPT_DELAY_MS = 15 * 60_000;
 interface Ticket {
   token: string;
   id: string;
+}
+
+/** Android channel per type (created by the app: reminders, overdue, digest, team). */
+export function channelFor(type: NotificationType): string {
+  switch (type) {
+    case 'OVERDUE':
+      return 'overdue';
+    case 'DIGEST':
+    case 'WEEKLY_DIGEST':
+    case 'MONTHLY_SUMMARY':
+      return 'digest';
+    case 'TEAM':
+      return 'team';
+    default:
+      return 'reminders';
+  }
+}
+
+/** Pushes about one unpaid cycle get the Mark as paid / Snooze / Open buttons. */
+export function categoryFor(type: NotificationType): string | undefined {
+  return type === 'REMINDER' || type === 'DUE_TODAY' || type === 'OVERDUE' ? 'subscription-reminder' : undefined;
+}
+
+async function unreadCount(ctx: AppContext, userId: string): Promise<number> {
+  return ctx.db.notification.count({ where: { userId, channel: 'IN_APP', readAt: null } });
 }
 
 async function loadPending(ctx: AppContext, notificationId: string) {
@@ -41,14 +66,26 @@ export const deliverPush: JobHandler = async (ctx, payload) => {
 
   const data = n.data as Record<string, unknown>;
   const overdue = n.type === 'OVERDUE';
+  const badge = await unreadCount(ctx, n.userId);
+  const category = categoryFor(n.type);
   const messages: PushMessage[] = tokens.map((t) => ({
     to: t.expoPushToken,
     title: n.title,
     body: n.body,
     sound: 'default',
+    badge,
     priority: overdue ? 'high' : 'default',
-    channelId: overdue ? 'overdue' : 'reminders',
-    data: { url: data.url, subscriptionId: n.subscriptionId, notificationId: n.id, type: n.type },
+    channelId: channelFor(n.type),
+    ...(category ? { categoryId: category } : {}),
+    data: {
+      url: data.url,
+      subscriptionId: n.subscriptionId,
+      cycleDueDate: n.cycleDueDate,
+      notificationId: n.id,
+      type: n.type,
+      // Lets the app cancel its local backup reminder for the same event.
+      dedupeKey: n.dedupeKey.replace(/:PUSH$/, ''),
+    },
   }));
 
   let tickets;
@@ -125,24 +162,30 @@ async function fallbackToEmail(
 
 function buildEmail(ctx: AppContext, n: NonNullable<Awaited<ReturnType<typeof loadPending>>>): EmailMessage {
   const data = n.data as Record<string, unknown>;
-  const common = { to: n.user.email, orgName: n.workspace.name };
+  const links = {
+    preferencesUrl: `${ctx.env.APP_URL}settings/notifications`,
+    unsubscribeUrl: unsubscribeUrl(ctx, n.userId, n.workspaceId),
+  };
+  const common = { to: n.user.email, orgName: n.workspace.name, links };
+  const url = String(data.url ?? ctx.env.APP_URL);
+  const items = (data.items ?? []) as ReminderEmailItem[];
   switch (n.type) {
     case 'REMINDER':
     case 'DUE_TODAY':
     case 'OVERDUE':
       return reminderEmail({ ...common, title: n.title, body: n.body, item: data as unknown as ReminderEmailItem });
     case 'DIGEST':
-      return digestEmail({ ...common, name: n.user.name, items: (data.items ?? []) as ReminderEmailItem[], appUrl: String(data.url ?? ctx.env.APP_URL) });
-    case 'PAYMENT_RECORDED':
-      return paymentRecordedEmail({ ...common, title: n.title, body: n.body, url: String(data.url ?? ctx.env.APP_URL) });
-    case 'SYSTEM':
-      return {
+      return digestEmail({ ...common, name: n.user.name, items, appUrl: url });
+    default:
+      return notificationEmail({
         to: n.user.email,
-        tag: 'system',
-        subject: n.title,
-        text: n.body,
-        html: renderLayout({ preheader: n.body, heading: n.title, bodyHtml: `<p style="margin:0">${esc(n.body)}</p>` }),
-      };
+        tag: n.type.toLowerCase().replace(/_/g, '-'),
+        title: n.title,
+        body: n.body,
+        url,
+        extraHtml: itemsHtml(items),
+        links,
+      });
   }
 }
 

@@ -18,7 +18,7 @@ const Params = z.object({ id });
 
 const isUniqueViolation = (err: unknown) => (err as { code?: string } | null)?.code === 'P2002';
 
-/** Companies (e.g. "KT Radio", "KigaliToday") and categories inside the active workspace. */
+/** Companies and categories inside the active workspace. */
 export function catalogRouter(ctx: AppContext): Router {
   const router = Router();
   // Mounted at the API root, so scope auth to this router's own paths only.

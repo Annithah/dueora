@@ -2,6 +2,7 @@ import type { Request } from 'express';
 
 import type { AppContext } from '../../context.js';
 import {
+  addDays,
   calculateNextDueDate,
   parseDate,
   reminderDates,
@@ -9,11 +10,12 @@ import {
   todayIn,
   type PaymentStatus,
 } from '../../domain/schedule.js';
-import type { FrequencyUnit, Prisma } from '../../generated/prisma/client.js';
+import type { FrequencyUnit, PaymentMethod, Prisma } from '../../generated/prisma/client.js';
 import { AppError, badRequest, notFound } from '../../http/errors.js';
 import { actorOf, workspaceIdOf } from '../../http/middleware/auth.js';
 import { slicePage } from '../../http/schemas.js';
 import { keyLast4, normaliseKey } from '../../lib/secretBox.js';
+import { notifyPriceChanged } from '../../notifications/events.js';
 import { audit } from '../workspaces/service.js';
 
 import { subscriptionInclude, subscriptionView, type SubscriptionView, type SubscriptionWithRelations } from './view.js';
@@ -146,6 +148,10 @@ export interface SubscriptionInput {
   startDate?: string;
   nextDueDate?: string;
   reminderOffsets?: number[];
+  autoRenew?: boolean;
+  isTrial?: boolean;
+  trialEndsOn?: string | null;
+  defaultPaymentMethod?: PaymentMethod | null;
 }
 
 /** Every referenced id must belong to this workspace (categories may also be built-in). */
@@ -204,6 +210,10 @@ export async function createSubscription(ctx: AppContext, req: Request, input: S
       startDate,
       nextDueDate,
       reminderOffsets: input.reminderOffsets ?? (workspace.defaultReminderOffsets as number[]),
+      autoRenew: input.autoRenew ?? false,
+      isTrial: input.isTrial ?? false,
+      trialEndsOn: input.isTrial ? (input.trialEndsOn ?? null) : null,
+      defaultPaymentMethod: input.defaultPaymentMethod ?? null,
     },
     include: subscriptionInclude,
   });
@@ -234,6 +244,10 @@ export async function updateSubscription(ctx: AppContext, req: Request, id: stri
     nextDueDate = calculateNextDueDate(startDate, unit, interval, anchorDay, today);
   }
   if ((nextDueDate ?? existing.nextDueDate) < startDate) throw badRequest('The next due date cannot be before the start date');
+  const isTrial = input.isTrial ?? existing.isTrial;
+  if (isTrial && !(input.trialEndsOn !== undefined ? input.trialEndsOn : existing.trialEndsOn)) {
+    throw badRequest('When does the free trial end?');
+  }
 
   const { subscriptionKey, ...rest } = input;
   const data: Prisma.SubscriptionUncheckedUpdateInput = {
@@ -244,11 +258,31 @@ export async function updateSubscription(ctx: AppContext, req: Request, id: stri
     frequencyInterval: interval,
     anchorDay,
     nextDueDate,
+    ...(input.isTrial === false ? { trialEndsOn: null } : {}),
   };
-  const updated = await ctx.db.subscription.update({ where: { id: existing.id }, data, include: subscriptionInclude });
+  const priceChanged = input.amountCents !== undefined && input.amountCents !== existing.amountCents;
+  const updated = await ctx.db.$transaction(async (tx) => {
+    const row = await tx.subscription.update({ where: { id: existing.id }, data, include: subscriptionInclude });
+    const change = priceChanged
+      ? await tx.priceChange.create({
+          data: { workspaceId, subscriptionId: id, oldAmountCents: existing.amountCents, newAmountCents: input.amountCents!, changedAt: ctx.clock.now() },
+        })
+      : null;
+    return { row, change };
+  });
+  if (updated.change) {
+    await notifyPriceChanged(ctx, {
+      workspaceId,
+      subscriptionId: id,
+      actorUserId: actorOf(req).userId,
+      oldAmountCents: existing.amountCents,
+      newAmountCents: updated.change.newAmountCents,
+      changeId: updated.change.id,
+    });
+  }
   // Field names only — never values (the key in particular must never reach the audit log).
   await audit(ctx, workspaceId, actorOf(req).userId, 'subscription.update', 'Subscription', id, { fields: Object.keys(input) });
-  return (await viewsFor(ctx, workspaceId, [updated], today))[0]!;
+  return (await viewsFor(ctx, workspaceId, [updated.row], today))[0]!;
 }
 
 /** Plain subscription key for ADMIN/FINANCE (route-guarded). Each reveal is audited. */
@@ -297,7 +331,7 @@ export async function subscriptionDetail(ctx: AppContext, req: Request, id: stri
   const workspaceId = workspaceIdOf(req);
   const today = workspaceToday(ctx, req);
   const [view] = await viewsFor(ctx, workspaceId, [s], today);
-  const [history, historyTotal, sent, prefs] = await Promise.all([
+  const [history, historyTotal, sent, prefs, priceHistory, snooze] = await Promise.all([
     ctx.db.paymentRecord.findMany({
       where: { subscriptionId: id, workspaceId },
       orderBy: [{ paidOn: 'desc' }, { createdAt: 'desc' }],
@@ -313,6 +347,10 @@ export async function subscriptionDetail(ctx: AppContext, req: Request, id: stri
       where: { userId_workspaceId: { userId: actorOf(req).userId, workspaceId } },
       select: { mutedSubscriptionIds: true },
     }),
+    ctx.db.priceChange.findMany({ where: { subscriptionId: id, workspaceId }, orderBy: { changedAt: 'desc' }, take: 20 }),
+    ctx.db.reminderSnooze.findUnique({
+      where: { userId_subscriptionId_cycleDueDate: { userId: actorOf(req).userId, subscriptionId: id, cycleDueDate: s.nextDueDate } },
+    }),
   ]);
   const sentOffsets = new Set(sent.map((n) => n.offsetDays));
   const offsets = s.reminderOffsets as number[];
@@ -325,6 +363,13 @@ export async function subscriptionDetail(ctx: AppContext, req: Request, id: stri
   return {
     ...view!,
     muted: ((prefs?.mutedSubscriptionIds as string[] | undefined) ?? []).includes(id),
+    snoozedUntil: snooze && snooze.snoozedUntil > today ? snooze.snoozedUntil : null,
+    priceHistory: priceHistory.map((p) => ({
+      id: p.id,
+      oldAmountCents: p.oldAmountCents,
+      newAmountCents: p.newAmountCents,
+      changedAt: p.changedAt,
+    })),
     reminders: s.status === 'ACTIVE' ? plan : [],
     history: history.map((p) => ({
       id: p.id,
@@ -338,4 +383,26 @@ export async function subscriptionDetail(ctx: AppContext, req: Request, id: stri
     })),
     historyTotal,
   };
+}
+
+// --- Snooze ----------------------------------------------------------------------
+
+/** Pause this user's reminders for the current cycle until a date (tomorrow, in 3 days, next week…). */
+export async function snooze(ctx: AppContext, req: Request, id: string, input: { days?: number; until?: string }) {
+  const s = await loadSubscription(ctx, req, id);
+  const today = workspaceToday(ctx, req);
+  const until = input.until ?? addDays(today, input.days!);
+  if (until <= today) throw badRequest('Choose a date after today');
+  const userId = actorOf(req).userId;
+  await ctx.db.reminderSnooze.upsert({
+    where: { userId_subscriptionId_cycleDueDate: { userId, subscriptionId: id, cycleDueDate: s.nextDueDate } },
+    create: { userId, subscriptionId: id, cycleDueDate: s.nextDueDate, snoozedUntil: until },
+    update: { snoozedUntil: until },
+  });
+  return { subscriptionId: id, cycleDueDate: s.nextDueDate, snoozedUntil: until };
+}
+
+export async function unsnooze(ctx: AppContext, req: Request, id: string) {
+  const s = await loadSubscription(ctx, req, id);
+  await ctx.db.reminderSnooze.deleteMany({ where: { userId: actorOf(req).userId, subscriptionId: id, cycleDueDate: s.nextDueDate } });
 }

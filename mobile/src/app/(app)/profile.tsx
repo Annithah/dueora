@@ -1,13 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Mail, UserRound } from 'lucide-react-native';
+import { BadgeCheck, Mail, UserRound } from 'lucide-react-native';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
-import { Avatar, Button, Card, FormMessage, Input, Text, toast } from '@/components/ui';
+import { Avatar, BottomSheet, Button, Card, CodeInput, FormMessage, Input, Text, toast } from '@/components/ui';
 import { ApiError, api } from '@/api';
+import { useRequestEmailCode, useVerifyEmail } from '@/features/account/api';
 import { meKey, useMe, type Me } from '@/features/auth/api';
 import { useTheme } from '@/theme';
 
@@ -29,6 +30,11 @@ function ProfileForm({ me }: { me: Me }) {
   const [name, setName] = useState(me.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const requestCode = useRequestEmailCode();
+  const verify = useVerifyEmail();
 
   const save = async () => {
     setError(null);
@@ -69,10 +75,61 @@ function ProfileForm({ me }: { me: Me }) {
         <View style={{ flex: 1 }}>
           <Text variant="smallStrong">{me.email}</Text>
           <Text variant="caption" tone="muted">
-            Your sign-in email. Contact support to change it.
+            {me.emailVerified ? 'Verified ✓ · ' : ''}Your sign-in email. Contact support to change it.
           </Text>
         </View>
       </Card>
+      {!me.emailVerified ? (
+        <Card style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <BadgeCheck size={18} color={colors.primaryStrong} />
+            <Text variant="small" style={{ flex: 1 }}>
+              Optional: confirm your email so reminder emails always reach you.
+            </Text>
+          </View>
+          <Button
+            variant="secondary"
+            loading={requestCode.isPending}
+            onPress={() =>
+              requestCode.mutate(undefined, {
+                onSuccess: () => {
+                  setCode('');
+                  setCodeError(null);
+                  setVerifyOpen(true);
+                },
+                onError: (e) => toast.error('Could not send the code', e instanceof ApiError ? e.message : undefined),
+              })
+            }
+          >
+            Verify my email
+          </Button>
+        </Card>
+      ) : null}
+      <BottomSheet visible={verifyOpen} onClose={() => setVerifyOpen(false)} title="Enter the 6-digit code">
+        <View style={{ gap: 14 }}>
+          <Text variant="small" tone="muted">
+            We sent it to {me.email}. It expires in 15 minutes.
+          </Text>
+          <FormMessage message={codeError} />
+          <CodeInput value={code} onChange={setCode} />
+          <Button
+            full
+            loading={verify.isPending}
+            disabled={code.length !== 6}
+            onPress={() =>
+              verify.mutate(code, {
+                onSuccess: () => {
+                  setVerifyOpen(false);
+                  toast.success('Email verified ✅');
+                },
+                onError: (e) => setCodeError(e instanceof ApiError ? e.message : 'That code didn’t work'),
+              })
+            }
+          >
+            Verify
+          </Button>
+        </View>
+      </BottomSheet>
     </Screen>
   );
 }

@@ -5,13 +5,18 @@
  *  2. as a signed-in user of ANOTHER workspace → 404 on every workspace-scoped route
  *  3. auth endpoints are rate limited
  */
+import { readFileSync } from 'node:fs';
+
 import type { Router } from 'express';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/app.js';
 import { authLimiter } from '../src/http/rateLimits.js';
+import { feedbackRouter } from '../src/modules/account/routes.js';
 import { authRouter, meRouter } from '../src/modules/auth/routes.js';
+import { budgetsRouter } from '../src/modules/budgets/routes.js';
+import { importRouter } from '../src/modules/import/routes.js';
 import { catalogRouter } from '../src/modules/catalog/routes.js';
 import { insightsRouter } from '../src/modules/insights/routes.js';
 import { subscriptionsRouter } from '../src/modules/subscriptions/routes.js';
@@ -47,6 +52,9 @@ const ALL: RouteInfo[] = [
   ...routesOf('/api/v1/me', meRouter(ctx)),
   ...routesOf('/api/v1/workspaces', workspacesRouter(ctx)),
   ...routesOf('/api/v1/subscriptions', subscriptionsRouter(ctx)),
+  ...routesOf('/api/v1/budgets', budgetsRouter(ctx)),
+  ...routesOf('/api/v1/import', importRouter(ctx)),
+  ...routesOf('/api/v1/feedback', feedbackRouter(ctx)),
   ...routesOf('/api/v1', catalogRouter(ctx)),
   ...routesOf('/api/v1', paymentsRouter(ctx)),
   ...routesOf('/api/v1', notificationsRouter(ctx)),
@@ -63,6 +71,9 @@ const PUBLIC = new Set([
   'post /api/v1/auth/password/forgot',
   'post /api/v1/auth/password/reset',
   'get /api/v1/public/invites/preview',
+  // Signed link from email footers; a bad token is a 400 page, never data.
+  'get /api/v1/public/unsubscribe',
+  'post /api/v1/public/unsubscribe',
 ]);
 
 /** Account-level routes (signed in, but not tied to a workspace). */
@@ -70,6 +81,11 @@ const ACCOUNT = new Set([
   'get /api/v1/me',
   'patch /api/v1/me',
   'post /api/v1/me/password',
+  'delete /api/v1/me',
+  'post /api/v1/auth/logout-all',
+  'post /api/v1/auth/verify-email/request',
+  'post /api/v1/auth/verify-email',
+  'post /api/v1/feedback',
   'get /api/v1/workspaces',
   'post /api/v1/workspaces',
   'post /api/v1/workspaces/accept-invite',
@@ -122,6 +138,13 @@ afterAll(async () => {
 });
 
 describe('route inventory', () => {
+  it('sweeps every router mounted in src/routes/index.ts', () => {
+    const mounted = [...readFileSync('src/routes/index.ts', 'utf8').matchAll(/router\.use\('[^']*', (\w+)\(ctx\)\)/g)].map((m) => m[1]!);
+    const self = readFileSync('test/security.test.ts', 'utf8');
+    expect(mounted.length).toBeGreaterThan(8);
+    for (const name of mounted) expect(self, `${name} is mounted but not swept`).toContain(`${name}(ctx)),`);
+  });
+
   it('finds every route', () => {
     expect(ALL.length).toBeGreaterThan(50);
     const unknown = [...PUBLIC, ...ACCOUNT].filter((k) => !ALL.some((r) => key(r) === k));

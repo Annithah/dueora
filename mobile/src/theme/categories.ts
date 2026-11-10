@@ -1,9 +1,11 @@
 import {
   BadgeDollarSign,
   Building2,
+  CarFront,
   Cloud,
   Cpu,
   Globe,
+  GraduationCap,
   House,
   Lightbulb,
   Megaphone,
@@ -123,6 +125,8 @@ const visuals = {
     fgDark: '#F9A8D4',
     bgDark: '#3D1A2E',
   },
+  car: { icon: CarFront, fgLight: '#0E7490', bgLight: '#E0F4F8', fgDark: '#67D4EA', bgDark: '#14303A' },
+  graduation: { icon: GraduationCap, fgLight: '#6D36CC', bgLight: '#F0EAFF', fgDark: '#B9A0F5', bgDark: '#2A2340' },
   tag: { icon: Tag, fgLight: '#667373', bgLight: '#EEF1F1', fgDark: '#A5B2B1', bgDark: '#243030' },
 } satisfies Record<string, CategoryVisual>;
 
@@ -144,5 +148,7 @@ export const DEFAULT_CATEGORY_ICONS: Record<string, CategoryIconKey> = {
   Insurance: 'shield',
   Marketing: 'megaphone',
   Utilities: 'bulb',
+  Transport: 'car',
+  'Education & training': 'graduation',
   Other: 'tag',
 };

@@ -54,6 +54,7 @@ export interface ApiClient {
   get<T>(path: string, query?: RequestOptions['query']): Promise<T>;
   post<T>(path: string, body?: unknown): Promise<T>;
   patch<T>(path: string, body?: unknown): Promise<T>;
+  put<T>(path: string, body?: unknown): Promise<T>;
   del<T = void>(path: string): Promise<T>;
 }
 
@@ -172,6 +173,7 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     get: (path, query) => request(path, { query }),
     post: (path, body) => request(path, { method: 'POST', body }),
     patch: (path, body) => request(path, { method: 'PATCH', body }),
+    put: (path, body) => request(path, { method: 'PUT', body }),
     del: (path) => request(path, { method: 'DELETE' }),
   };
 }

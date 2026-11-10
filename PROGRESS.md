@@ -26,7 +26,7 @@ subscription keys, no demo data). This checklist tracks v2. Phase 9 (Play Store)
 - [x] Mobile API client with token refresh, TanStack Query provider
 
 ## Phase 3 — Auth, workspace, companies, roles
-- [x] Register, login, logout, refresh, forgot/reset (email code), email verification, profile (name)
+- [x] Register, login, logout, refresh, forgot/reset (email code), profile (name) — email verification removed at sign-up (4 Nov 2026)
 - [x] Create workspace (Company/Personal + first company), settings, switch
 - [x] Companies: create, rename, colour, delete when unused / archive otherwise, restore
 - [x] Invites by email; roles ADMIN / FINANCE / VIEWER
@@ -92,3 +92,69 @@ subscription keys, no demo data). This checklist tracks v2. Phase 9 (Play Store)
   data and sample-data checks, deployment guide, API reference, notifications design, QA checklist, UI map.
 - **Tests:** backend 439 (incl. the year simulation and key-security suite), mobile 130. Lint and type-check
   clean (mobile type-check also needs Expo's generated route types refreshed — restart `expo start` once).
+
+---
+
+# Master prompt — remaining work (audit 10 Nov 2026)
+
+Audit of the code against `DUEORA_MASTER_PROMPT` (the new single source of truth). `[x]` exists and works ·
+`[ ]` missing · `[!]` broken or contradicts the master prompt.
+
+## Part 0 — Product rules
+- [x] Subscriptions core; companies with "+ New company"; categories with icons; no projects/platforms; USD cents
+- [x] Auto dates + quick-pick chips; no ownership fields; no attachments; due-date sort; 10/page; search + Sort + Filter + chips
+- [x] Subscription key AES-256-GCM, masked, Show/Copy, reveal ADMIN/FINANCE only, HMAC exact search
+- [x] Light mode default; Light/Dark/System in Settings > Appearance
+- [x] Hardcoded sample names removed from backend comments/tests; API default timezone is UTC (the app sends the phone's)
+- [x] Default categories: 11 seeded (was 9; master prompt lists 11 (adds Utilities, Transport, Education & training; "Communication & internet")
+- [ ] Gentle pulse on overdue rows; smooth list transitions (check animation on payment exists)
+
+## Part 1 — Core app
+- [x] Register, login, logout, refresh, forgot/reset, profile; workspace create/switch/settings; companies; invites; 3 roles
+- [x] Email verification: optional, non-blocking (D26)
+- [x] User.locale, User.deletedAt; Workspace.aiEnabled
+- [x] Subscription: autoRenew, isTrial, trialEndsOn, defaultPaymentMethod (form toggles + payment method default)
+- [x] Scheduling engine (≥ 95% coverage) — [ ] TRIAL/auto-renew helper dates
+- [x] Payments full/partial, advance, COMPLETED, edit/delete + audit
+- [x] PriceChange model + price history on detail
+- [x] Bulk import (CSV/Excel template, mapping, preview, import)
+- [x] Budgets (workspace / per category) — dashboard bar in Part 3
+- [x] Reports monthly/annual/outstanding/overdue/category/company/12-month forecast + PDF/Excel
+- [x] Data export (Excel/JSON), delete account, logout from all devices
+
+## Part 2 — Notifications
+- [x] REMINDER / DUE_TODAY / OVERDUE / PAYMENT_RECORDED / digest, dedupe key, catch-up, quiet hours, retries, receipts, email fallback, in-app
+- [ ] Types TRIAL_ENDING, AUTO_RENEW_NOTICE, PRICE_CHANGE, BUDGET_ALERT, WEEKLY_DIGEST, MONTHLY_SUMMARY, TEAM
+- [x] PAYMENT_RECORDED goes to ADMIN + FINANCE only (D27)
+- [x] Dedupe key includes `type` for event notifications (reminders: Part 2)
+- [ ] ReminderSnooze; NotificationPreference weeklySummary/monthlySummary/budgetAlerts/teamActivity
+- [ ] Push action buttons (Mark as paid / Snooze / Open), channels overdue/digest/team, app badge, local backup reminders, denied-permission banner, unregister on logout (check)
+- [x] Email unsubscribe/preferences link (signed one-click link)
+- [ ] Tests for trial, budget, weekly/monthly summaries, snooze, multiple timezones
+
+## Part 3 — Screens & UX
+- [x] Splash, onboarding (first launch), welcome, auth, workspace setup, 5-slot tab bar with raised "+", bell in header
+- [x] Dashboard cards, needs attention, timeline, trend, category donut, by company, quick actions, pull-to-refresh
+- [ ] Dashboard: budget progress, AI insight card, "Ask AI" quick action, sparkle button
+- [ ] Detail: price history, snooze; Settings: Budgets, Language, Import, Data & privacy, DueOra AI, About (version, legal links), "View intro again"
+- [ ] i18n (i18next): English complete, French + Kinyarwanda main screens, `docs/TRANSLATIONS.md`
+- [ ] Alerts: Today / This week / Earlier grouping, swipe to mark read (check)
+- [ ] Help: FAQ shared with AI knowledge base, "Send feedback" stored in backend
+
+## Part 4 — DueOra AI
+- [ ] Everything: `@google/genai` backend, streaming `/ai/chat`, tools, confirmations, memory, feedback, usage, rate limit, insights, knowledge base, eval tests, chat UI
+
+## Part 5 — Security & monitoring
+- [x] Rate limits, zod, HTTPS, route sweep, isolation, key security, bundle scan
+- [ ] Sentry (backend + mobile, env-driven, off without DSN); tests for export/deletion
+
+## Part 6 — Deploy
+- [x] Dockerfile, render.yaml, railway.json, DEPLOYMENT.md
+- [!] Production on SQLite (D14); master prompt asks managed PostgreSQL → switch production to Postgres (D25)
+- [ ] Legal pages (`docs/legal/`), live `/health` (needs the owner's hosting account)
+
+## Part 7 — APK
+- [x] Name, package, icons, splash, EAS profiles — [ ] expo-updates channel `preview`, versionCode, GitHub Release, QR code, `docs/INSTALL.md`
+
+## Part 8 — Play Store prep
+- [ ] `docs/PLAY_STORE.md`

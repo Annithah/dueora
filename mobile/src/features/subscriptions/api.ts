@@ -48,6 +48,10 @@ export interface Subscription {
   startDate: string;
   nextDueDate: string;
   reminderOffsets: number[];
+  autoRenew: boolean;
+  isTrial: boolean;
+  trialEndsOn: string | null;
+  defaultPaymentMethod: PaymentMethod | null;
   status: 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
   paymentStatus: PaymentStatus;
   daysUntilDue: number;
@@ -71,8 +75,18 @@ export interface PaymentRecord {
   createdAt: string;
 }
 
+export interface PriceChange {
+  id: string;
+  oldAmountCents: number;
+  newAmountCents: number;
+  changedAt: string;
+}
+
 export interface SubscriptionDetail extends Subscription {
   muted: boolean;
+  /** "YYYY-MM-DD" while the caller has snoozed this cycle's reminders. */
+  snoozedUntil: string | null;
+  priceHistory: PriceChange[];
   reminders: { offsetDays: number; date: string; sent: boolean }[];
   history: PaymentRecord[];
   historyTotal: number;
@@ -125,6 +139,10 @@ export interface SubscriptionInput {
   nextDueDate?: string;
   anchorDay?: number;
   reminderOffsets?: number[];
+  autoRenew?: boolean;
+  isTrial?: boolean;
+  trialEndsOn?: string | null;
+  defaultPaymentMethod?: PaymentMethod | null;
 }
 
 const useWorkspaceId = () => useSession((s) => s.activeWorkspaceId);
@@ -231,7 +249,7 @@ export function useRecordPayment(subscriptionId: string) {
     mutationFn: (input: {
       amountCents?: number;
       paidOn?: string;
-      method: PaymentMethod;
+      method?: PaymentMethod;
       reference?: string | null;
       notes?: string | null;
     }) => api.post<RecordResult>(`/subscriptions/${subscriptionId}/payments`, input),
@@ -262,4 +280,23 @@ export const FREQUENCY_FILTERS = [
   { value: 'MONTH', label: 'Monthly / quarterly' },
   { value: 'YEAR', label: 'Yearly' },
   { value: 'ONCE', label: 'One-time' },
+] as const;
+
+/** Snooze this cycle's reminders for me: { days } (1, 3, 7) or { until: 'YYYY-MM-DD' }. */
+export function useSnooze(subscriptionId: string) {
+  const queryClient = useQueryClient();
+  const workspaceId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (input: { days: number } | { until: string } | null) =>
+      input
+        ? api.post<{ snoozedUntil: string }>(`/subscriptions/${subscriptionId}/snooze`, input)
+        : api.del(`/subscriptions/${subscriptionId}/snooze`).then(() => null),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: subscriptionKeys.detail(workspaceId, subscriptionId) }),
+  });
+}
+
+export const SNOOZE_CHOICES = [
+  { days: 1, label: 'Tomorrow' },
+  { days: 3, label: 'In 3 days' },
+  { days: 7, label: 'Next week' },
 ] as const;

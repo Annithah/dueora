@@ -49,7 +49,25 @@ describe('subscription form', () => {
       startDate: '2026-11-03',
       nextDueDate: '2026-11-03',
       reminderOffsets: [7, 1, 0],
+      autoRenew: false,
+      isTrial: false,
+      trialEndsOn: null,
+      defaultPaymentMethod: null,
     });
+  });
+
+  it('sends trial, auto-renew and default payment method, and needs a trial end date', () => {
+    expect(toInput({ ...base, amount: '5', isTrial: true, trialEndsOn: '2026-11-20', autoRenew: true, defaultPaymentMethod: 'CARD' })).toMatchObject({
+      isTrial: true,
+      trialEndsOn: '2026-11-20',
+      autoRenew: true,
+      defaultPaymentMethod: 'CARD',
+    });
+    // Turning the trial off clears its date.
+    expect(toInput({ ...base, amount: '5', isTrial: false, trialEndsOn: '2026-11-20' }).trialEndsOn).toBeNull();
+    const parsed = formSchema.safeParse({ ...base, amount: '5', isTrial: true, trialEndsOn: '' });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues.map((i) => i.path.join('.'))).toContain('trialEndsOn');
   });
 
   it('handles the subscription key: set, keep (blank) and remove', () => {

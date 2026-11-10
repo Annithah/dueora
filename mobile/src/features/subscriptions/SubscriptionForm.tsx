@@ -25,9 +25,10 @@ import { createCompany, useCategories, useCompanies, useListMutation, type Compa
 import { REMINDER_CHOICES, isChoiceSelected, toggleChoice } from '@/features/notifications/reminderOptions';
 import { useWorkspace } from '@/features/workspaces/api';
 import { formatDate } from '@/lib/dates';
+import { guessCategoryName } from '@/lib/guess';
 import { radius, typography, useTheme } from '@/theme';
 
-import { useSaveSubscription, type Subscription } from './api';
+import { METHOD_LABELS, useSaveSubscription, type PaymentMethod, type Subscription } from './api';
 import { FREQUENCIES, autoNextDueDate, defaultsFrom, formSchema, toInput, type FormValues } from './form';
 
 const NEW_COMPANY = '__new__';
@@ -91,10 +92,13 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
       today,
     }),
   });
-  const [frequency, customUnit, customInterval, startDate, nextDueManual, removeKey] = useWatch({
+  const [frequency, customUnit, customInterval, startDate, nextDueManual, removeKey, name, provider, categoryId, isTrial] = useWatch({
     control,
-    name: ['frequency', 'customUnit', 'customInterval', 'startDate', 'nextDueManual', 'removeKey'],
+    name: ['frequency', 'customUnit', 'customInterval', 'startDate', 'nextDueManual', 'removeKey', 'name', 'provider', 'categoryId', 'isTrial'],
   });
+  // "Hosting" → suggest Hosting & domains (only while no category is chosen).
+  const suggestedName = !categoryId ? guessCategoryName(`${name ?? ''} ${provider ?? ''}`) : null;
+  const suggested = suggestedName ? categories.data?.find((c) => c.name === suggestedName) : undefined;
 
   // Preselect the only company, so a one-company workspace never has to choose.
   useEffect(() => {
@@ -190,6 +194,18 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
             />
           )}
         />
+        {suggested ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Text variant="small" tone="muted">
+              Suggested:
+            </Text>
+            <Chip
+              label={suggested.name}
+              accessibilityHint="Use this category"
+              onPress={() => setValue('categoryId', suggested.id, { shouldValidate: formState.isSubmitted })}
+            />
+          </View>
+        ) : null}
         <Controller
           control={control}
           name="provider"
@@ -360,7 +376,54 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
         />
       </Section>
 
-      <Section n={5} title="Details" hint="Optional">
+      <Section n={5} title="Renewal & payment" hint="Trials, auto-renewal and how you usually pay">
+        <Controller
+          control={control}
+          name="autoRenew"
+          render={({ field }) => (
+            <ToggleRow
+              label="Renews automatically"
+              hint="We'll warn you a week before it charges"
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="isTrial"
+          render={({ field }) => (
+            <ToggleRow label="Free trial" hint="Get a reminder before the trial ends" value={field.value} onChange={field.onChange} />
+          )}
+        />
+        {isTrial ? (
+          <Controller
+            control={control}
+            name="trialEndsOn"
+            render={({ field, fieldState }) => (
+              <DateField label="Trial ends on" today={today} value={field.value || today} onChange={field.onChange} error={fieldState.error?.message} />
+            )}
+          />
+        ) : null}
+        <Controller
+          control={control}
+          name="defaultPaymentMethod"
+          render={({ field }) => (
+            <Select
+              label="Usual payment method (optional)"
+              value={field.value}
+              placeholder="Choose when recording a payment"
+              onChange={field.onChange}
+              options={[
+                { value: '', label: 'No default' },
+                ...(Object.keys(METHOD_LABELS) as PaymentMethod[]).map((m) => ({ value: m, label: METHOD_LABELS[m] })),
+              ]}
+            />
+          )}
+        />
+      </Section>
+
+      <Section n={6} title="Details" hint="Optional">
         <Controller
           control={control}
           name="subscriptionKey"
@@ -449,6 +512,20 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
         </View>
       </BottomSheet>
     </Screen>
+  );
+}
+
+function ToggleRow({ label, hint, value, onChange }: { label: string; hint: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }}>
+      <View style={{ flex: 1 }}>
+        <Text variant="bodyStrong">{label}</Text>
+        <Text variant="small" tone="muted">
+          {hint}
+        </Text>
+      </View>
+      <Switch accessibilityLabel={label} value={value} onValueChange={onChange} />
+    </View>
   );
 }
 

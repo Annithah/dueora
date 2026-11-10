@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
 import type { AppContext } from '../../context.js';
@@ -7,7 +7,10 @@ import { badRequest, forbidden } from '../../http/errors.js';
 import { actorOf, workspaceIdOf, requireAuth, requireWorkspace, requirePermission, userIdOf } from '../../http/middleware/auth.js';
 import { email, id, minutesOfDay, reminderOffsets, timeZone } from '../../http/schemas.js';
 import { parseBody, parseParams, parseQuery } from '../../http/validate.js';
+import { renderLayout } from '../../emails/layout.js';
+import { unsubscribeEmail, verifyUnsubscribeToken } from '../../notifications/unsubscribe.js';
 import { publicUser } from '../auth/service.js';
+import { exportWorkbook, exportWorkspaceData } from '../account/service.js';
 
 import * as ws from './service.js';
 
@@ -16,7 +19,8 @@ const roleEnum = z.enum(['ADMIN', 'FINANCE', 'VIEWER']);
 const CreateBody = z.object({
   name: z.string().trim().min(1, 'Enter a workspace name').max(100),
   type: z.enum(['COMPANY', 'PERSONAL']).default('COMPANY'),
-  timezone: timeZone.default('Africa/Kigali'),
+  /** The phone's timezone at sign-up (the app always sends it). */
+  timezone: timeZone.default('UTC'),
   /** The first company in this workspace (defaults to the workspace name). */
   firstCompanyName: z.string().trim().min(1).max(60).optional(),
 });
@@ -30,6 +34,7 @@ const UpdateBody = z
     quietHoursStart: minutesOfDay.nullable(),
     quietHoursEnd: minutesOfDay.nullable(),
     defaultReminderOffsets: reminderOffsets,
+    aiEnabled: z.boolean(),
   })
   .partial()
   .strict()
@@ -75,6 +80,24 @@ export function workspacesRouter(ctx: AppContext): Router {
     if (confirmName.trim() !== current.name) throw badRequest('Type the workspace name exactly to confirm');
     await ctx.db.workspace.delete({ where: { id: current.id } });
     res.status(204).end();
+  });
+
+  /** Export all workspace data (Settings → Data & privacy). Keys stay masked. */
+  router.get('/current/export', org, requirePermission('data:export'), async (req, res) => {
+    const { format } = parseQuery(req, z.object({ format: z.enum(['json', 'xlsx']).default('json') }));
+    const data = await exportWorkspaceData(ctx, workspaceIdOf(req));
+    const stamp = data.exportedAt.slice(0, 10);
+    await ws.audit(ctx, workspaceIdOf(req), userIdOf(req), 'workspace.export', 'Workspace', workspaceIdOf(req), { format });
+    res.setHeader('Cache-Control', 'no-store');
+    if (format === 'xlsx') {
+      res
+        .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .setHeader('Content-Disposition', `attachment; filename="dueora-export-${stamp}.xlsx"`)
+        .send(await exportWorkbook(data));
+      return;
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="dueora-export-${stamp}.json"`);
+    res.json(data);
   });
 
   // --- Members ---
@@ -128,6 +151,27 @@ export function publicRouter(ctx: AppContext): Router {
     const { token } = parseQuery(req, z.object({ token: z.string().min(20).max(200) }));
     res.json(await ws.previewInvite(ctx, token));
   });
+
+  /** One-click unsubscribe from notification emails (link in every email footer). */
+  const unsubscribe = async (req: Request, res: Response) => {
+    const token = String(req.query.token ?? '').slice(0, 300);
+    const target = verifyUnsubscribeToken(ctx, token);
+    const ok = target ? await unsubscribeEmail(ctx, target.userId, target.workspaceId) : false;
+    res
+      .status(ok ? 200 : 400)
+      .type('html')
+      .send(
+        renderLayout({
+          preheader: ok ? 'You won’t get DueOra emails any more.' : 'This link is not valid.',
+          heading: ok ? 'You’re unsubscribed ✅' : 'This link didn’t work',
+          bodyHtml: ok
+            ? '<p style="margin:0">You won’t receive DueOra emails for this workspace any more. Push and in-app alerts are unchanged — manage everything in Settings → Notifications.</p>'
+            : '<p style="margin:0">Open DueOra and go to Settings → Notifications to change your email preferences.</p>',
+        }),
+      );
+  };
+  router.get('/unsubscribe', unsubscribe);
+  router.post('/unsubscribe', unsubscribe);
 
 
   return router;

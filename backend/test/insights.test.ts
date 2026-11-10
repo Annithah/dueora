@@ -52,7 +52,7 @@ describe('GET /dashboard', () => {
     expect(res.status).toBe(200);
     const d = res.body;
     expect(d).toMatchObject({ today: '2026-11-02', localHour: 9 });
-    // Hosting $1,523.00 + Cloudflare $240.00
+    // Hosting $1,523.00 + CDN plan $240.00
     expect(d.summary.overdue).toEqual({ amountCents: 176_300, count: 2 });
     // Internet (5 Nov, $120) and cleaning (6 Nov, $40)
     expect(d.summary.dueThisWeek).toEqual({ amountCents: 16_000, count: 2 });
@@ -66,7 +66,7 @@ describe('GET /dashboard', () => {
   it('lists what needs attention, most urgent first, and the next 30 days by due date', async () => {
     const d = (await fx.as('viewer').get('/api/v1/dashboard')).body;
     expect(d.needsAttention.map((o: { name: string; paymentStatus: string }) => `${o.name}:${o.paymentStatus}`)).toEqual([
-      'Cloudflare:OVERDUE',
+      'CDN plan:OVERDUE',
       'Hosting:OVERDUE',
       'Google Workspace:PARTIALLY_PAID',
       'Internet:DUE_SOON',
@@ -127,7 +127,7 @@ describe('reports', () => {
     });
     expect(r.forecast).toHaveLength(12);
     expect(r.forecast[0].month).toBe('2026-11');
-    expect(r.overdue.map((o: { name: string }) => o.name).sort()).toEqual(['Cloudflare', 'Hosting']);
+    expect(r.overdue.map((o: { name: string }) => o.name).sort()).toEqual(['CDN plan', 'Hosting']);
   });
 
   it('summarises a year month by month, by category and by company', async () => {

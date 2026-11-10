@@ -3,13 +3,15 @@ import { formatLongDate, formatShortDay, formatUSD, plural } from '../lib/format
 /**
  * Notification copy: human, specific, short, always in USD. Never includes a subscription key.
  *
- *   ⏰ KigaliToday · Hosting is due in 7 days — $1,523.00 on Tue, 20 Oct.
- *   📅 Today: KT Radio · Domain renewal — $13.00.
- *   ⚠️ KigaliToday · Cloudflare is 3 days overdue — $240.00. Tap to record the payment.
- *   ✅ $132.00 recorded for KT Radio · Hosting. Next due: 02 Oct 2028.
+ *   ⏰ {Company} · {Subscription} is due in {n} days — {amount} on {weekday, date}.
+ *   📅 Today: {Company} · {Subscription} — {amount}.
+ *   ⚠️ {Company} · {Subscription} is {n} days overdue — {amount}. Tap to record the payment.
+ *   ✅ {amount} recorded for {Company} · {Subscription}. Next due: {date}.
+ *
+ * Every name comes from the workspace's own data; nothing here is hardcoded.
  */
 
-/** "KigaliToday · Hosting" */
+/** "{Company} · {Subscription}" */
 export function subscriptionLabel(name: string, company: string): string {
   return `${company} · ${name}`;
 }
@@ -70,4 +72,58 @@ export function digestCopy(count: number, labels: string[]): Copy {
   const shown = labels.slice(0, 3).join(', ');
   const more = labels.length > 3 ? ` and ${labels.length - 3} more` : '';
   return { title: `🔔 ${plural(count, 'subscription')} need attention this week`, body: `${shown}${more}.` };
+}
+
+export function trialEndingCopy(input: { name: string; daysLeft: number }): Copy {
+  const when = input.daysLeft <= 0 ? 'today' : input.daysLeft === 1 ? 'tomorrow' : `in ${plural(input.daysLeft, 'day')}`;
+  return { title: 'Free trial ending', body: `🎁 Your free trial of ${input.name} ends ${when} — cancel or keep it?` };
+}
+
+export function autoRenewCopy(input: { label: string; dueDate: string; amountCents: number }): Copy {
+  return {
+    title: 'Renews automatically soon',
+    body: `🔁 ${input.label} will renew automatically on ${formatShortDay(input.dueDate)} for ${formatUSD(input.amountCents)}.`,
+  };
+}
+
+export function priceChangeCopy(input: { label: string; oldAmountCents: number; newAmountCents: number }): Copy {
+  const up = input.newAmountCents > input.oldAmountCents;
+  return {
+    title: up ? 'Price went up' : 'Price changed',
+    body: `${up ? '📈' : '📉'} ${input.label} went from ${formatUSD(input.oldAmountCents)} to ${formatUSD(input.newAmountCents)}.`,
+  };
+}
+
+export function budgetAlertCopy(input: { percent: number; categoryName: string | null }): Copy {
+  const scope = input.categoryName ? `${input.categoryName} budget` : 'monthly budget';
+  return {
+    title: input.percent >= 100 ? 'Budget reached' : 'Budget alert',
+    body: `📊 You've used ${input.percent}% of your ${scope} this month.`,
+  };
+}
+
+export type TeamEvent = 'MEMBER_JOINED' | 'ROLE_CHANGED' | 'INVITE_ACCEPTED';
+
+const ROLE_NAMES = { ADMIN: 'Admin', FINANCE: 'Finance', VIEWER: 'Viewer' } as const;
+
+export function teamCopy(event: TeamEvent, memberName: string, role?: keyof typeof ROLE_NAMES): Copy {
+  const r = role ? ROLE_NAMES[role] : null;
+  if (event === 'ROLE_CHANGED') return { title: 'Role changed', body: `👥 ${memberName} is now ${r ?? 'in a new role'}.` };
+  if (event === 'INVITE_ACCEPTED') return { title: 'Invite accepted', body: `🎉 ${memberName} accepted your invite${r ? ` as ${r}` : ''}.` };
+  return { title: 'New member', body: `👋 ${memberName} joined the workspace${r ? ` as ${r}` : ''}.` };
+}
+
+export function weeklyDigestCopy(input: { count: number; totalCents: number; aiLine?: string | null }): Copy {
+  const head =
+    input.count === 0
+      ? 'Nothing due this week — enjoy the calm. 🌿'
+      : `${plural(input.count, 'subscription')} due this week — ${formatUSD(input.totalCents)} in total.`;
+  return { title: '🗓️ Your week ahead', body: input.aiLine ? `${head} ${input.aiLine}` : head };
+}
+
+export function monthlySummaryCopy(input: { monthLabel: string; paidCents: number; comingCents: number; comingCount: number }): Copy {
+  return {
+    title: `📈 ${input.monthLabel} in review`,
+    body: `You paid ${formatUSD(input.paidCents)} in ${input.monthLabel}. This month: ${plural(input.comingCount, 'subscription')}, ${formatUSD(input.comingCents)}.`,
+  };
 }

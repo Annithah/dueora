@@ -22,6 +22,10 @@ export type WorkspaceAction =
   | 'payments:record'
   | 'payments:edit'
   | 'reports:view'
+  | 'budgets:manage'
+  | 'data:export'
+  | 'import:run'
+  | 'ai:configure'
   | 'audit:view';
 
 const MANAGERS: readonly Role[] = ['ADMIN', 'FINANCE'];
@@ -39,6 +43,10 @@ const WORKSPACE_ACTIONS: Record<WorkspaceAction, readonly Role[]> = {
   'payments:edit': MANAGERS,
   // Read-only access includes reports (see DECISIONS.md D15).
   'reports:view': ROLES,
+  'budgets:manage': MANAGERS,
+  'data:export': MANAGERS,
+  'import:run': MANAGERS,
+  'ai:configure': ['ADMIN'],
   'audit:view': MANAGERS,
 };
 

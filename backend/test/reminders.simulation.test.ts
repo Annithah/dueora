@@ -4,7 +4,7 @@
  *
  * Scripted life during the year:
  * - bills get paid on fixed policies (on the due date, the day before, ...) at 15:00 UTC
- * - Finance mutes Cleaning; Cloudflare is never paid and is archived on 1 Jun 2027
+ * - Finance mutes Cleaning; CDN plan is never paid and is archived on 1 Jun 2027
  * - the worker is down 20–25 Feb 2027 (the API keeps running; payments still happen)
  * - two schedulers run concurrently for the first 30 days
  * - the workspace moves from Africa/Kigali to America/New_York on 1 Jul 2027

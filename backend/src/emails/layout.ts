@@ -16,6 +16,8 @@ export interface LayoutOptions {
   bodyHtml: string;
   button?: { label: string; url: string };
   footerNote?: string;
+  /** Shown in the footer of every notification email. */
+  links?: { preferencesUrl?: string; unsubscribeUrl?: string };
 }
 
 const TEAL = '#0F5C5C';
@@ -57,10 +59,19 @@ export function renderLayout(o: LayoutOptions): string {
       </table>
     </td></tr>
     <tr><td style="padding:18px 24px 24px;font-size:12px;line-height:1.6;color:${MUTED}">
-      ${o.footerNote ? `${esc(o.footerNote)}<br>` : ''}DueOra — Your dues, on time.
+      ${o.footerNote ? `${esc(o.footerNote)}<br>` : ''}${footerLinks(o.links)}DueOra — Your dues, on time.
     </td></tr>
   </table>
 </td></tr></table></body></html>`;
+}
+
+function footerLinks(links: LayoutOptions['links']): string {
+  if (!links) return '';
+  const parts = [
+    links.preferencesUrl ? `<a href="${esc(links.preferencesUrl)}" style="color:${MUTED}">Notification preferences</a>` : '',
+    links.unsubscribeUrl ? `<a href="${esc(links.unsubscribeUrl)}" style="color:${MUTED}">Unsubscribe from emails</a>` : '',
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(' · ')}<br>` : '';
 }
 
 /** Large, spaced one-time code block. */

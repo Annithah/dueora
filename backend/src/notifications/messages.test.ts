@@ -20,34 +20,34 @@ describe('formatting', () => {
 });
 
 describe('notification copy (brief examples)', () => {
-  const base = { name: 'Hosting', company: 'KigaliToday', amountCents: 152_300, dueDate: '2026-10-20' };
+  const base = { name: 'Hosting', company: 'Harbor Clinic', amountCents: 152_300, dueDate: '2026-10-20' };
 
   it('labels subscriptions with their company', () => {
-    expect(subscriptionLabel('Hosting', 'KigaliToday')).toBe('KigaliToday · Hosting');
+    expect(subscriptionLabel('Hosting', 'Harbor Clinic')).toBe('Harbor Clinic · Hosting');
   });
 
   it('reminder before the due date', () => {
     const c = reminderCopy({ ...base, daysUntilDue: 7 });
-    expect(c.body).toBe('⏰ KigaliToday · Hosting is due in 7 days — $1,523.00 on Tue, 20 Oct.');
+    expect(c.body).toBe('⏰ Harbor Clinic · Hosting is due in 7 days — $1,523.00 on Tue, 20 Oct.');
     expect(c.title).toBe('Due in 7 days');
   });
 
   it('due tomorrow and due today', () => {
     expect(reminderCopy({ ...base, daysUntilDue: 1 }).title).toBe('Due tomorrow');
-    const today = reminderCopy({ name: 'Domain renewal', company: 'KT Radio', amountCents: 1_300, dueDate: '2026-10-20', daysUntilDue: 0 });
-    expect(today.body).toBe('📅 Today: KT Radio · Domain renewal — $13.00.');
+    const today = reminderCopy({ name: 'Domain renewal', company: 'Riverside School', amountCents: 1_300, dueDate: '2026-10-20', daysUntilDue: 0 });
+    expect(today.body).toBe('📅 Today: Riverside School · Domain renewal — $13.00.');
   });
 
   it('overdue', () => {
-    const c = reminderCopy({ name: 'Cloudflare', company: 'KigaliToday', amountCents: 24_000, dueDate: '2026-10-20', daysUntilDue: -3 });
-    expect(c.body).toBe('⚠️ KigaliToday · Cloudflare is 3 days overdue — $240.00. Tap to record the payment.');
+    const c = reminderCopy({ name: 'CDN plan', company: 'Harbor Clinic', amountCents: 24_000, dueDate: '2026-10-20', daysUntilDue: -3 });
+    expect(c.body).toBe('⚠️ Harbor Clinic · CDN plan is 3 days overdue — $240.00. Tap to record the payment.');
     expect(reminderCopy({ ...base, daysUntilDue: -1 }).title).toBe('1 day overdue');
   });
 
   it('payment recorded', () => {
-    const paid = { name: 'Hosting', company: 'KT Radio', amountCents: 13_200 };
+    const paid = { name: 'Hosting', company: 'Riverside School', amountCents: 13_200 };
     expect(paymentRecordedCopy({ ...paid, nextDueDate: '2028-10-02', cycleCompleted: true }).body).toBe(
-      '✅ $132.00 recorded for KT Radio · Hosting. Next due: 02 Oct 2028.',
+      '✅ $132.00 recorded for Riverside School · Hosting. Next due: 02 Oct 2028.',
     );
     expect(paymentRecordedCopy({ ...paid, nextDueDate: '2028-10-02', cycleCompleted: false }).body).toMatch(/still open/);
     expect(paymentRecordedCopy({ ...paid, nextDueDate: null, cycleCompleted: true }).body).toMatch(/fully paid/);
