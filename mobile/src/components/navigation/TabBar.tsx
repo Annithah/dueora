@@ -5,12 +5,13 @@ import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fontFamily, useTheme } from '@/theme';
+import { useTranslation } from '@/i18n';
 
 const TABS: Record<string, { icon: LucideIcon; label: string }> = {
-  index: { icon: House, label: 'Home' },
-  subscriptions: { icon: WalletCards, label: 'Subscriptions' },
-  calendar: { icon: CalendarDays, label: 'Calendar' },
-  more: { icon: Menu, label: 'More' },
+  index: { icon: House, label: 'tabs.home' },
+  subscriptions: { icon: WalletCards, label: 'tabs.subscriptions' },
+  calendar: { icon: CalendarDays, label: 'tabs.calendar' },
+  more: { icon: Menu, label: 'tabs.more' },
 };
 
 /** Height of the tappable row (icon + label), excluding the safe-area inset. */
@@ -49,6 +50,7 @@ export interface TabBarProps extends BottomTabBarProps {
  */
 export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
   const { width } = useWindowDimensions();
@@ -71,7 +73,7 @@ export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarP
         key={route.key}
         accessibilityRole="tab"
         accessibilityState={{ selected: focused }}
-        accessibilityLabel={meta.label}
+        accessibilityLabel={t(meta.label)}
         testID={`tab-${route.name}`}
         onPress={() => {
           const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -114,7 +116,7 @@ export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarP
             color,
           }}
         >
-          {meta.label}
+          {t(meta.label)}
         </Text>
       </Pressable>
     );
@@ -124,7 +126,7 @@ export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarP
     <View key="add" style={{ flex: 1, height: slotHeight, alignItems: 'center' }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Add subscription"
+        accessibilityLabel={t('tabs.add')}
         testID="tab-add"
         hitSlop={6}
         onPress={() => router.push('/subscriptions/new')}

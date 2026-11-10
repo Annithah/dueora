@@ -40,6 +40,7 @@ import {
   routeForNotification,
   type PermissionState,
 } from '@/features/notifications/push';
+import { useTranslation } from '@/i18n';
 import { useTheme, type PaymentStatus } from '@/theme';
 
 function statusOf(n: InboxItem): PaymentStatus | null {
@@ -56,6 +57,8 @@ function statusOf(n: InboxItem): PaymentStatus | null {
       return null;
   }
 }
+
+const GROUP_KEYS = { Today: 'alerts.today', 'This week': 'alerts.thisWeek', Earlier: 'alerts.earlier' } as const;
 
 function groupOf(createdAt: string): 'Today' | 'This week' | 'Earlier' {
   const days = differenceInCalendarDays(new Date(), new Date(createdAt));
@@ -152,6 +155,7 @@ function SwipeToRead({
   children: React.ReactNode;
 }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   if (!enabled) return <>{children}</>;
   return (
     <ReanimatedSwipeable
@@ -171,7 +175,7 @@ function SwipeToRead({
         >
           <Check size={20} color={colors.onPrimary} />
           <Text variant="captionStrong" color={colors.onPrimary}>
-            Mark read
+            {t('alerts.swipeRead')}
           </Text>
         </View>
       )}
@@ -187,6 +191,7 @@ export default function AlertsScreen() {
   const markRead = useMarkRead();
   const [refreshing, setRefreshing] = useState(false);
   const [permission, setPermission] = useState<PermissionState>('granted');
+  const { t } = useTranslation();
 
   useEffect(() => {
     const check = () =>
@@ -202,7 +207,7 @@ export default function AlertsScreen() {
     <Screen
       header={
         <TopBar
-          title="Alerts"
+          title={t('alerts.title')}
           action={
             <IconButton
               accessibilityLabel="Notification settings"
@@ -231,13 +236,13 @@ export default function AlertsScreen() {
         <Card tone="accent" style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <BellOff size={22} color={colors.amberText} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Text variant="bodyStrong">Notifications are off</Text>
+            <Text variant="bodyStrong">{t('alerts.offTitle')}</Text>
             <Text variant="small" tone="muted">
-              Turn them on so reminders reach you even when DueOra is closed. 🔔
+              {t('alerts.offText')}
             </Text>
           </View>
           <Button variant="secondary" onPress={() => void Linking.openSettings()}>
-            Enable notifications
+            {t('alerts.enable')}
           </Button>
         </Card>
       ) : null}
@@ -246,8 +251,8 @@ export default function AlertsScreen() {
           data.items.length === 0 ? (
             <EmptyState
               illustration="all-caught-up"
-              title="All caught up 🎉"
-              message="Reminders and updates will appear here."
+              title={t('alerts.emptyTitle')}
+              message={t('alerts.emptyText')}
             />
           ) : (
             <View style={{ gap: 18 }}>
@@ -258,7 +263,7 @@ export default function AlertsScreen() {
                   style={{ alignSelf: 'flex-end', marginTop: -10 }}
                   onPress={() => markRead.mutate('all')}
                 >
-                  Mark all as read
+                  {t('alerts.markAll')}
                 </Button>
               ) : null}
               {(['Today', 'This week', 'Earlier'] as const).map((group) => {
@@ -266,7 +271,7 @@ export default function AlertsScreen() {
                 if (!items.length) return null;
                 return (
                   <Animated.View key={group} entering={FadeIn} layout={LinearTransition}>
-                    <SectionHeader title={group} />
+                    <SectionHeader title={t(GROUP_KEYS[group])} />
                     <Card padding={0} style={{ overflow: 'hidden' }}>
                       {items.map((n, i) => (
                         <SwipeToRead

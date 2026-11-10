@@ -10,20 +10,22 @@ import { Button, Logo, Text } from '@/components/ui';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 
+import { useTranslation } from '@/i18n';
+
 const SLIDES: { title: string; text: string; illustration: IllustrationName }[] = [
   {
-    title: 'Add everything you pay',
-    text: 'Keep hosting, domains, rent, utilities and subscriptions together.',
+    title: 'onboarding.slide1Title',
+    text: 'onboarding.slide1Text',
     illustration: 'add',
   },
   {
-    title: "Get reminded before it's due",
-    text: 'Choose when we should nudge you, so nothing catches you by surprise.',
+    title: 'onboarding.slide2Title',
+    text: 'onboarding.slide2Text',
     illustration: 'remind',
   },
   {
-    title: 'Track every payment in one place',
-    text: 'See what is paid, upcoming or overdue at a glance.',
+    title: 'onboarding.slide3Title',
+    text: 'onboarding.slide3Text',
     illustration: 'track',
   },
 ];
@@ -34,6 +36,7 @@ const SLIDES: { title: string; text: string; illustration: IllustrationName }[] 
  */
 export default function Onboarding() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const signedIn = useSession((s) => s.status === 'signedIn');
   const markOnboarded = useSession((s) => s.markOnboarded);
@@ -58,7 +61,7 @@ export default function Onboarding() {
           <View style={{ minHeight: 44 }} />
         ) : (
           <Button variant="ghost" onPress={() => void finish()}>
-            Skip
+            {t('common.skip')}
           </Button>
         )}
       </View>
@@ -72,20 +75,20 @@ export default function Onboarding() {
         <Illustration name={slide.illustration} size={230} />
         <View style={{ alignItems: 'center', gap: 10 }}>
           <Text variant="eyebrow" tone="primary">
-            STEP {index + 1} OF {SLIDES.length}
+            {t('common.stepOfCaps', { n: index + 1, total: SLIDES.length })}
           </Text>
           <Text variant="display" align="center" accessibilityRole="header">
-            {slide.title}
+            {t(slide.title)}
           </Text>
           <Text variant="body" tone="muted" align="center" style={{ paddingHorizontal: 12 }}>
-            {slide.text}
+            {t(slide.text)}
           </Text>
         </View>
       </Animated.View>
 
       <View
         accessible
-        accessibilityLabel={`Step ${index + 1} of ${SLIDES.length}`}
+        accessibilityLabel={t('common.stepOf', { n: index + 1, total: SLIDES.length })}
         style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginVertical: 22 }}
       >
         {SLIDES.map((s, i) => (
@@ -107,7 +110,7 @@ export default function Onboarding() {
         onPress={() => (last ? void finish() : setIndex(index + 1))}
         trailingIcon={<ArrowRight size={18} color={colors.onPrimary} />}
       >
-        {last ? 'Get started' : 'Next'}
+        {last ? t('common.getStarted') : t('common.next')}
       </Button>
     </Screen>
   );

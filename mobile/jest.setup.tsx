@@ -10,3 +10,8 @@ jest.mock('lottie-react-native', () => {
   const LottieView = (props: Record<string, unknown>) => <View testID="lottie" {...props} />;
   return { __esModule: true, default: LottieView };
 });
+
+// AsyncStorage has no native module under Jest; use the library's in-memory mock.
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
+);

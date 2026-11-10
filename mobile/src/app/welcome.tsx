@@ -4,9 +4,11 @@ import { View } from 'react-native';
 import { Illustration } from '@/components/illustrations/Illustration';
 import { Screen } from '@/components/layout/Screen';
 import { Button, Logo, Text } from '@/components/ui';
+import { useTranslation } from '@/i18n';
 
 /** After the intro slides: choose between creating an account and logging in. */
 export default function Welcome() {
+  const { t } = useTranslation();
   return (
     <Screen scroll={false} contentStyle={{ gap: 0 }}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 24 }}>
@@ -14,20 +16,20 @@ export default function Welcome() {
         <Illustration name="all-caught-up" size={200} />
         <View style={{ alignItems: 'center', gap: 10 }}>
           <Text variant="display" align="center" accessibilityRole="header">
-            Welcome to DueOra
+            {t('welcome.title')}
           </Text>
           <Text variant="body" tone="muted" align="center" style={{ paddingHorizontal: 12 }}>
-            Every bill, subscription and renewal — paid on time, for you and your team.
+            {t('welcome.text')}
           </Text>
         </View>
       </View>
 
       <View style={{ gap: 10, paddingTop: 22 }}>
         <Button full size="lg" onPress={() => router.push('/signup')}>
-          Create account
+          {t('welcome.createAccount')}
         </Button>
         <Button full size="lg" variant="secondary" onPress={() => router.push('/login')}>
-          I already have an account
+          {t('welcome.haveAccount')}
         </Button>
       </View>
     </Screen>

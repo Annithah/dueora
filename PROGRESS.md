@@ -136,11 +136,13 @@ Audit of the code against `DUEORA_MASTER_PROMPT` (the new single source of truth
 ## Part 3 — Screens & UX
 - [x] Splash, onboarding (first launch), welcome, auth, workspace setup, 5-slot tab bar with raised "+", bell in header
 - [x] Dashboard cards, needs attention, timeline, trend, category donut, by company, quick actions, pull-to-refresh
-- [ ] Dashboard: budget progress, AI insight card, "Ask AI" quick action, sparkle button
-- [ ] Detail: price history, snooze; Settings: Budgets, Language, Import, Data & privacy, DueOra AI, About (version, legal links), "View intro again"
-- [ ] i18n (i18next): English complete, French + Kinyarwanda main screens, `docs/TRANSLATIONS.md`
-- [ ] Alerts: Today / This week / Earlier grouping, swipe to mark read (check)
-- [ ] Help: FAQ shared with AI knowledge base, "Send feedback" stored in backend
+- [x] Dashboard: templated greeting, budget progress, Record payment quick action, 3×2 quick actions
+- [ ] Dashboard: AI insight card, "Ask AI" quick action, sparkle button (Part 4)
+- [x] Detail: price history, snooze; Settings: Budgets, Language, Import, Data & privacy, About (version, legal links), "View intro again"
+- [ ] Settings → DueOra AI (Part 4)
+- [~] i18n (i18next) set up with language picker; main screens in English/French/Kinyarwanda; other screens still English inline (see docs/TRANSLATIONS.md)
+- [x] Alerts: Today / This week / Earlier grouping, swipe to mark read
+- [x] Help: FAQ from the shared knowledge base (`/help/articles`), search, "Send feedback" stored in backend
 
 ## Part 4 — DueOra AI
 - [ ] Everything: `@google/genai` backend, streaming `/ai/chat`, tools, confirmations, memory, feedback, usage, rate limit, insights, knowledge base, eval tests, chat UI

@@ -12,6 +12,8 @@ import { paymentsRouter } from '../modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../modules/workspaces/routes.js';
 import { notificationsRouter } from '../notifications/routes.js';
 
+import { helpRouter } from './help.js';
+
 /** Versioned API: everything lives under /api/v1. */
 export function apiRouter(ctx: AppContext): Router {
   const router = Router();
@@ -32,6 +34,7 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/', notificationsRouter(ctx));
   router.use('/', insightsRouter(ctx));
   router.use('/public', publicRouter(ctx));
+  router.use('/help', helpRouter(ctx));
 
   return router;
 }

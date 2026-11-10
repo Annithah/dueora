@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
-import { BarChart3, Bell, CalendarDays, History, Plus } from 'lucide-react-native';
+import { BarChart3, Bell, CalendarDays, History, Plus, ReceiptText } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
+import { BudgetBar } from '@/components/budgets/BudgetBar';
 import { BreakdownBars } from '@/components/charts/BreakdownBars';
 import { BarChart, DonutChart, monthShort } from '@/components/charts/Charts';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
@@ -12,11 +13,12 @@ import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
 import { Avatar, Card, EmptyState, IconButton, SectionHeader, Skeleton, Text } from '@/components/ui';
 import { useMe } from '@/features/auth/api';
+import { useBudgets } from '@/features/budgets/api';
 import { useDashboard, type Dashboard, type MoneyBlock, type SubscriptionLite } from '@/features/insights/api';
 import { useInbox } from '@/features/notifications/api';
 import { useActiveWorkspaceSummary, usePermissions } from '@/features/workspaces/api';
-import { greetingFor } from '@/lib/dates';
 import { formatUSD } from '@/lib/money';
+import { useTranslation } from '@/i18n';
 import { elevation, radius, spacing, statusBrand, useTheme } from '@/theme';
 
 function SummaryCard({ label, block, sub, dot }: { label: string; block: MoneyBlock; sub: string; dot: string }) {
@@ -66,9 +68,17 @@ function headline(d: Dashboard): string {
   return `${label} is due in ${n} day${n === 1 ? '' : 's'} ⏰`;
 }
 
+/** "Good morning, {firstName} 👋" — a template; the name always comes from the account. */
+export function greetingKey(hour: number): 'home.goodMorning' | 'home.goodAfternoon' | 'home.goodEvening' {
+  return hour < 12 ? 'home.goodMorning' : hour < 18 ? 'home.goodAfternoon' : 'home.goodEvening';
+}
+
 function DashboardBody({ d }: { d: Dashboard }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const can = usePermissions();
+  const budgets = useBudgets();
+  const budget = budgets.data?.find((b) => b.categoryId === null) ?? budgets.data?.[0];
 
   if (d.counts.total === 0) {
     return (
@@ -87,10 +97,16 @@ function DashboardBody({ d }: { d: Dashboard }) {
   }
 
   const quick = [
-    ...(can.manageSubscriptions ? [{ label: 'Add', icon: Plus, onPress: () => router.push('/subscriptions/new') }] : []),
-    { label: 'Calendar', icon: CalendarDays, onPress: () => router.push('/calendar') },
-    { label: 'History', icon: History, onPress: () => router.push('/history') },
-    { label: 'Reports', icon: BarChart3, onPress: () => router.push('/reports') },
+    ...(can.manageSubscriptions
+      ? [
+          { label: t('home.qaAdd'), icon: Plus, onPress: () => router.push('/subscriptions/new') },
+          // A payment belongs to a subscription: start from the list, soonest due first.
+          { label: t('home.qaRecord'), icon: ReceiptText, onPress: () => router.push('/subscriptions') },
+        ]
+      : []),
+    { label: t('home.qaCalendar'), icon: CalendarDays, onPress: () => router.push('/calendar') },
+    { label: t('home.qaHistory'), icon: History, onPress: () => router.push('/history') },
+    { label: t('home.qaReports'), icon: BarChart3, onPress: () => router.push('/reports') },
   ];
   const paidChange = d.summary.paidThisMonth.changePercent;
   const line = headline(d);
@@ -108,11 +124,11 @@ function DashboardBody({ d }: { d: Dashboard }) {
         style={{ marginHorizontal: -spacing.screen }}
         contentContainerStyle={{ gap: 10, paddingHorizontal: spacing.screen, paddingBottom: 6 }}
       >
-        <SummaryCard label="Overdue" block={d.summary.overdue} sub={countLabel(d.summary.overdue.count)} dot={statusBrand.overdue} />
-        <SummaryCard label="Due this week" block={d.summary.dueThisWeek} sub={countLabel(d.summary.dueThisWeek.count)} dot={statusBrand.dueSoon} />
-        <SummaryCard label="Due this month" block={d.summary.dueThisMonth} sub={countLabel(d.summary.dueThisMonth.count)} dot={statusBrand.upcoming} />
+        <SummaryCard label={t('home.overdue')} block={d.summary.overdue} sub={countLabel(d.summary.overdue.count)} dot={statusBrand.overdue} />
+        <SummaryCard label={t('home.dueThisWeek')} block={d.summary.dueThisWeek} sub={countLabel(d.summary.dueThisWeek.count)} dot={statusBrand.dueSoon} />
+        <SummaryCard label={t('home.dueThisMonth')} block={d.summary.dueThisMonth} sub={countLabel(d.summary.dueThisMonth.count)} dot={statusBrand.upcoming} />
         <SummaryCard
-          label="Paid this month"
+          label={t('home.paidThisMonth')}
           block={d.summary.paidThisMonth}
           sub={
             paidChange === null
@@ -123,9 +139,20 @@ function DashboardBody({ d }: { d: Dashboard }) {
         />
       </ScrollView>
 
+      {budget ? (
+        <Pressable accessibilityRole="button" accessibilityHint="Opens budgets" onPress={() => router.push('/settings/budgets')}>
+          <Card style={{ gap: 6 }}>
+            <Text variant="eyebrow" tone="muted">
+              {t('home.budget')}
+            </Text>
+            <BudgetBar b={budget} compact />
+          </Card>
+        </Pressable>
+      ) : null}
+
       <View>
         <SectionHeader
-          title="Needs attention"
+          title={t('home.needsAttention')}
           action={d.needsAttentionCount > 5 ? `View all ${d.needsAttentionCount}` : undefined}
           onAction={() => router.push('/subscriptions')}
         />
@@ -157,15 +184,16 @@ function DashboardBody({ d }: { d: Dashboard }) {
       </View>
 
       <View>
-        <SectionHeader title="Quick actions" />
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <SectionHeader title={t('home.quickActions')} />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {quick.map(({ label, icon: Icon, onPress }) => (
             <Pressable
               key={label}
               accessibilityRole="button"
               onPress={onPress}
               style={({ pressed }) => ({
-                flex: 1,
+                flexBasis: '31%',
+                flexGrow: 1,
                 minHeight: 80,
                 borderRadius: radius.md,
                 borderWidth: 1,
@@ -188,7 +216,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
       </View>
 
       <View>
-        <SectionHeader title="Next 30 days" action="Calendar" onAction={() => router.push('/calendar')} />
+        <SectionHeader title={t('home.next30')} action={t('home.qaCalendar')} onAction={() => router.push('/calendar')} />
         {d.next30Days.length ? (
           <View style={{ gap: 10 }}>
             {d.next30Days.map((t) => (
@@ -282,6 +310,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
 
 export default function HomeTab() {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const me = useMe();
   const dashboard = useDashboard();
   const inbox = useInbox();
@@ -308,17 +337,14 @@ export default function HomeTab() {
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1 }}>
-          <Text variant="body" tone="muted">
-            {greetingFor(hour)},
-          </Text>
-          <Text variant="pageTitle" accessibilityRole="header">
-            {firstName} 👋
+          <Text variant="pageTitle" accessibilityRole="header" numberOfLines={2}>
+            {t(greetingKey(hour), { firstName })}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           {active ? <Avatar name={active.name} color={colors.primary} size={38} /> : null}
           <IconButton
-            accessibilityLabel={`Alerts${inbox.data?.unreadCount ? `, ${inbox.data.unreadCount} unread` : ''}`}
+            accessibilityLabel={`${t('home.alerts')}${inbox.data?.unreadCount ? `, ${inbox.data.unreadCount}` : ''}`}
             badge={inbox.data?.unreadCount ?? 0}
             onPress={() => router.push('/alerts')}
           >

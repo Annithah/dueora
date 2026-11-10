@@ -6,6 +6,8 @@ import {
   Building2,
   CircleHelp,
   Database,
+  Info,
+  Languages,
   FileUp,
   PiggyBank,
   LogOut,
@@ -25,11 +27,12 @@ import { Screen } from '@/components/layout/Screen';
 import { Avatar, Card, ListItem, Text } from '@/components/ui';
 import { signOut, useMe } from '@/features/auth/api';
 import { ROLE_LABELS, useWorkspace } from '@/features/workspaces/api';
+import { APP_VERSION } from '@/features/account/api';
+import { useLocale, useTranslation } from '@/i18n';
 import { usePreferences } from '@/state/preferences';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 
-const THEME_LABELS = { light: 'Light', dark: 'Dark', system: 'Match phone' } as const;
 
 interface Item {
   icon: LucideIcon;
@@ -46,40 +49,43 @@ export default function MoreTab() {
   const workspace = useWorkspace();
   const workspaceId = useSession((s) => s.activeWorkspaceId);
   const theme = usePreferences((s) => s.theme);
+  const locale = useLocale((s) => s.locale);
+  const { t } = useTranslation();
   const role = me.data?.workspaces.find((w) => w.id === workspaceId)?.role;
 
   const allItems: Item[] = [
-    { icon: UserRound, title: 'Profile', subtitle: 'Your name and password', href: '/profile' },
-    { icon: Building2, title: 'Workspace', subtitle: workspace.data?.name ?? 'Name, type and timezone', href: '/settings/workspace' },
+    { icon: UserRound, title: t('more.profile'), subtitle: t('more.profileSub'), href: '/profile' },
+    { icon: Building2, title: t('more.workspace'), subtitle: workspace.data?.name ?? 'Name, type and timezone', href: '/settings/workspace' },
     {
       icon: Store,
-      title: 'Companies',
+      title: t('more.companies'),
       subtitle: `${workspace.data?.companyCount ?? 0} compan${workspace.data?.companyCount === 1 ? 'y' : 'ies'}`,
       href: '/settings/companies',
     },
-    { icon: Tag, title: 'Categories', subtitle: 'Defaults and your own', href: '/settings/categories' },
-    { icon: ReceiptText, title: 'Payment history', subtitle: 'Every payment you’ve recorded', href: '/history' },
-    { icon: BarChart3, title: 'Reports', subtitle: 'Spending, forecasts, PDF & Excel', href: '/reports' },
-    { icon: PiggyBank, title: 'Budgets', subtitle: 'Monthly limits and alerts', href: '/settings/budgets' },
-    { icon: FileUp, title: 'Import from spreadsheet', subtitle: 'CSV or Excel, in one step', href: '/settings/import', roles: ['ADMIN', 'FINANCE'] },
+    { icon: Tag, title: t('more.categories'), subtitle: t('more.categoriesSub'), href: '/settings/categories' },
+    { icon: ReceiptText, title: t('more.history'), subtitle: t('more.historySub'), href: '/history' },
+    { icon: BarChart3, title: t('more.reports'), subtitle: t('more.reportsSub'), href: '/reports' },
+    { icon: PiggyBank, title: t('more.budgets'), subtitle: t('more.budgetsSub'), href: '/settings/budgets' },
+    { icon: FileUp, title: t('more.import'), subtitle: t('more.importSub'), href: '/settings/import', roles: ['ADMIN', 'FINANCE'] },
     {
       icon: UsersRound,
-      title: 'Team & roles',
+      title: t('more.team'),
       subtitle: `${workspace.data?.memberCount ?? 1} member${workspace.data?.memberCount === 1 ? '' : 's'}`,
       href: '/team',
     },
-    { icon: Bell, title: 'Notifications', subtitle: 'Push, email, digest and quiet hours', href: '/settings/notifications' },
-    { icon: ShieldCheck, title: 'Security', subtitle: 'Password and biometric lock', href: '/settings/security' },
-    { icon: Palette, title: 'Appearance', subtitle: THEME_LABELS[theme], href: '/settings/appearance' },
-    { icon: Database, title: 'Data & privacy', subtitle: 'Export, sign out everywhere, delete account', href: '/settings/privacy' },
+    { icon: Bell, title: t('more.notifications'), subtitle: t('more.notificationsSub'), href: '/settings/notifications' },
+    { icon: ShieldCheck, title: t('more.security'), subtitle: t('more.securitySub'), href: '/settings/security' },
+    { icon: Palette, title: t('more.appearance'), subtitle: t(`theme.${theme}`), href: '/settings/appearance' },
+    { icon: Languages, title: t('more.language'), subtitle: t(`language.${locale}`), href: '/settings/language' },
+    { icon: Database, title: t('more.privacy'), subtitle: t('more.privacySub'), href: '/settings/privacy' },
   ];
   const items = allItems.filter((i) => !i.roles || (role && i.roles.includes(role)));
 
   return (
     <Screen edges={['top']} contentStyle={{ gap: 18, paddingBottom: 32 }}>
       <PageHeader
-        eyebrow="Workspace"
-        title="More"
+        eyebrow={t('more.eyebrow')}
+        title={t('more.title')}
         right={
           me.data ? <Avatar name={me.data.name} size={42} /> : null
         }
@@ -127,20 +133,27 @@ export default function MoreTab() {
       <Card padding={0} style={{ overflow: 'hidden' }}>
         <ListItem
           icon={<CircleHelp size={19} color={colors.primaryStrong} />}
-          title="Help & support"
-          subtitle="Guides and contact"
+          title={t('more.help')}
+          subtitle={t('more.helpSub')}
           onPress={() => router.push('/help')}
+        />
+        <ListItem
+          divider
+          icon={<Info size={19} color={colors.primaryStrong} />}
+          title={t('more.about')}
+          subtitle={`DueOra ${APP_VERSION}`}
+          onPress={() => router.push('/settings/about')}
         />
         <ListItem
           divider
           destructive
           icon={<LogOut size={19} color={colors.red} />}
-          title="Log out"
+          title={t('more.logout')}
           onPress={() => void signOut(queryClient)}
         />
       </Card>
       <Text variant="caption" tone="muted" align="center">
-        DueOra 1.0.0 · Your dues, on time.
+        {t('more.version', { version: APP_VERSION })}
       </Text>
     </Screen>
   );

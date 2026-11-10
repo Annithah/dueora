@@ -23,6 +23,7 @@ import { subscriptionsRouter } from '../src/modules/subscriptions/routes.js';
 import { paymentsRouter } from '../src/modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../src/modules/workspaces/routes.js';
 import { notificationsRouter } from '../src/notifications/routes.js';
+import { helpRouter } from '../src/routes/help.js';
 
 import { client, createWorkspace, register, type Session } from './helpers/api.js';
 import { createTestContext } from './helpers/context.js';
@@ -60,6 +61,7 @@ const ALL: RouteInfo[] = [
   ...routesOf('/api/v1', notificationsRouter(ctx)),
   ...routesOf('/api/v1', insightsRouter(ctx)),
   ...routesOf('/api/v1/public', publicRouter(ctx)),
+  ...routesOf('/api/v1/help', helpRouter(ctx)),
 ];
 
 /** Routes that work without a token, on purpose. */
@@ -74,6 +76,8 @@ const PUBLIC = new Set([
   // Signed link from email footers; a bad token is a 400 page, never data.
   'get /api/v1/public/unsubscribe',
   'post /api/v1/public/unsubscribe',
+  // The FAQ: product help, no customer data.
+  'get /api/v1/help/articles',
 ]);
 
 /** Account-level routes (signed in, but not tied to a workspace). */
