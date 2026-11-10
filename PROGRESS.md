@@ -124,13 +124,14 @@ Audit of the code against `DUEORA_MASTER_PROMPT` (the new single source of truth
 
 ## Part 2 — Notifications
 - [x] REMINDER / DUE_TODAY / OVERDUE / PAYMENT_RECORDED / digest, dedupe key, catch-up, quiet hours, retries, receipts, email fallback, in-app
-- [ ] Types TRIAL_ENDING, AUTO_RENEW_NOTICE, PRICE_CHANGE, BUDGET_ALERT, WEEKLY_DIGEST, MONTHLY_SUMMARY, TEAM
+- [x] Types TRIAL_ENDING, AUTO_RENEW_NOTICE, PRICE_CHANGE, BUDGET_ALERT, WEEKLY_DIGEST, MONTHLY_SUMMARY, TEAM
 - [x] PAYMENT_RECORDED goes to ADMIN + FINANCE only (D27)
-- [x] Dedupe key includes `type` for event notifications (reminders: Part 2)
-- [ ] ReminderSnooze; NotificationPreference weeklySummary/monthlySummary/budgetAlerts/teamActivity
-- [ ] Push action buttons (Mark as paid / Snooze / Open), channels overdue/digest/team, app badge, local backup reminders, denied-permission banner, unregister on logout (check)
+- [x] Dedupe key `workspace:subscription:type:cycle:offset:user:channel` everywhere (7 parts, tested)
+- [x] ReminderSnooze; NotificationPreference inApp/weeklySummary/monthlySummary/budgetAlerts/teamActivity
+- [x] Push action buttons (Mark as paid / Snooze / Open), channels reminders/overdue/digest/team, app badge, local backup reminders, denied-permission banner, unregister on logout
+- [~] Push on a physical device still to be verified with the owner's Expo/Firebase accounts (Part 7)
 - [x] Email unsubscribe/preferences link (signed one-click link)
-- [ ] Tests for trial, budget, weekly/monthly summaries, snooze, multiple timezones
+- [x] Tests: year in 3 timezones + trial, auto-renew, budget, weekly/monthly summaries, snooze, backups
 
 ## Part 3 — Screens & UX
 - [x] Splash, onboarding (first launch), welcome, auth, workspace setup, 5-slot tab bar with raised "+", bell in header
