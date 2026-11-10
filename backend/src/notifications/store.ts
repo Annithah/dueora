@@ -1,5 +1,5 @@
 import type { AppContext } from '../context.js';
-import { localTimeIn, paidForCycle } from '../domain/schedule.js';
+import { localTimeIn, paidForCycle, todayIn } from '../domain/schedule.js';
 import { Prisma, type NotificationChannel, type NotificationType } from '../generated/prisma/client.js';
 import { enqueue } from '../jobs/queue.js';
 
@@ -133,9 +133,22 @@ export async function cancellationReason(
   n: { userId: string; workspaceId: string; subscriptionId: string | null; cycleDueDate: string | null; type: NotificationType; data: unknown },
   prefs: Prefs,
 ): Promise<string | null> {
-  const isReminder = n.type === 'REMINDER' || n.type === 'DUE_TODAY' || n.type === 'OVERDUE';
+  const isReminder = n.type === 'REMINDER' || n.type === 'DUE_TODAY' || n.type === 'OVERDUE' || n.type === 'AUTO_RENEW_NOTICE';
   if (isReminder && n.subscriptionId && n.cycleDueDate) {
-    return subscriptionStillDue(ctx, n.subscriptionId, n.cycleDueDate, prefs);
+    const due = await subscriptionStillDue(ctx, n.subscriptionId, n.cycleDueDate, prefs);
+    if (due) return due;
+    if (n.type === 'AUTO_RENEW_NOTICE') {
+      const s = await ctx.db.subscription.findUnique({ where: { id: n.subscriptionId }, select: { autoRenew: true } });
+      if (!s?.autoRenew) return 'cancelled: auto-renew turned off';
+    }
+    return snoozedReason(ctx, n.userId, n.workspaceId, n.subscriptionId, n.cycleDueDate);
+  }
+  if (n.type === 'TRIAL_ENDING' && n.subscriptionId) {
+    if (prefs.muted.has(n.subscriptionId)) return 'cancelled: muted';
+    const s = await ctx.db.subscription.findUnique({ where: { id: n.subscriptionId }, select: { status: true, isTrial: true, trialEndsOn: true } });
+    if (!s || s.status !== 'ACTIVE') return 'cancelled: not active';
+    if (!s.isTrial || s.trialEndsOn !== n.cycleDueDate) return 'cancelled: trial changed';
+    return null;
   }
   if (n.type === 'DIGEST') {
     const items = ((n.data as { items?: { subscriptionId: string; cycleDueDate: string }[] }).items ?? []);
@@ -154,6 +167,14 @@ async function subscriptionStillDue(ctx: AppContext, subscriptionId: string, cyc
   const payments = await ctx.db.paymentRecord.findMany({ where: { subscriptionId, cycleDueDate }, select: { cycleDueDate: true, amountCents: true } });
   if (paidForCycle(payments, cycleDueDate) >= o.amountCents) return 'cancelled: paid';
   return null;
+}
+
+/** Snoozed after the reminder was planned (e.g. it was waiting for quiet hours to end). */
+async function snoozedReason(ctx: AppContext, userId: string, workspaceId: string, subscriptionId: string, cycleDueDate: string): Promise<string | null> {
+  const z = await ctx.db.reminderSnooze.findUnique({ where: { userId_subscriptionId_cycleDueDate: { userId, subscriptionId, cycleDueDate } } });
+  if (!z) return null;
+  const ws = await ctx.db.workspace.findUnique({ where: { id: workspaceId }, select: { timezone: true } });
+  return ws && z.snoozedUntil > todayIn(ctx.clock.now(), ws.timezone) ? 'cancelled: snoozed' : null;
 }
 
 export async function markCancelled(ctx: AppContext, id: string, reason: string): Promise<void> {

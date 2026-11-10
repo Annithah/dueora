@@ -250,3 +250,17 @@ and the user row becomes an anonymous tombstone so the internal audit log of sha
 ## D31 — Default categories
 The 11 defaults from the master prompt: Transport and Education & training were added; the 9 existing ones
 kept their ids, so no data moves.
+
+## D32 — Notification details (Part 2)
+- **Snooze** is per person and per cycle. While it's active, nothing about that cycle reaches that person
+  (trial notices excepted); on the day it ends they get one reminder unless a scheduled one goes out anyway.
+  Paying moves to a new cycle, so an old snooze simply stops applying.
+- **Push buttons open the app** ("Mark as paid" → Record payment sheet, "Snooze" → the three choices). Background
+  actions can't show a payment form or let the user pick a snooze length, and silent writes from a lock
+  screen would bypass role checks in the UI.
+- **Local backups** are rebuilt from the server list on every sync rather than cancelled one by one; the
+  server leaves out delivered, paid, muted and snoozed events. A push that arrives also cancels its backup
+  by key. Only DUE_TODAY and OVERDUE get backups (the critical ones), capped at 60.
+- **Weekly digest / monthly summary** are on by default (opt-out in Settings) and use the "digest" channel.
+  The weekly AI line comes from a provider the AI module plugs in; without AI the digest is sent without it.
+- **Test notification** sends push (if a phone is registered), email and in-app at once, ignoring quiet hours.

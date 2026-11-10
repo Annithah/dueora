@@ -39,7 +39,9 @@ describe('reminder choices', () => {
 
 describe('routeForNotification', () => {
   it('opens the payment for reminders and recorded payments', () => {
-    expect(routeForNotification({ subscriptionId: 'abc', type: 'OVERDUE' })).toBe('/subscriptions/abc');
+    expect(routeForNotification({ subscriptionId: 'abc', type: 'OVERDUE' })).toBe(
+      '/subscriptions/abc',
+    );
   });
   it('opens alerts for digests and system messages', () => {
     expect(routeForNotification({ type: 'DIGEST' })).toBe('/alerts');
@@ -48,5 +50,25 @@ describe('routeForNotification', () => {
   it('ignores unknown payloads', () => {
     expect(routeForNotification(undefined)).toBeNull();
     expect(routeForNotification({})).toBeNull();
+  });
+});
+
+describe('notification buttons and deep links', () => {
+  const data = { subscriptionId: 'sub_1', type: 'OVERDUE' };
+
+  it('opens the subscription, the payment sheet or the snooze choices', () => {
+    expect(routeForNotification(data)).toBe('/subscriptions/sub_1');
+    expect(routeForNotification(data, 'mark-paid')).toBe('/subscriptions/sub_1?record=1');
+    expect(routeForNotification(data, 'snooze')).toBe('/subscriptions/sub_1?snooze=1');
+    expect(routeForNotification(data, 'open')).toBe('/subscriptions/sub_1');
+  });
+
+  it('routes summaries, budgets and team notices to their screens', () => {
+    expect(routeForNotification({ type: 'WEEKLY_DIGEST' })).toBe('/calendar');
+    expect(routeForNotification({ type: 'MONTHLY_SUMMARY' })).toBe('/reports');
+    expect(routeForNotification({ type: 'BUDGET_ALERT' })).toBe('/settings/budgets');
+    expect(routeForNotification({ type: 'TEAM' })).toBe('/team');
+    expect(routeForNotification({ type: 'SYSTEM' })).toBe('/alerts');
+    expect(routeForNotification(undefined)).toBeNull();
   });
 });

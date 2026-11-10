@@ -9,6 +9,7 @@ import { id } from '../http/schemas.js';
 import { parseBody, parseParams, parseQuery } from '../http/validate.js';
 import { loadSubscription } from '../modules/subscriptions/service.js';
 
+import { backupSchedule } from './backup.js';
 import { createNotification, dedupeKey, prefsFor } from './store.js';
 
 const ListQuery = z.object({
@@ -24,10 +25,16 @@ const PrefsBody = z
   .object({
     pushEnabled: z.boolean(),
     emailEnabled: z.boolean(),
+    inAppEnabled: z.boolean(),
     digestEnabled: z.boolean(),
+    weeklySummary: z.boolean(),
+    monthlySummary: z.boolean(),
+    budgetAlerts: z.boolean(),
+    teamActivity: z.boolean(),
     mutedSubscriptionIds: z.array(id).max(1000),
   })
-  .partial();
+  .partial()
+  .strict();
 
 const DeviceBody = z.object({
   expoPushToken: z.string().min(10).max(200),
@@ -79,10 +86,16 @@ export function notificationsRouter(ctx: AppContext): Router {
     res.status(204).end();
   });
 
+  /** Local backup reminders for the next 14 days (the app reschedules from this after every sync). */
+  router.get('/notifications/backup', ...org, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await backupSchedule(ctx, userIdOf(req), workspaceIdOf(req)));
+  });
+
   // --- Preferences (per user, per workspace) ---
   async function prefsView(userId: string, workspaceId: string) {
-    const p = await prefsFor(ctx, userId, workspaceId);
-    return { pushEnabled: p.pushEnabled, emailEnabled: p.emailEnabled, digestEnabled: p.digestEnabled, mutedSubscriptionIds: [...p.muted] };
+    const { muted, ...flags } = await prefsFor(ctx, userId, workspaceId);
+    return { ...flags, mutedSubscriptionIds: [...muted] };
   }
 
   router.get('/notifications/preferences', ...org, async (req, res) => {
@@ -137,14 +150,13 @@ export function notificationsRouter(ctx: AppContext): Router {
       body: 'Notifications are working. You’ll hear from us before anything is due.',
       data: { url: `${ctx.env.APP_URL}alerts` },
     };
-    await createNotification(ctx, { ...base, channel: 'IN_APP', dedupeKey: dedupeKey([workspaceId, 'test', stamp, userId, 'IN_APP']) });
-    // Test messages ignore quiet hours — the user asked for one right now.
-    await createNotification(ctx, {
-      ...base,
-      channel: devices > 0 ? 'PUSH' : 'EMAIL',
-      dedupeKey: dedupeKey([workspaceId, 'test', stamp, userId, devices > 0 ? 'PUSH' : 'EMAIL']),
-    });
-    res.status(202).json({ queued: true, channel: devices > 0 ? 'PUSH' : 'EMAIL', devices });
+    // One of each — push (when a device is registered), email and in-app — so every channel can be checked.
+    // Test messages ignore quiet hours and preferences: the user asked for one right now.
+    const channels = [...(devices > 0 ? (['PUSH'] as const) : []), 'EMAIL', 'IN_APP'] as const;
+    for (const channel of channels) {
+      await createNotification(ctx, { ...base, channel, dedupeKey: dedupeKey([workspaceId, null, 'SYSTEM', null, `test-${stamp}`, userId, channel]) });
+    }
+    res.status(202).json({ queued: true, channel: devices > 0 ? 'PUSH' : 'EMAIL', channels, devices });
   });
 
   // --- Push devices (account-level, not workspace-level) ---

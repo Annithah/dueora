@@ -1,8 +1,24 @@
 import { differenceInCalendarDays } from 'date-fns';
 import { router } from 'expo-router';
-import { Bell, CheckCheck, CircleAlert, CircleCheck, Layers, Settings } from 'lucide-react-native';
-import { useState } from 'react';
-import { Pressable, RefreshControl, View } from 'react-native';
+import {
+  Bell,
+  BellOff,
+  CalendarRange,
+  Check,
+  CheckCheck,
+  CircleAlert,
+  CircleCheck,
+  Gift,
+  Layers,
+  PieChart,
+  Repeat,
+  Settings,
+  TrendingUp,
+  UsersRound,
+} from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import { AppState, Linking, Pressable, RefreshControl, View } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
@@ -19,7 +35,11 @@ import {
   Text,
 } from '@/components/ui';
 import { useInbox, useMarkRead, type InboxItem } from '@/features/notifications/api';
-import { routeForNotification } from '@/features/notifications/push';
+import {
+  permissionState,
+  routeForNotification,
+  type PermissionState,
+} from '@/features/notifications/push';
 import { useTheme, type PaymentStatus } from '@/theme';
 
 function statusOf(n: InboxItem): PaymentStatus | null {
@@ -54,13 +74,18 @@ function AlertRow({
   const { colors } = useTheme();
   const status = statusOf(n);
   const Icon =
-    n.type === 'OVERDUE'
-      ? CircleAlert
-      : n.type === 'PAYMENT_RECORDED'
-        ? CircleCheck
-        : n.type === 'DIGEST'
-          ? Layers
-          : Bell;
+    {
+      OVERDUE: CircleAlert,
+      PAYMENT_RECORDED: CircleCheck,
+      DIGEST: Layers,
+      TRIAL_ENDING: Gift,
+      AUTO_RENEW_NOTICE: Repeat,
+      PRICE_CHANGE: TrendingUp,
+      BUDGET_ALERT: PieChart,
+      WEEKLY_DIGEST: CalendarRange,
+      MONTHLY_SUMMARY: PieChart,
+      TEAM: UsersRound,
+    }[n.type as string] ?? Bell;
   const unread = !n.readAt;
   return (
     <Pressable
@@ -116,11 +141,62 @@ function AlertRow({
   );
 }
 
+/** Swipe left on an unread alert to mark it as read. */
+function SwipeToRead({
+  enabled,
+  onRead,
+  children,
+}: {
+  enabled: boolean;
+  onRead: () => void;
+  children: React.ReactNode;
+}) {
+  const { colors } = useTheme();
+  if (!enabled) return <>{children}</>;
+  return (
+    <ReanimatedSwipeable
+      friction={2}
+      rightThreshold={60}
+      overshootRight={false}
+      onSwipeableOpen={(_dir) => onRead()}
+      renderRightActions={() => (
+        <View
+          style={{
+            width: 110,
+            backgroundColor: colors.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+          }}
+        >
+          <Check size={20} color={colors.onPrimary} />
+          <Text variant="captionStrong" color={colors.onPrimary}>
+            Mark read
+          </Text>
+        </View>
+      )}
+    >
+      {children}
+    </ReanimatedSwipeable>
+  );
+}
+
 export default function AlertsScreen() {
   const { colors } = useTheme();
   const inbox = useInbox();
   const markRead = useMarkRead();
   const [refreshing, setRefreshing] = useState(false);
+  const [permission, setPermission] = useState<PermissionState>('granted');
+
+  useEffect(() => {
+    const check = () =>
+      void permissionState()
+        .then(setPermission)
+        .catch(() => undefined);
+    check();
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && check());
+    return () => sub.remove();
+  }, []);
 
   return (
     <Screen
@@ -151,6 +227,20 @@ export default function AlertsScreen() {
       }
     >
       <OfflineBanner message="You're offline. Showing your latest alerts." />
+      {permission === 'denied' ? (
+        <Card tone="accent" style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+          <BellOff size={22} color={colors.amberText} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="bodyStrong">Notifications are off</Text>
+            <Text variant="small" tone="muted">
+              Turn them on so reminders reach you even when DueOra is closed. 🔔
+            </Text>
+          </View>
+          <Button variant="secondary" onPress={() => void Linking.openSettings()}>
+            Enable notifications
+          </Button>
+        </Card>
+      ) : null}
       <QueryState query={inbox}>
         {(data) =>
           data.items.length === 0 ? (
@@ -179,20 +269,25 @@ export default function AlertsScreen() {
                     <SectionHeader title={group} />
                     <Card padding={0} style={{ overflow: 'hidden' }}>
                       {items.map((n, i) => (
-                        <AlertRow
+                        <SwipeToRead
                           key={n.id}
-                          n={n}
-                          divider={i > 0}
-                          onPress={() => {
-                            if (!n.readAt) markRead.mutate(n.id);
-                            const to = routeForNotification({
-                              ...n.data,
-                              subscriptionId: n.subscriptionId ?? undefined,
-                              type: n.type,
-                            });
-                            if (to && to !== '/alerts') router.push(to as never);
-                          }}
-                        />
+                          enabled={!n.readAt}
+                          onRead={() => markRead.mutate(n.id)}
+                        >
+                          <AlertRow
+                            n={n}
+                            divider={i > 0}
+                            onPress={() => {
+                              if (!n.readAt) markRead.mutate(n.id);
+                              const to = routeForNotification({
+                                ...n.data,
+                                subscriptionId: n.subscriptionId ?? undefined,
+                                type: n.type,
+                              });
+                              if (to && to !== '/alerts') router.push(to as never);
+                            }}
+                          />
+                        </SwipeToRead>
                       ))}
                     </Card>
                   </Animated.View>

@@ -5,6 +5,7 @@ import type { Prisma, Role, WorkspaceType } from '../../generated/prisma/client.
 import { AppError, conflict, forbidden, notFound } from '../../http/errors.js';
 import { randomToken, sha256 } from '../../lib/crypto.js';
 import { normalizeEmail } from '../auth/service.js';
+import { notifyTeam } from '../../notifications/events.js';
 
 const INVITE_TTL_MS = 7 * 86_400_000;
 
@@ -108,6 +109,12 @@ export async function updateMember(
     from: member.role,
     to: nextRole,
   });
+  if (member.role !== nextRole) {
+    const u = await ctx.db.user.findUniqueOrThrow({ where: { id: member.userId }, select: { name: true } });
+    await notifyTeam(ctx, { workspaceId, event: 'ROLE_CHANGED', memberName: u.name, role: nextRole, actorUserId: actorId, eventKey: `role-${member.id}-${ctx.clock.now().getTime()}` }).catch((err: unknown) =>
+      ctx.logger.error({ err }, 'Team notification failed'),
+    );
+  }
   return (await listMembers(ctx, workspaceId)).find((m) => m.id === member.id);
 }
 
@@ -235,5 +242,8 @@ export async function acceptInvite(ctx: AppContext, userId: string, token: strin
   // Accepting via the emailed link proves the address.
   if (!user.emailVerifiedAt) await ctx.db.user.update({ where: { id: userId }, data: { emailVerifiedAt: now } });
   await audit(ctx, invite.workspaceId, userId, 'invite.accept', 'Invite', invite.id);
+  await notifyTeam(ctx, { workspaceId: invite.workspaceId, event: 'INVITE_ACCEPTED', memberName: user.name, role: invite.role, actorUserId: userId, eventKey: `invite-${invite.id}` }).catch((err: unknown) =>
+    ctx.logger.error({ err }, 'Team notification failed'),
+  );
   return getWorkspace(ctx, invite.workspaceId);
 }

@@ -77,7 +77,8 @@ export async function budgetProgress(ctx: AppContext, workspaceId: string, today
       const paidCents = paid.get(key) ?? 0;
       const dueCents = due.get(key) ?? 0;
       const spentCents = paidCents + dueCents;
-      const percent = b.monthlyLimitCents > 0 ? Math.round((spentCents / b.monthlyLimitCents) * 100) : 0;
+      // Rounded down and compared exactly, so 79.98% never shows as (or alerts at) 80%.
+      const percent = b.monthlyLimitCents > 0 ? Math.floor((spentCents * 100) / b.monthlyLimitCents) : 0;
       const state: BudgetProgress['state'] = percent >= 100 ? 'OVER' : percent >= b.alertAtPercent ? 'WARNING' : 'OK';
       return {
         id: b.id,

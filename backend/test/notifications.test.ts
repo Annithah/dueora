@@ -29,6 +29,9 @@ async function setup() {
   // the "payment recorded" notice for the fixture's partial payment).
   await ctx.db.notification.deleteMany({});
   await ctx.db.job.deleteMany({});
+  // These tests are about reminders; the opt-in weekly/monthly summaries have their own suite
+  // (the fixture starts on a Monday, which would otherwise add a weekly digest).
+  await ctx.db.notificationPreference.updateMany({ where: { workspaceId: fx.workspaceId }, data: { weeklySummary: false, monthlySummary: false } });
   ctx.mailer.sent.length = 0;
   ctx.push.sent.length = 0;
   /** Move the clock and let the worker do everything that's due. */
@@ -239,11 +242,11 @@ describe('delivery reliability', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('uses the deterministic dedupe key workspace:subscription:cycle:offset:user:channel', async () => {
+  it('uses the deterministic dedupe key workspace:subscription:type:cycle:offset:user:channel', async () => {
     const { fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z');
     const n = (await notes({ userId: fx.userIds.admin, channel: 'IN_APP' }))[0]!;
-    expect(n.dedupeKey).toBe([fx.workspaceId, fx.subscriptionIds.internet, '2026-11-05', 3, fx.userIds.admin, 'IN_APP'].join(':'));
+    expect(n.dedupeKey).toBe([fx.workspaceId, fx.subscriptionIds.internet, 'REMINDER', '2026-11-05', 3, fx.userIds.admin, 'IN_APP'].join(':'));
   });
 });
 
@@ -331,7 +334,19 @@ describe('notifications API', () => {
   it('manages preferences, mutes and devices', async () => {
     const { app, fx } = await setup();
     const prefs = await fx.as('viewer').get('/api/v1/notifications/preferences');
-    expect(prefs.body).toEqual({ pushEnabled: true, emailEnabled: true, digestEnabled: true, mutedSubscriptionIds: [] });
+    // (setup() turned the weekly and monthly summaries off for these tests.)
+    expect(prefs.body).toEqual({
+      pushEnabled: true,
+      emailEnabled: true,
+      inAppEnabled: true,
+      digestEnabled: true,
+      weeklySummary: false,
+      monthlySummary: false,
+      budgetAlerts: true,
+      teamActivity: true,
+      mutedSubscriptionIds: [],
+    });
+    expect((await fx.as('viewer').patch('/api/v1/notifications/preferences').send({ nonsense: true })).status).toBe(400);
     expect((await fx.as('viewer').patch('/api/v1/notifications/preferences').send({ emailEnabled: false })).body.emailEnabled).toBe(false);
 
     // Viewers receive reminders, so they may mute them.

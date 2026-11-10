@@ -3,12 +3,17 @@ import { router } from 'expo-router';
 import {
   BellOff,
   BellRing,
+  CalendarRange,
   Clock,
+  Inbox,
   Layers,
   Mail,
   Moon,
+  PieChart,
   Send,
   Smartphone,
+  UsersRound,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { AppState, Linking, View } from 'react-native';
@@ -144,6 +149,19 @@ export default function NotificationSettings() {
           />
           <ListItem
             divider
+            icon={<Inbox size={19} color={colors.primaryStrong} />}
+            title="In-app alerts"
+            subtitle="The Alerts list behind the bell"
+            trailing={
+              <Switch
+                accessibilityLabel="In-app alerts"
+                value={!!p?.inAppEnabled}
+                onValueChange={(v) => setPref({ inAppEnabled: v })}
+              />
+            }
+          />
+          <ListItem
+            divider
             icon={<Layers size={19} color={colors.primaryStrong} />}
             title="Group busy days"
             subtitle="One summary instead of 4+ separate messages"
@@ -155,6 +173,60 @@ export default function NotificationSettings() {
               />
             }
           />
+        </Card>
+      </View>
+
+      <View>
+        <SectionHeader title="What we tell you about" />
+        <Card padding={0} style={{ overflow: 'hidden' }}>
+          {(
+            [
+              {
+                key: 'weeklySummary',
+                icon: CalendarRange,
+                title: 'Weekly digest',
+                subtitle: 'Mondays: the week ahead',
+              },
+              {
+                key: 'monthlySummary',
+                icon: PieChart,
+                title: 'Monthly summary',
+                subtitle: 'The 1st: last month and what’s coming',
+              },
+              {
+                key: 'budgetAlerts',
+                icon: Layers,
+                title: 'Budget alerts',
+                subtitle: 'When a monthly budget is nearly used',
+              },
+              {
+                key: 'teamActivity',
+                icon: UsersRound,
+                title: 'Team activity',
+                subtitle: 'New members and role changes (admins)',
+              },
+            ] as {
+              key: 'weeklySummary' | 'monthlySummary' | 'budgetAlerts' | 'teamActivity';
+              icon: LucideIcon;
+              title: string;
+              subtitle: string;
+            }[]
+          ).map((row, i) => (
+            <ListItem
+              key={row.key}
+              divider={i > 0}
+              icon={<row.icon size={19} color={colors.primaryStrong} />}
+              title={row.title}
+              subtitle={row.subtitle}
+              trailing={
+                <Switch
+                  accessibilityLabel={row.title}
+                  value={!!p?.[row.key]}
+                  onValueChange={(v) => setPref({ [row.key]: v })}
+                />
+              }
+            />
+          ))}
         </Card>
       </View>
 
@@ -261,10 +333,10 @@ export default function NotificationSettings() {
           sendTest.mutate(undefined, {
             onSuccess: (r) =>
               toast.success(
-                r.channel === 'PUSH' ? 'Test sent 🔔' : 'Test sent by email',
-                r.channel === 'PUSH'
-                  ? 'It should arrive in a few seconds.'
-                  : 'No phone is registered yet, so we emailed you.',
+                'Test sent 🔔',
+                r.channels.includes('PUSH')
+                  ? 'A push, an email and an alert in the Alerts list are on their way.'
+                  : 'No phone is registered yet, so we sent an email and an in-app alert.',
               ),
             onError: (err) =>
               toast.error(

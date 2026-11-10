@@ -70,10 +70,13 @@ function Detail({
   o,
   menuOpen,
   setMenuOpen,
+  intent,
 }: {
   o: SubscriptionDetail;
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
+  /** Set when opened from a notification button ("Mark as paid" / "Snooze"). */
+  intent?: 'record' | 'snooze';
 }) {
   const { colors } = useTheme();
   const can = usePermissions();
@@ -81,11 +84,12 @@ function Detail({
   const mute = useMute();
   const archive = useArchiveSubscription();
   const del = useDeleteSubscription();
-  const [recordOpen, setRecordOpen] = useState(false);
+  // Opened from "Mark as paid" or "Snooze" on a notification: start with that sheet open.
+  const [recordOpen, setRecordOpen] = useState(intent === 'record' && canManage && o.status === 'ACTIVE');
   // A new key per opening gives the sheet fresh fields every time.
   const [recordKey, setRecordKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(intent === 'snooze' && o.status === 'ACTIVE');
   const snooze = useSnooze(o.id);
   const muted = o.muted;
   const today = useWorkspaceToday();
@@ -518,7 +522,8 @@ function TopBarMenu({
 
 export default function SubscriptionDetailScreen() {
   const { colors } = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, record, snooze } = useLocalSearchParams<{ id: string; record?: string; snooze?: string }>();
+  const intent = record ? 'record' : snooze ? 'snooze' : undefined;
   const query = useSubscription(id);
   const [refreshing, setRefreshing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -553,7 +558,7 @@ export default function SubscriptionDetailScreen() {
       <QueryState query={query}>
         {(o) =>
           o ? (
-            <Detail o={o} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+            <Detail o={o} menuOpen={menuOpen} setMenuOpen={setMenuOpen} intent={intent} />
           ) : (
             <EmptyState illustration="no-results" title="Subscription not found" />
           )

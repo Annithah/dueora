@@ -4,7 +4,19 @@ import { api } from '@/api';
 import { useSession } from '@/state/session';
 
 export type NotificationType =
-  'REMINDER' | 'DUE_TODAY' | 'OVERDUE' | 'PAYMENT_RECORDED' | 'DIGEST' | 'SYSTEM';
+  | 'REMINDER'
+  | 'DUE_TODAY'
+  | 'OVERDUE'
+  | 'PAYMENT_RECORDED'
+  | 'DIGEST'
+  | 'TRIAL_ENDING'
+  | 'AUTO_RENEW_NOTICE'
+  | 'PRICE_CHANGE'
+  | 'BUDGET_ALERT'
+  | 'WEEKLY_DIGEST'
+  | 'MONTHLY_SUMMARY'
+  | 'TEAM'
+  | 'SYSTEM';
 
 export interface InboxItem {
   id: string;
@@ -28,12 +40,18 @@ export interface Inbox {
 export interface NotificationPrefs {
   pushEnabled: boolean;
   emailEnabled: boolean;
+  inAppEnabled: boolean;
   digestEnabled: boolean;
+  weeklySummary: boolean;
+  monthlySummary: boolean;
+  budgetAlerts: boolean;
+  teamActivity: boolean;
   mutedSubscriptionIds: string[];
 }
 
 export const inboxKey = (workspaceId: string | null) => ['inbox', workspaceId] as const;
-export const prefsKey = (workspaceId: string | null) => ['notification-prefs', workspaceId] as const;
+export const prefsKey = (workspaceId: string | null) =>
+  ['notification-prefs', workspaceId] as const;
 
 export function useInbox() {
   const workspaceId = useSession((s) => s.activeWorkspaceId);
@@ -101,8 +119,11 @@ export function useMute() {
 export function useSendTest() {
   return useMutation({
     mutationFn: () =>
-      api.post<{ queued: boolean; channel: 'PUSH' | 'EMAIL'; devices: number }>(
-        '/notifications/test',
-      ),
+      api.post<{
+        queued: boolean;
+        channel: 'PUSH' | 'EMAIL';
+        channels: ('PUSH' | 'EMAIL' | 'IN_APP')[];
+        devices: number;
+      }>('/notifications/test'),
   });
 }

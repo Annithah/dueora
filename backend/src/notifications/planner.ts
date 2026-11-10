@@ -9,8 +9,16 @@ import {
 } from '../domain/schedule.js';
 import { Prisma, type NotificationType } from '../generated/prisma/client.js';
 
-import { digestCopy, subscriptionLabel, reminderCopy } from './messages.js';
+import { checkBudgetAlerts } from '../modules/budgets/service.js';
+
+import { autoRenewCopy, digestCopy, subscriptionLabel, reminderCopy, trialEndingCopy } from './messages.js';
 import { createNotification, dedupeKey, subscriptionUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
+import { runSummaries } from './summaries.js';
+
+/** TRIAL_ENDING goes out this many days before the trial ends. */
+export const TRIAL_OFFSETS = [3, 1] as const;
+/** AUTO_RENEW_NOTICE goes out this many days before an automatic renewal charge. */
+export const AUTO_RENEW_OFFSETS = [7] as const;
 
 /** A user gets a digest instead of individual messages above this many reminders in one run. */
 export const DIGEST_THRESHOLD = 3;
@@ -33,6 +41,8 @@ export interface PlannedReminder {
   body: string;
   /** Key moments also go by email: 7 days before, the due date, the first overdue reminder. */
   keyMoment: boolean;
+  /** Who gets it: every member, ADMIN/FINANCE only, or one user (the end of their snooze). */
+  audience: 'all' | 'managers' | { userId: string };
   emailItem: {
     subscriptionId: string;
     cycleDueDate: string;
@@ -109,55 +119,127 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
     : [];
   const members = await ctx.db.membership.findMany({
     where: { workspaceId: org.id },
-    select: { userId: true },
+    select: { userId: true, role: true },
   });
+  const everyone = recipientsFor(members);
+  const managers = new Set(members.filter((m) => m.role !== 'VIEWER').map((m) => m.userId));
+  const snoozes = subscriptions.length
+    ? await ctx.db.reminderSnooze.findMany({ where: { subscriptionId: { in: subscriptions.map((s) => s.id) } } })
+    : [];
+  const snoozeOf = (userId: string, subscriptionId: string, cycle: string) =>
+    snoozes.find((z) => z.userId === userId && z.subscriptionId === subscriptionId && z.cycleDueDate === cycle);
 
-  const perUser = new Map<string, PlannedReminder[]>();
-  let reminderCount = 0;
+  const planned: PlannedReminder[] = [];
   for (const o of subscriptions) {
     const offsets = o.reminderOffsets as number[];
     const paid = paidForCycle(payments.filter((p) => p.subscriptionId === o.id), o.nextDueDate);
-    if (paid >= o.amountCents) continue;
-    const r: ReminderDate | null = mostRecentMissedReminder(o.nextDueDate, offsets, since, today);
-    if (!r) continue;
-    reminderCount++;
-
-    const days = daysBetween(today, o.nextDueDate);
     const remaining = o.amountCents - paid;
     const label = subscriptionLabel(o.name, o.company.name);
-    const copy = reminderCopy({ name: o.name, company: o.company.name, amountCents: remaining, dueDate: o.nextDueDate, daysUntilDue: days });
-    const firstOverdue = Math.max(...offsets.filter((x) => x < 0), -Infinity);
-    const planned: PlannedReminder = {
+    const days = daysBetween(today, o.nextDueDate);
+    const emailItem = {
       subscriptionId: o.id,
       cycleDueDate: o.nextDueDate,
-      offsetDays: r.offsetDays,
-      type: days > 0 ? 'REMINDER' : days === 0 ? 'DUE_TODAY' : 'OVERDUE',
-      title: copy.title,
-      body: copy.body,
-      keyMoment: r.offsetDays === 7 || r.offsetDays === 0 || r.offsetDays === firstOverdue,
-      emailItem: {
+      label,
+      company: o.company.name,
+      provider: o.provider,
+      amountCents: Math.max(0, remaining),
+      dueDate: o.nextDueDate,
+      daysUntilDue: days,
+      partiallyPaid: paid > 0,
+      url: subscriptionUrl(ctx, o.id),
+    };
+    const dueReminder = (offsetDays: number, keyMoment: boolean, audience: PlannedReminder['audience']): PlannedReminder => {
+      const copy = reminderCopy({ name: o.name, company: o.company.name, amountCents: remaining, dueDate: o.nextDueDate, daysUntilDue: days });
+      return {
         subscriptionId: o.id,
         cycleDueDate: o.nextDueDate,
-        label,
-        company: o.company.name,
-        provider: o.provider,
-        amountCents: remaining,
-        dueDate: o.nextDueDate,
-        daysUntilDue: days,
-        partiallyPaid: paid > 0,
-        url: subscriptionUrl(ctx, o.id),
-      },
+        offsetDays,
+        type: days > 0 ? 'REMINDER' : days === 0 ? 'DUE_TODAY' : 'OVERDUE',
+        title: copy.title,
+        body: copy.body,
+        keyMoment,
+        audience,
+        emailItem,
+      };
     };
 
-    for (const userId of recipientsFor(members)) {
-      perUser.set(userId, [...(perUser.get(userId) ?? []), planned]);
+    // Free trial ending (independent of payment: the trial is the event).
+    if (o.isTrial && o.trialEndsOn && o.trialEndsOn >= today) {
+      const t = mostRecentMissedReminder(o.trialEndsOn, TRIAL_OFFSETS, since, today);
+      if (t) {
+        const copy = trialEndingCopy({ name: o.name, daysLeft: daysBetween(today, o.trialEndsOn) });
+        planned.push({
+          subscriptionId: o.id,
+          cycleDueDate: o.trialEndsOn,
+          offsetDays: t.offsetDays,
+          type: 'TRIAL_ENDING',
+          title: copy.title,
+          body: copy.body,
+          keyMoment: true,
+          audience: 'all',
+          emailItem: { ...emailItem, dueDate: o.trialEndsOn, daysUntilDue: daysBetween(today, o.trialEndsOn) },
+        });
+      }
+    }
+
+    if (remaining <= 0) continue;
+
+    // Heads-up before an automatic renewal charges the card.
+    if (o.autoRenew) {
+      const a = mostRecentMissedReminder(o.nextDueDate, AUTO_RENEW_OFFSETS, since, today);
+      if (a && days > 0) {
+        const copy = autoRenewCopy({ label, dueDate: o.nextDueDate, amountCents: remaining });
+        planned.push({
+          subscriptionId: o.id,
+          cycleDueDate: o.nextDueDate,
+          offsetDays: a.offsetDays,
+          type: 'AUTO_RENEW_NOTICE',
+          title: copy.title,
+          body: copy.body,
+          keyMoment: false,
+          audience: 'managers',
+          emailItem,
+        });
+      }
+    }
+
+    const r: ReminderDate | null = mostRecentMissedReminder(o.nextDueDate, offsets, since, today);
+    const firstOverdue = Math.max(...offsets.filter((x) => x < 0), -Infinity);
+    if (r) planned.push(dueReminder(r.offsetDays, r.offsetDays === 7 || r.offsetDays === 0 || r.offsetDays === firstOverdue, 'all'));
+
+    // A snooze that ended since the last run brings back one reminder for that user —
+    // unless a scheduled one goes out today anyway.
+    for (const z of snoozes) {
+      if (z.subscriptionId !== o.id || z.cycleDueDate !== o.nextDueDate) continue;
+      if (z.snoozedUntil > since && z.snoozedUntil <= today && !r) planned.push(dueReminder(days, false, { userId: z.userId }));
     }
   }
+
+  const perUser = new Map<string, PlannedReminder[]>();
+  for (const p of planned) {
+    const targets =
+      typeof p.audience === 'object' ? [p.audience.userId] : p.audience === 'managers' ? everyone.filter((u) => managers.has(u)) : everyone;
+    for (const userId of targets) {
+      if (!everyone.includes(userId)) continue;
+      // Snoozed: nothing about this cycle until the snooze ends (trial notices still come).
+      const z = p.type !== 'TRIAL_ENDING' ? snoozeOf(userId, p.subscriptionId, p.cycleDueDate) : undefined;
+      if (z && z.snoozedUntil > today) continue;
+      perUser.set(userId, [...(perUser.get(userId) ?? []), p]);
+    }
+  }
+  const reminderCount = planned.length;
 
   const sendAfter = quietHoursEnd(now, org.timezone, org.quietHoursStart, org.quietHoursEnd);
   let created = 0;
   for (const [userId, items] of perUser) {
     created += await deliverToUser(ctx, org, userId, items, today, sendAfter);
+  }
+  // Weekly digest (Mondays), monthly summary (the 1st) and budget alerts ride on the same daily run.
+  try {
+    created += await runSummaries(ctx, org, { since, today, sendAfter, members: everyone });
+    created += await checkBudgetAlerts(ctx, org.id, today);
+  } catch (err) {
+    ctx.logger.error({ err, workspaceId: org.id }, 'Summaries or budget check failed');
   }
   ctx.logger.info({ workspaceId: org.id, today, since, reminders: reminderCount, notifications: created }, 'Reminders planned');
   return { workspaceId: org.id, localDate: today, since, reminders: reminderCount, notifications: created };
@@ -186,7 +268,7 @@ async function deliverToUser(
   const canPush = prefs.pushEnabled && hasDevice;
   let created = 0;
 
-  const key = (i: PlannedReminder, channel: string) => dedupeKey([org.id, i.subscriptionId, i.cycleDueDate, i.offsetDays, userId, channel]);
+  const key = (i: PlannedReminder, channel: string) => dedupeKey([org.id, i.subscriptionId, i.type, i.cycleDueDate, i.offsetDays, userId, channel]);
   const base = (i: PlannedReminder) => ({
     workspaceId: org.id,
     userId,
@@ -199,9 +281,11 @@ async function deliverToUser(
     data: { ...i.emailItem },
   });
 
-  // In-app: always, one per reminder (makes no noise, so ignores quiet hours).
-  for (const i of items) {
-    if (await createNotification(ctx, { ...base(i), channel: 'IN_APP', dedupeKey: key(i, 'IN_APP') })) created++;
+  // In-app: one per reminder (makes no noise, so ignores quiet hours).
+  if (prefs.inAppEnabled) {
+    for (const i of items) {
+      if (await createNotification(ctx, { ...base(i), channel: 'IN_APP', dedupeKey: key(i, 'IN_APP') })) created++;
+    }
   }
 
   if (prefs.digestEnabled && items.length > DIGEST_THRESHOLD) {
@@ -214,8 +298,8 @@ async function deliverToUser(
       body: copy.body,
       data: { url: `${ctx.env.APP_URL}alerts`, items: items.map((i) => i.emailItem) },
     };
-    if (canPush && (await createNotification(ctx, { ...digest, channel: 'PUSH', dedupeKey: dedupeKey([org.id, 'digest', today, userId, 'PUSH']) }, { sendAfter }))) created++;
-    if (prefs.emailEnabled && (await createNotification(ctx, { ...digest, channel: 'EMAIL', dedupeKey: dedupeKey([org.id, 'digest', today, userId, 'EMAIL']) }, { sendAfter }))) created++;
+    if (canPush && (await createNotification(ctx, { ...digest, channel: 'PUSH', dedupeKey: dedupeKey([org.id, null, 'DIGEST', today, null, userId, 'PUSH']) }, { sendAfter }))) created++;
+    if (prefs.emailEnabled && (await createNotification(ctx, { ...digest, channel: 'EMAIL', dedupeKey: dedupeKey([org.id, null, 'DIGEST', today, null, userId, 'EMAIL']) }, { sendAfter }))) created++;
     return created;
   }
 
