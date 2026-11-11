@@ -24,7 +24,7 @@ export interface InboxItem {
   title: string;
   body: string;
   data: Record<string, unknown>;
-  subscriptionId: string | null;
+  billId: string | null;
   cycleDueDate: string | null;
   offsetDays: number | null;
   readAt: string | null;
@@ -46,7 +46,7 @@ export interface NotificationPrefs {
   monthlySummary: boolean;
   budgetAlerts: boolean;
   teamActivity: boolean;
-  mutedSubscriptionIds: string[];
+  mutedBillIds: string[];
 }
 
 export const inboxKey = (workspaceId: string | null) => ['inbox', workspaceId] as const;
@@ -107,11 +107,11 @@ export function useMute() {
   const queryClient = useQueryClient();
   const workspaceId = useSession((s) => s.activeWorkspaceId);
   return useMutation({
-    mutationFn: ({ subscriptionId, muted }: { subscriptionId: string; muted: boolean }) =>
-      api.post<NotificationPrefs>(`/subscriptions/${subscriptionId}/${muted ? 'mute' : 'unmute'}`),
+    mutationFn: ({ billId, muted }: { billId: string; muted: boolean }) =>
+      api.post<NotificationPrefs>(`/bills/${billId}/${muted ? 'mute' : 'unmute'}`),
     onSuccess: (prefs) => {
       queryClient.setQueryData(prefsKey(workspaceId), prefs);
-      return queryClient.invalidateQueries({ queryKey: ['subscriptions', workspaceId] });
+      return queryClient.invalidateQueries({ queryKey: ['bills', workspaceId] });
     },
   });
 }

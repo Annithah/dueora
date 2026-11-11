@@ -1,18 +1,18 @@
 # DueOra — Your dues, on time.
 
-DueOra helps people and companies keep track of their recurring subscriptions and payments — hosting,
+DueOra helps people and companies keep track of their recurring bills and payments — hosting,
 domains, software, internet, rent, insurance, utilities. It reminds everyone before things fall due, lets
 them record full or partial payments, and shows everything on one dashboard. Everything is in US dollars.
 
 **Highlights**
 
-- **Subscriptions** belong to a **company** (a workspace can hold several, e.g. one per brand) and a
+- **Bills** belong to a **company** (a workspace can hold several, e.g. one per brand) and a
   **category**. Start date defaults to today; the next due date is calculated automatically and moves
   forward when a cycle is paid.
 - **Reliable reminders**: 30/14/7/3/1 days before, on the day, then 1/3/7 days after and weekly until paid —
   at 09:00 in the workspace's timezone, by push, email and in-app; digests on busy days; quiet hours;
   catch-up after downtime; never a duplicate (proven by a year-long simulation test).
-- **Subscription keys** (license keys, account numbers) encrypted at rest (AES-256-GCM), masked in the app,
+- **Account references** (license keys, account numbers) encrypted at rest (AES-256-GCM), masked in the app,
   revealed only to Admin/Finance, searchable by exact key, never logged or sent in notifications.
 - Lists sorted by due date, 10 per page, with search, sort and filters.
 - Roles: Admin / Finance / Viewer, with strict workspace isolation.
@@ -42,7 +42,7 @@ Prerequisites: **Node.js 22.12+** and npm 10+. No database server needed (SQLite
 npm run install:all                     # installs backend and mobile
 
 # Backend
-cp backend/.env.example backend/.env    # set JWT_ACCESS_SECRET and SUBSCRIPTION_KEY_SECRET (see comments)
+cp backend/.env.example backend/.env    # set JWT_ACCESS_SECRET and ACCOUNT_REF_SECRET (see comments)
 cd backend
 npm run db:migrate                      # create the SQLite database (backend/dueora.db)
 npm run db:seed                         # inserts the default categories — nothing else
@@ -56,7 +56,7 @@ cp .env.example .env                    # EXPO_PUBLIC_API_URL — use your LAN I
 npm start                               # Expo dev server; press "a" for Android
 ```
 
-Then sign up in the app, create your workspace and first company, and add your real subscriptions.
+Then sign up in the app, create your workspace and first company, and add your real bills.
 Without API keys everything still works locally: emails are printed in the API log, and push is skipped
 until an EAS project and Firebase are set up (see `docs/DEPLOYMENT.md`).
 
@@ -73,7 +73,7 @@ npm run check          # lint + type-check + tests (backend and mobile) + no-sam
 
 | | |
 |---|---|
-| Backend | Vitest + supertest: scheduling engine (≥ 95% coverage enforced), every route for auth, roles and cross-workspace isolation, pagination/sort/filter, payments, notifications, a 365-day reminder simulation, subscription-key security, reports |
+| Backend | Vitest + supertest: scheduling engine (≥ 95% coverage enforced), every route for auth, roles and cross-workspace isolation, pagination/sort/filter, payments, notifications, a 365-day reminder simulation, account-reference security, reports |
 | Mobile | Jest + React Native Testing Library: UI components (search/sort/filter, date quick picks, rows), colour contrast, USD/date maths, the due-date mirror, API client token refresh, forms |
 | Manual | `docs/QA_CHECKLIST.md` |
 

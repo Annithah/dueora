@@ -2,14 +2,14 @@
 
 Screens from the Figma prototype (https://rouge-warm-77431112.figma.site/), captured in `design/`
 (`design/prototype-styles.css` keeps the exact sizes and tokens). Route names are Expo Router paths under
-`mobile/src/app/`. The prototype calls things "payments"; the app calls them **subscriptions** (build brief).
+`mobile/src/app/`. The prototype calls things "payments"; the app calls them **bills** (build brief).
 
 ## Dropped or changed from the prototype (product decisions)
 
 | Prototype element | In the app |
 |---|---|
-| "Payments" tab, "Add payment", "Payment detail" | **Subscriptions** tab, Add/Edit subscription, Subscription detail |
-| Project / platform field and per-platform grouping | Removed. Every subscription has one **Company** (dropdown with "+ New company") and one **Category** |
+| "Payments" tab, "Add payment", "Payment detail" | **Bills** tab, Add/Edit bill, Bill detail |
+| Project / platform field and per-platform grouping | Removed. Every bill has one **Company** (dropdown with "+ New company") and one **Category** |
 | Currency button, currency selects, "secondary currency" totals, exchange rates | Removed. **US dollars only**, shown like $1,523.00 |
 | "Assigned to", owner, department, "created by", "Employee preview" | Removed (no ownership anywhere) |
 | Attachments, "Upload receipt", camera receipt, logo upload | Removed (no files at all) |
@@ -26,13 +26,13 @@ Splash ──► Onboarding (3 slides) ──► Sign up ─► Workspace setup 
                      └─ "Log in" ─► Login ─┬─► Main tabs
                                            └─► Forgot password ─► (email code) ─► Reset password
 
-Main tabs: Home · Subscriptions · [ + FAB, hidden for viewers ] · Calendar · Alerts · More
-  FAB / "Add" ─────────────────► Add subscription (modal)
-  any subscription row ────────► Subscription detail ─► Record payment (bottom sheet) ─► Success
-                                                     └► Edit subscription
+Main tabs: Home · Bills · [ + FAB, hidden for viewers ] · Calendar · Alerts · More
+  FAB / "Add" ─────────────────► Add bill (modal)
+  any bill row ────────► Bill detail ─► Record payment (bottom sheet) ─► Success
+                                                     └► Edit bill
   More ─► Profile · Workspace · Companies · Categories · Payment history · Reports · Team & roles ·
           Notifications · Security · Dark mode · Help · Log out
-  Notification tap (push) ─────► Subscription detail (deep link dueora://subscriptions/:id)
+  Notification tap (push) ─────► Bill detail (deep link dueora://bills/:id)
 ```
 
 ## Screens
@@ -44,15 +44,15 @@ Main tabs: Home · Subscriptions · [ + FAB, hidden for viewers ] · Calendar ·
 | 3–5 | Login, Forgot, Sign up | `05–07` | `(auth)/*` | Inputs with icons, 6-digit code input (password reset), resend timer |
 | 7 | Workspace setup | `09` | `(app)/setup/workspace` | Company/Personal cards, workspace name, **first company**, timezone (no logo, no currency) |
 | 8 | Invite team | `10` | `(app)/setup/invite` | Email + role (Finance / Viewer / Admin), add another, skip |
-| 9 | Home | `11–14` | `(tabs)/index` | "Good morning, <name> 👋", workspace switcher, a one-line headline about the most urgent subscription, summary cards (Overdue, Due this week, Due this month, Paid this month — USD), Needs attention, Quick actions, Next 30 days (by due date), Monthly spending bars, Spending by category donut, **Spending by company** bars; empty state when there's no data |
-| 10 | Subscriptions | `15–16` | `(tabs)/subscriptions` | **SearchBar with Sort + Filter buttons**, active filter chips, rows (category badge, name, company · frequency, USD amount, next due date, status), Load more (10 per page), empty / no-results states |
-| 11 | Calendar | `17–18` | `(tabs)/calendar` | Day/Week/Month/Year, status dots, tap a day to list its subscriptions |
+| 9 | Home | `11–14` | `(tabs)/index` | "Good morning, <name> 👋", workspace switcher, a one-line headline about the most urgent bill, summary cards (Overdue, Due this week, Due this month, Paid this month — USD), Needs attention, Quick actions, Next 30 days (by due date), Monthly spending bars, Spending by category donut, **Spending by company** bars; empty state when there's no data |
+| 10 | Bills | `15–16` | `(tabs)/bills` | **SearchBar with Sort + Filter buttons**, active filter chips, rows (category badge, name, company · frequency, USD amount, next due date, status), Load more (10 per page), empty / no-results states |
+| 11 | Calendar | `17–18` | `(tabs)/calendar` | Day/Week/Month/Year, status dots, tap a day to list its bills |
 | 12 | Alerts | `19` | `(tabs)/alerts` | Today / This week / Earlier, unread dots, mark all read, offline banner |
 | 13 | More | `20–21` | `(tabs)/more` | Profile card + role badge, settings list, dark mode switch, help, log out |
-| 14 | Add / Edit subscription | `28–30` | `(app)/subscriptions/new`, `[id]/edit` | 5 sections: Basics (name, company, category, provider), Amount (USD), Schedule (9 frequency chips, start date = today, auto next due date, quick-pick date chips), Reminders (chips), Details (masked subscription key with show/hide, notes) |
-| 15 | Subscription detail | `22–24` | `(app)/subscriptions/[id]` | Category badge, company · provider, USD amount, status, countdown ring, schedule list (cycle, next due, category, company, provider, started), **masked subscription key with Show/Copy** (admin/finance), reminder plan, payment history, Edit + Record payment |
+| 14 | Add / Edit bill | `28–30` | `(app)/bills/new`, `[id]/edit` | 5 sections: Basics (name, company, category, provider), Amount (USD), Schedule (9 frequency chips, start date = today, auto next due date, quick-pick date chips), Reminders (chips), Details (masked account reference with show/hide, notes) |
+| 15 | Bill detail | `22–24` | `(app)/bills/[id]` | Category badge, company · provider, USD amount, status, countdown ring, schedule list (cycle, next due, category, company, provider, started), **masked account reference with Show/Copy** (admin/finance), reminder plan, payment history, Edit + Record payment |
 | 16 | Record payment | `25–26` | bottom sheet | Full / Partial, USD amount, date paid (today), method, reference, notes (no receipt) |
-| 17 | Payment recorded | `27` | `(app)/subscriptions/[id]/success` | Lottie check, "<Company> · <Subscription> is up to date", next due date moved |
+| 17 | Payment recorded | `27` | `(app)/bills/[id]/success` | Lottie check, "<Company> · <Bill> is up to date", next due date moved |
 | 18 | Payment history | `31` | `(app)/history` | SearchBar + Sort + Filter (date range, company, category), filter chips, total in USD, 10 per page |
 | 19 | Reports | `32–33` | `(app)/reports` | Monthly/Annual, totals, 12-month forecast, by category, **by company**, overdue list, Export PDF/Excel |
 | 20 | Team & roles | `34–35` | `(app)/team` | Members (Admin/Finance/Viewer), invites, what each role can do |

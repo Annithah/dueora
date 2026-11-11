@@ -17,7 +17,7 @@ import { ApiError } from '@/api';
 import { centsToInput, formatUSD, parseUSDInput } from '@/lib/money';
 import { typography, useTheme } from '@/theme';
 
-import { METHOD_LABELS, useRecordPayment, type PaymentMethod, type Subscription } from './api';
+import { METHOD_LABELS, useRecordPayment, type PaymentMethod, type Bill } from './api';
 
 const METHODS = (Object.keys(METHOD_LABELS) as PaymentMethod[]).map((m) => ({
   value: m,
@@ -25,23 +25,23 @@ const METHODS = (Object.keys(METHOD_LABELS) as PaymentMethod[]).map((m) => ({
 }));
 
 export function RecordPaymentSheet({
-  subscription,
+  bill,
   today,
   visible,
   onClose,
 }: {
-  subscription: Subscription;
+  bill: Bill;
   today: string;
   visible: boolean;
   onClose: () => void;
 }) {
   const { colors } = useTheme();
-  const record = useRecordPayment(subscription.id);
-  const remaining = subscription.remainingCents || subscription.amountCents;
+  const record = useRecordPayment(bill.id);
+  const remaining = bill.remainingCents || bill.amountCents;
   const [mode, setMode] = useState<'full' | 'partial'>('full');
   const [amount, setAmount] = useState(centsToInput(remaining));
   const [paidOn, setPaidOn] = useState(today);
-  const [method, setMethod] = useState<PaymentMethod>(subscription.defaultPaymentMethod ?? 'BANK_TRANSFER');
+  const [method, setMethod] = useState<PaymentMethod>(bill.defaultPaymentMethod ?? 'BANK_TRANSFER');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -63,14 +63,14 @@ export function RecordPaymentSheet({
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
       router.push({
-        pathname: '/subscriptions/[id]/success',
+        pathname: '/bills/[id]/success',
         params: {
-          id: subscription.id,
-          name: subscription.name,
+          id: bill.id,
+          name: bill.name,
           amount: formatUSD(res.payment.amountCents),
-          company: subscription.company.name,
+          company: bill.company.name,
           paidOn: res.payment.paidOn,
-          next: res.subscription.status === 'COMPLETED' ? '' : res.subscription.nextDueDate,
+          next: res.bill.status === 'COMPLETED' ? '' : res.bill.nextDueDate,
           completed: res.cycleCompleted ? '1' : '0',
         },
       });
@@ -84,7 +84,7 @@ export function RecordPaymentSheet({
       visible={visible}
       onClose={onClose}
       title="Record payment"
-      eyebrow={subscription.name}
+      eyebrow={bill.name}
     >
       <Segmented
         accessibilityLabel="Payment type"

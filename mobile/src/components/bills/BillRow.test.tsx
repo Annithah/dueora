@@ -2,7 +2,7 @@ import { fireEvent, screen } from '@testing-library/react-native';
 
 import { renderWithTheme } from '@/test/render';
 
-import { SubscriptionRow } from './SubscriptionRow';
+import { BillRow } from './BillRow';
 
 // Test-only fixture.
 const item = {
@@ -15,10 +15,10 @@ const item = {
   subtitle: 'Acme Co · Yearly',
 };
 
-describe('SubscriptionRow', () => {
+describe('BillRow', () => {
   it('shows name, company, USD amount, due date and status, and is tappable', async () => {
     const onPress = jest.fn();
-    await renderWithTheme(<SubscriptionRow item={item} onPress={onPress} />);
+    await renderWithTheme(<BillRow item={item} onPress={onPress} />);
     expect(screen.getByText('Test hosting')).toBeTruthy();
     expect(screen.getByText('Acme Co · Yearly')).toBeTruthy();
     expect(screen.getByText('$1,523.00')).toBeTruthy();

@@ -29,7 +29,7 @@ export function catalogRouter(ctx: AppContext): Router {
     name: c.name,
     color: c.color,
     archived: c.archivedAt !== null,
-    subscriptionCount: count,
+    billCount: count,
   });
 
   async function findCompany(workspaceId: string, companyId: string) {
@@ -44,9 +44,9 @@ export function catalogRouter(ctx: AppContext): Router {
     const rows = await ctx.db.company.findMany({
       where: { workspaceId: workspaceIdOf(req), ...(includeArchived === 'true' ? {} : { archivedAt: null }) },
       orderBy: { name: 'asc' },
-      include: { _count: { select: { subscriptions: { where: { status: { not: 'ARCHIVED' } } } } } },
+      include: { _count: { select: { bills: { where: { status: { not: 'ARCHIVED' } } } } } },
     });
-    res.json(rows.map((c) => companyView(c, c._count.subscriptions)));
+    res.json(rows.map((c) => companyView(c, c._count.bills)));
   });
 
   router.post('/companies', requirePermission('companies:manage'), async (req, res) => {
@@ -77,12 +77,12 @@ export function catalogRouter(ctx: AppContext): Router {
     }
   });
 
-  /** Deletes an unused company; a company with subscriptions is archived instead so history is kept. */
+  /** Deletes an unused company; a company with bills is archived instead so history is kept. */
   router.delete('/companies/:id', requirePermission('companies:manage'), async (req, res) => {
     const { id: companyId } = parseParams(req, Params);
     const workspaceId = workspaceIdOf(req);
     const c = await findCompany(workspaceId, companyId);
-    const used = await ctx.db.subscription.count({ where: { companyId, workspaceId } });
+    const used = await ctx.db.bill.count({ where: { companyId, workspaceId } });
     if (used === 0) {
       await ctx.db.company.delete({ where: { id: c.id } });
       await audit(ctx, workspaceId, userIdOf(req), 'company.delete', 'Company', c.id, { name: c.name });
@@ -107,7 +107,7 @@ export function catalogRouter(ctx: AppContext): Router {
     const rows = await ctx.db.category.findMany({
       where: { OR: [{ workspaceId: null }, { workspaceId }] },
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
-      include: { _count: { select: { subscriptions: { where: { workspaceId, status: { not: 'ARCHIVED' } } } } } },
+      include: { _count: { select: { bills: { where: { workspaceId, status: { not: 'ARCHIVED' } } } } } },
     });
     res.json(
       rows.map((c) => ({
@@ -116,7 +116,7 @@ export function catalogRouter(ctx: AppContext): Router {
         icon: c.icon,
         color: c.color,
         isDefault: c.isDefault,
-        subscriptionCount: c._count.subscriptions,
+        billCount: c._count.bills,
       })),
     );
   });
@@ -128,7 +128,7 @@ export function catalogRouter(ctx: AppContext): Router {
     if (clash) throw new AppError(409, 'CONFLICT', 'A category with this name already exists');
     const c = await ctx.db.category.create({ data: { ...body, workspaceId, isDefault: false } });
     await audit(ctx, workspaceId, userIdOf(req), 'category.create', 'Category', c.id, { name: c.name });
-    res.status(201).json({ id: c.id, name: c.name, icon: c.icon, color: c.color, isDefault: false, subscriptionCount: 0 });
+    res.status(201).json({ id: c.id, name: c.name, icon: c.icon, color: c.color, isDefault: false, billCount: 0 });
   });
 
   router.patch('/categories/:id', requirePermission('categories:manage'), async (req, res) => {
@@ -145,8 +145,8 @@ export function catalogRouter(ctx: AppContext): Router {
     const { id: categoryId } = parseParams(req, Params);
     const c = await ctx.db.category.findFirst({ where: { id: categoryId, workspaceId: workspaceIdOf(req) } });
     if (!c) throw notFound('Category');
-    const used = await ctx.db.subscription.count({ where: { categoryId } });
-    if (used > 0) throw new AppError(409, 'CATEGORY_IN_USE', `Move its ${used} subscription(s) to another category first`);
+    const used = await ctx.db.bill.count({ where: { categoryId } });
+    if (used > 0) throw new AppError(409, 'CATEGORY_IN_USE', `Move its ${used} bill(s) to another category first`);
     await ctx.db.category.delete({ where: { id: categoryId } });
     res.status(204).end();
   });

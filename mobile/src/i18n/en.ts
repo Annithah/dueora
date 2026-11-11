@@ -17,14 +17,14 @@ export const en = {
   },
   tabs: {
     home: 'Home',
-    subscriptions: 'Subscriptions',
-    add: 'Add subscription',
+    bills: 'Bills',
+    add: 'Add bill',
     calendar: 'Calendar',
     more: 'More',
   },
   onboarding: {
     slide1Title: 'Add everything you pay',
-    slide1Text: 'Keep hosting, domains, rent, utilities and subscriptions together.',
+    slide1Text: 'Keep hosting, rent, taxes, utilities and subscriptions together.',
     slide2Title: "Get reminded before it's due",
     slide2Text: 'Choose when we should nudge you, so nothing catches you by surprise.',
     slide3Title: 'Track every payment in one place',
@@ -32,7 +32,7 @@ export const en = {
   },
   welcome: {
     title: 'Welcome to DueOra',
-    text: 'Every bill, subscription and renewal — paid on time, for you and your team.',
+    text: 'Every bill and renewal — paid on time, for you and your team.',
     createAccount: 'Create account',
     haveAccount: 'I already have an account',
     tagline: 'Your dues, on time.',

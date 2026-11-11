@@ -1,7 +1,7 @@
 {
   "name": "dueora",
   "private": true,
-  "description": "DueOra — Your dues, on time. Subscriptions & renewals tracker.",
+  "description": "DueOra — Your dues, on time. Bills & renewals tracker.",
   "scripts": {
     "install:all": "npm --prefix backend install && npm --prefix mobile install",
     "lint": "npm --prefix backend run lint && npm --prefix mobile run lint",

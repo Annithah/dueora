@@ -9,7 +9,7 @@ import { createSseParser, createUtf8Decoder } from './sse';
 
 export type AiCard =
   | {
-      type: 'subscriptions';
+      type: 'bills';
       title: string;
       items: {
         id: string;

@@ -304,7 +304,7 @@ export default function NotificationSettings() {
         <SectionHeader title="Default reminders" />
         <Card style={{ gap: 12 }}>
           <Text variant="small" tone="muted">
-            New subscriptions start with these. You can change them per subscription.
+            New bills start with these. You can change them per bill.
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {REMINDER_CHOICES.map((c) => (
@@ -353,7 +353,7 @@ export default function NotificationSettings() {
       >
         <BellRing size={14} color={colors.muted} />
         <Text variant="caption" tone="muted">
-          Muted a subscription? Unmute it from its detail screen.
+          Muted a bill? Unmute it from its detail screen.
         </Text>
       </View>
     </Screen>

@@ -27,14 +27,14 @@ export interface CategoryRef {
   color: string;
 }
 
-/** Masked subscription key; the plain value only comes from useRevealKey (ADMIN/FINANCE). */
+/** Masked account reference; the plain value only comes from useRevealReference (ADMIN/FINANCE). */
 export interface MaskedKey {
   hasKey: true;
   last4: string;
   masked: string;
 }
 
-export interface Subscription {
+export interface Bill {
   id: string;
   name: string;
   provider: string | null;
@@ -58,7 +58,7 @@ export interface Subscription {
   cycleLengthDays: number;
   paidCents: number;
   remainingCents: number;
-  subscriptionKey: MaskedKey | null;
+  accountReference: MaskedKey | null;
   company: CompanyRef;
   category: CategoryRef;
   createdAt: string;
@@ -82,7 +82,7 @@ export interface PriceChange {
   changedAt: string;
 }
 
-export interface SubscriptionDetail extends Subscription {
+export interface BillDetail extends Bill {
   muted: boolean;
   /** "YYYY-MM-DD" while the caller has snoozed this cycle's reminders. */
   snoozedUntil: string | null;
@@ -103,7 +103,7 @@ export interface Page<T> {
 
 export const PAGE_SIZE = 10;
 
-export const SUBSCRIPTION_SORTS = [
+export const BILL_SORTS = [
   { value: 'due_asc', label: 'Due date — soonest first' },
   { value: 'due_desc', label: 'Due date — latest first' },
   { value: 'amount_desc', label: 'Amount — high to low' },
@@ -111,11 +111,11 @@ export const SUBSCRIPTION_SORTS = [
   { value: 'name_asc', label: 'Name A–Z' },
   { value: 'recent', label: 'Recently added' },
 ] as const;
-export type SubscriptionSort = (typeof SUBSCRIPTION_SORTS)[number]['value'];
+export type BillSort = (typeof BILL_SORTS)[number]['value'];
 
-export interface SubscriptionQuery {
+export interface BillQuery {
   q?: string;
-  sort: SubscriptionSort;
+  sort: BillSort;
   statuses?: string[];
   companyIds?: string[];
   categoryIds?: string[];
@@ -124,14 +124,14 @@ export interface SubscriptionQuery {
   dueTo?: string;
 }
 
-export interface SubscriptionInput {
+export interface BillInput {
   name: string;
   companyId: string;
   categoryId: string;
   provider?: string | null;
   description?: string | null;
   /** Plain key typed by the user; omit to keep the stored one, null to remove it. */
-  subscriptionKey?: string | null;
+  accountReference?: string | null;
   amountCents: number;
   frequencyUnit: FrequencyUnit;
   frequencyInterval: number;
@@ -148,19 +148,19 @@ export interface SubscriptionInput {
 const useWorkspaceId = () => useSession((s) => s.activeWorkspaceId);
 const csv = (v?: string[]) => (v && v.length ? v.join(',') : undefined);
 
-export const subscriptionKeys = {
-  all: (workspaceId: string | null) => ['subscriptions', workspaceId] as const,
-  list: (workspaceId: string | null, q: SubscriptionQuery) => ['subscriptions', workspaceId, 'list', q] as const,
-  detail: (workspaceId: string | null, id: string) => ['subscriptions', workspaceId, 'detail', id] as const,
+export const billKeys = {
+  all: (workspaceId: string | null) => ['bills', workspaceId] as const,
+  list: (workspaceId: string | null, q: BillQuery) => ['bills', workspaceId, 'list', q] as const,
+  detail: (workspaceId: string | null, id: string) => ['bills', workspaceId, 'detail', id] as const,
 };
 
-/** Subscriptions, 10 per page from the server ("load more" / infinite scroll). */
-export function useSubscriptionList(query: SubscriptionQuery) {
+/** Bills, 10 per page from the server ("load more" / infinite scroll). */
+export function useBillList(query: BillQuery) {
   const workspaceId = useWorkspaceId();
   return useInfiniteQuery({
-    queryKey: subscriptionKeys.list(workspaceId, query),
+    queryKey: billKeys.list(workspaceId, query),
     queryFn: ({ pageParam }) =>
-      api.get<Page<Subscription>>('/subscriptions', {
+      api.get<Page<Bill>>('/bills', {
         page: pageParam,
         limit: PAGE_SIZE,
         sort: query.sort,
@@ -179,70 +179,70 @@ export function useSubscriptionList(query: SubscriptionQuery) {
   });
 }
 
-export function useSubscription(id: string | undefined) {
+export function useBill(id: string | undefined) {
   const workspaceId = useWorkspaceId();
   return useQuery({
-    queryKey: subscriptionKeys.detail(workspaceId, id ?? ''),
-    queryFn: () => api.get<SubscriptionDetail>(`/subscriptions/${id}`),
+    queryKey: billKeys.detail(workspaceId, id ?? ''),
+    queryFn: () => api.get<BillDetail>(`/bills/${id}`),
     enabled: !!workspaceId && !!id,
   });
 }
 
-/** Everything derived from subscriptions (lists, dashboard, calendar, reports, history, inbox) goes stale together. */
+/** Everything derived from bills (lists, dashboard, calendar, reports, history, inbox) goes stale together. */
 export function invalidateMoney(queryClient: QueryClient, workspaceId: string | null) {
   return Promise.all(
-    ['subscriptions', 'dashboard', 'calendar', 'reports', 'payments', 'inbox', 'companies', 'categories'].map((k) =>
+    ['bills', 'dashboard', 'calendar', 'reports', 'payments', 'inbox', 'companies', 'categories'].map((k) =>
       queryClient.invalidateQueries({ queryKey: [k, workspaceId] }),
     ),
   );
 }
 
-export function useSaveSubscription(id?: string) {
+export function useSaveBill(id?: string) {
   const queryClient = useQueryClient();
   const workspaceId = useWorkspaceId();
   return useMutation({
-    mutationFn: (input: SubscriptionInput) =>
-      id ? api.patch<Subscription>(`/subscriptions/${id}`, input) : api.post<Subscription>('/subscriptions', input),
+    mutationFn: (input: BillInput) =>
+      id ? api.patch<Bill>(`/bills/${id}`, input) : api.post<Bill>('/bills', input),
     onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
 }
 
-export function useArchiveSubscription() {
+export function useArchiveBill() {
   const queryClient = useQueryClient();
   const workspaceId = useWorkspaceId();
   return useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
-      api.post<Subscription>(`/subscriptions/${id}/${archived ? 'archive' : 'unarchive'}`),
+      api.post<Bill>(`/bills/${id}/${archived ? 'archive' : 'unarchive'}`),
     onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
 }
 
-export function useDeleteSubscription() {
+export function useDeleteBill() {
   const queryClient = useQueryClient();
   const workspaceId = useWorkspaceId();
   return useMutation({
-    mutationFn: (id: string) => api.del(`/subscriptions/${id}`),
+    mutationFn: (id: string) => api.del(`/bills/${id}`),
     onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
 }
 
 /**
- * The plain subscription key (ADMIN/FINANCE only). Deliberately a mutation, not a query:
+ * The plain account reference (ADMIN/FINANCE only). Deliberately a mutation, not a query:
  * the value is never written to the TanStack cache, so it isn't persisted to device storage.
  */
-export function useRevealKey() {
+export function useRevealReference() {
   return useMutation({
-    mutationFn: (id: string) => api.get<{ value: string }>(`/subscriptions/${id}/key`),
+    mutationFn: (id: string) => api.get<{ value: string }>(`/bills/${id}/reference`),
   });
 }
 
 export interface RecordResult {
   payment: PaymentRecord;
-  subscription: Subscription;
+  bill: Bill;
   cycleCompleted: boolean;
 }
 
-export function useRecordPayment(subscriptionId: string) {
+export function useRecordPayment(billId: string) {
   const queryClient = useQueryClient();
   const workspaceId = useWorkspaceId();
   return useMutation({
@@ -252,7 +252,7 @@ export function useRecordPayment(subscriptionId: string) {
       method?: PaymentMethod;
       reference?: string | null;
       notes?: string | null;
-    }) => api.post<RecordResult>(`/subscriptions/${subscriptionId}/payments`, input),
+    }) => api.post<RecordResult>(`/bills/${billId}/payments`, input),
     onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
 }
@@ -283,15 +283,15 @@ export const FREQUENCY_FILTERS = [
 ] as const;
 
 /** Snooze this cycle's reminders for me: { days } (1, 3, 7) or { until: 'YYYY-MM-DD' }. */
-export function useSnooze(subscriptionId: string) {
+export function useSnooze(billId: string) {
   const queryClient = useQueryClient();
   const workspaceId = useWorkspaceId();
   return useMutation({
     mutationFn: (input: { days: number } | { until: string } | null) =>
       input
-        ? api.post<{ snoozedUntil: string }>(`/subscriptions/${subscriptionId}/snooze`, input)
-        : api.del(`/subscriptions/${subscriptionId}/snooze`).then(() => null),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: subscriptionKeys.detail(workspaceId, subscriptionId) }),
+        ? api.post<{ snoozedUntil: string }>(`/bills/${billId}/snooze`, input)
+        : api.del(`/bills/${billId}/snooze`).then(() => null),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: billKeys.detail(workspaceId, billId) }),
   });
 }
 

@@ -9,20 +9,20 @@ import {
 import type { Prisma } from '../../generated/prisma/client.js';
 import { maskKey } from '../../lib/secretBox.js';
 
-/** Relations every subscription response includes. */
-export const subscriptionInclude = {
+/** Relations every bill response includes. */
+export const billInclude = {
   company: { select: { id: true, name: true, color: true } },
   category: { select: { id: true, name: true, icon: true, color: true } },
-} satisfies Prisma.SubscriptionInclude;
+} satisfies Prisma.BillInclude;
 
-export type SubscriptionWithRelations = Prisma.SubscriptionGetPayload<{ include: typeof subscriptionInclude }>;
+export type BillWithRelations = Prisma.BillGetPayload<{ include: typeof billInclude }>;
 
 /**
- * Shape returned by the API for one subscription, with its computed current-cycle status.
- * The subscription key is ALWAYS masked here; the plain value is only served by
- * GET /subscriptions/:id/key to ADMIN and FINANCE.
+ * Shape returned by the API for one bill, with its computed current-cycle status.
+ * The account reference is ALWAYS masked here; the plain value is only served by
+ * GET /bills/:id/reference to ADMIN and FINANCE.
  */
-export function subscriptionView(s: SubscriptionWithRelations, payments: readonly PaymentInput[], today: string) {
+export function billView(s: BillWithRelations, payments: readonly PaymentInput[], today: string) {
   const paidCents = s.status === 'ACTIVE' ? paidForCycle(payments, s.nextDueDate) : 0;
   const paymentStatus = computeStatus(s, payments, today);
   return {
@@ -48,8 +48,8 @@ export function subscriptionView(s: SubscriptionWithRelations, payments: readonl
     cycleLengthDays: cycleLengthDays(s.nextDueDate, s.frequencyUnit, s.frequencyInterval, s.anchorDay, s.startDate),
     paidCents,
     remainingCents: paymentStatus === 'PAID' ? 0 : Math.max(0, s.amountCents - paidCents),
-    subscriptionKey: s.subscriptionKeyLast4
-      ? { hasKey: true, last4: s.subscriptionKeyLast4, masked: maskKey(s.subscriptionKeyLast4) }
+    accountReference: s.accountRefLast4
+      ? { hasKey: true, last4: s.accountRefLast4, masked: maskKey(s.accountRefLast4) }
       : null,
     company: s.company,
     category: s.category,
@@ -58,4 +58,4 @@ export function subscriptionView(s: SubscriptionWithRelations, payments: readonl
   };
 }
 
-export type SubscriptionView = ReturnType<typeof subscriptionView>;
+export type BillView = ReturnType<typeof billView>;

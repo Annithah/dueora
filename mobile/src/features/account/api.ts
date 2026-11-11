@@ -91,7 +91,7 @@ export interface ImportPreviewRow {
 export const IMPORT_FIELDS = [
   { key: 'company', label: 'Company' },
   { key: 'category', label: 'Category' },
-  { key: 'name', label: 'Subscription name', required: true },
+  { key: 'name', label: 'Bill name', required: true },
   { key: 'provider', label: 'Provider' },
   { key: 'amount', label: 'Amount (USD)', required: true },
   { key: 'frequency', label: 'Frequency', required: true },

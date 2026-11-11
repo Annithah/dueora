@@ -8,7 +8,7 @@ import { monthShort } from '@/components/charts/Charts';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Screen } from '@/components/layout/Screen';
-import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import { BillRow } from '@/components/bills/BillRow';
 import { Card, IconButton, SectionHeader, Segmented, Skeleton, Text } from '@/components/ui';
 import { useCalendar, type CalendarEvent } from '@/features/insights/api';
 import {
@@ -63,12 +63,12 @@ function EventList({ events, emptyText }: { events: CalendarEvent[]; emptyText: 
   return (
     <Card padding={0} style={{ overflow: 'hidden' }}>
       {events.map((e, i) => (
-        <SubscriptionRow
-          key={`${e.subscriptionId}-${e.date}-${e.kind}`}
+        <BillRow
+          key={`${e.billId}-${e.date}-${e.kind}`}
           divider={i > 0}
-          onPress={() => router.push(`/subscriptions/${e.subscriptionId}`)}
+          onPress={() => router.push(`/bills/${e.billId}`)}
           item={{
-            id: e.subscriptionId,
+            id: e.billId,
             name: e.name,
             icon: e.categoryIcon,
             amountCents: e.amountCents,
@@ -375,7 +375,7 @@ export default function CalendarTab() {
             title={
               view === 'week' || view === 'day' || view === 'month' ? formatDate(selected) : ''
             }
-            action={`${byDate.get(selected)?.length ?? 0} subscription${(byDate.get(selected)?.length ?? 0) === 1 ? '' : 's'}`}
+            action={`${byDate.get(selected)?.length ?? 0} bill${(byDate.get(selected)?.length ?? 0) === 1 ? '' : 's'}`}
           />
           <EventList events={byDate.get(selected) ?? []} emptyText="Nothing due on this day" />
         </View>

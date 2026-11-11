@@ -18,7 +18,7 @@ describe('seed: default categories only', () => {
     const result = await checkOnlyDefaults(ctx.db);
     expect(result).toEqual({
       ok: true,
-      counts: { users: 0, workspaces: 0, companies: 0, subscriptions: 0, payments: 0, notifications: 0 },
+      counts: { users: 0, workspaces: 0, companies: 0, bills: 0, payments: 0, notifications: 0 },
       defaultCategories: 11,
       customCategories: 0,
     });

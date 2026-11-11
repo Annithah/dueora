@@ -32,7 +32,7 @@ export default function WorkspaceSettings() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: meKey }),
         queryClient.invalidateQueries({ queryKey: ['dashboard', workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ['subscriptions', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['bills', workspaceId] }),
       ]);
       toast.success(done);
     } catch (err) {
@@ -62,7 +62,7 @@ export default function WorkspaceSettings() {
               <Avatar name={ws.name} color={colors.primary} size={72} />
               <Text variant="small" tone="muted">
                 {ws.memberCount} member{ws.memberCount === 1 ? '' : 's'} · {ws.companyCount} compan{ws.companyCount === 1 ? 'y' : 'ies'} ·{' '}
-                {ws.subscriptionCount} subscription{ws.subscriptionCount === 1 ? '' : 's'}
+                {ws.billCount} bill{ws.billCount === 1 ? '' : 's'}
               </Text>
             </View>
 
@@ -118,7 +118,7 @@ export default function WorkspaceSettings() {
             <BottomSheet visible={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete this workspace?">
               <View style={{ gap: 14 }}>
                 <Text variant="body" tone="muted">
-                  Every subscription, payment and member link in {ws.name} will be permanently deleted. Type the workspace name to
+                  Every bill, payment and member link in {ws.name} will be permanently deleted. Type the workspace name to
                   confirm.
                 </Text>
                 <Input label="Workspace name" placeholder={ws.name} value={confirmName} onChangeText={setConfirmName} />

@@ -45,7 +45,7 @@ beforeAll(async () => {
   const cats = (await as('admin').get('/api/v1/categories')).body as { id: string; name: string }[];
   const cat = (name: string) => cats.find((c) => c.name === name)!.id;
   const create = async (body: Record<string, unknown>) => {
-    const r = await as('admin').post('/api/v1/subscriptions').send({ companyId: company, ...body });
+    const r = await as('admin').post('/api/v1/bills').send({ companyId: company, ...body });
     expect(r.status).toBe(201);
     return r.body.id as string;
   };
@@ -65,10 +65,10 @@ beforeAll(async () => {
     const date = d.toISOString().slice(0, 10);
     await day(date);
     if (date === '2026-11-07') {
-      expect((await as('finance').post(`/api/v1/subscriptions/${subs.music}/snooze`).send({ days: 1 })).body.snoozedUntil).toBe('2026-11-08');
-      expect((await as('viewer').post(`/api/v1/subscriptions/${subs.music}/snooze`).send({ days: 3 })).body.snoozedUntil).toBe('2026-11-10');
+      expect((await as('finance').post(`/api/v1/bills/${subs.music}/snooze`).send({ days: 1 })).body.snoozedUntil).toBe('2026-11-08');
+      expect((await as('viewer').post(`/api/v1/bills/${subs.music}/snooze`).send({ days: 3 })).body.snoozedUntil).toBe('2026-11-10');
     }
-    if (date === '2026-11-10') await as('finance').post(`/api/v1/subscriptions/${subs.music}/payments`).send({ method: 'CASH', paidOn: date });
+    if (date === '2026-11-10') await as('finance').post(`/api/v1/bills/${subs.music}/payments`).send({ method: 'CASH', paidOn: date });
   }
 }, 600_000);
 
@@ -107,7 +107,7 @@ describe('auto-renew notice', () => {
 describe('snooze', () => {
   it('pauses one person’s reminders and brings one back when the snooze ends', async () => {
     const days = async (who: keyof typeof users) =>
-      (await inApp({ subscriptionId: subs.music, cycleDueDate: '2026-11-10', userId: idOf(who), type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] } })).map((n) => localDay(n.createdAt));
+      (await inApp({ billId: subs.music, cycleDueDate: '2026-11-10', userId: idOf(who), type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] } })).map((n) => localDay(n.createdAt));
     expect(await days('admin')).toEqual(['2026-11-07', '2026-11-09', '2026-11-10']);
     // Snoozed until the 8th: an extra reminder on the 8th, then the normal ones.
     expect(await days('finance')).toEqual(['2026-11-07', '2026-11-08', '2026-11-09', '2026-11-10']);
@@ -116,7 +116,7 @@ describe('snooze', () => {
   });
 
   it('paying stops everything for that cycle', async () => {
-    const overdue = await inApp({ subscriptionId: subs.music, type: 'OVERDUE' });
+    const overdue = await inApp({ billId: subs.music, type: 'OVERDUE' });
     expect(overdue).toHaveLength(0);
   });
 });
@@ -143,7 +143,7 @@ describe('weekly digest', () => {
     // Week of 2 Nov: Choir (10 Nov) is outside 2–8 Nov; nothing else falls in it.
     expect(first.body).toBe('Nothing due this week — enjoy the calm. 🌿');
     const second = rows.find((n) => localDay(n.createdAt) === '2026-11-09')!;
-    expect(second.body).toBe('2 subscriptions due this week — $39.99 in total.');
+    expect(second.body).toBe('2 bills due this week — $39.99 in total.');
     // Also by email.
     expect(ctx.mailer.sent.filter((m) => m.tag === 'weekly-digest' && m.to === 'tome@lakeview-church.test')).toHaveLength(6);
   });
@@ -155,7 +155,7 @@ describe('monthly summary', () => {
     expect(rows).toHaveLength(3);
     expect(rows.every((n) => localDay(n.createdAt) === '2026-12-01')).toBe(true);
     expect(rows[0]!.title).toBe('📈 November in review');
-    expect(rows[0]!.body).toBe('You paid $30.00 in November. This month: 2 subscriptions, $39.99.');
+    expect(rows[0]!.body).toBe('You paid $30.00 in November. This month: 2 bills, $39.99.');
   });
 });
 
@@ -164,7 +164,7 @@ describe('local backup reminders', () => {
     ctx.clock.set('2026-12-08T13:00:00Z');
     const res = await as('viewer').get('/api/v1/notifications/backup');
     expect(res.status).toBe(200);
-    const music = res.body.filter((e: { subscriptionId: string }) => e.subscriptionId === subs.music);
+    const music = res.body.filter((e: { billId: string }) => e.billId === subs.music);
     // Choir is due 10 Dec with offsets [3, 1, 0]: only the due day is critical.
     expect(music).toEqual([
       expect.objectContaining({
@@ -176,9 +176,9 @@ describe('local backup reminders', () => {
       }),
     ]);
     // Muting removes it.
-    await as('viewer').post(`/api/v1/subscriptions/${subs.music}/mute`);
+    await as('viewer').post(`/api/v1/bills/${subs.music}/mute`);
     const after = await as('viewer').get('/api/v1/notifications/backup');
-    expect(after.body.some((e: { subscriptionId: string }) => e.subscriptionId === subs.music)).toBe(false);
+    expect(after.body.some((e: { billId: string }) => e.billId === subs.music)).toBe(false);
   });
 
   it('converts local wall time to UTC across DST', () => {

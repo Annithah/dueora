@@ -150,7 +150,7 @@ export function reportPdf(r: Report): Promise<Buffer> {
     if (r.overdue.length) {
       section('Overdue now');
       table(
-        ['Subscription', 'Company', 'Was due', 'Owed'],
+        ['Bill', 'Company', 'Was due', 'Owed'],
         r.overdue.map((o) => [o.name, o.company.name, formatLongDate(o.nextDueDate), formatUSD(o.remainingCents)]),
         [170, 130, 100, width - 400],
         [3],
@@ -160,8 +160,8 @@ export function reportPdf(r: Report): Promise<Buffer> {
     if (r.outstanding.length) {
       section('Still to pay in this period');
       table(
-        ['Due', 'Subscription', 'Company', 'Amount'],
-        r.outstanding.map((o) => [formatLongDate(o.date), o.subscription.name, o.subscription.company.name, formatUSD(o.amountCents)]),
+        ['Due', 'Bill', 'Company', 'Amount'],
+        r.outstanding.map((o) => [formatLongDate(o.date), o.bill.name, o.bill.company.name, formatUSD(o.amountCents)]),
         [90, 180, 130, width - 400],
         [3],
       );
@@ -170,7 +170,7 @@ export function reportPdf(r: Report): Promise<Buffer> {
     if (r.payments.length) {
       section('Payments recorded');
       table(
-        ['Paid on', 'Subscription', 'Company', 'Amount'],
+        ['Paid on', 'Bill', 'Company', 'Amount'],
         r.payments.map((p) => [formatLongDate(p.paidOn), p.name, p.company, formatUSD(p.amountCents)]),
         [90, 180, 130, width - 400],
         [3],
@@ -230,7 +230,7 @@ export async function reportXlsx(r: Report): Promise<Buffer> {
   payments.columns = [
     { header: 'Paid on', key: 'paidOn', width: 12 },
     { header: 'Cycle due', key: 'cycle', width: 12 },
-    { header: 'Subscription', key: 'name', width: 28 },
+    { header: 'Bill', key: 'name', width: 28 },
     { header: 'Company', key: 'company', width: 18 },
     { header: 'Category', key: 'category', width: 24 },
     { header: 'Provider', key: 'provider', width: 20 },
@@ -256,7 +256,7 @@ export async function reportXlsx(r: Report): Promise<Buffer> {
   const outstanding = wb.addWorksheet('Outstanding');
   outstanding.columns = [
     { header: 'Due', key: 'due', width: 12 },
-    { header: 'Subscription', key: 'name', width: 28 },
+    { header: 'Bill', key: 'name', width: 28 },
     { header: 'Company', key: 'company', width: 18 },
     { header: 'Amount (USD)', key: 'amount', width: 14, style: { numFmt: USD_FORMAT } },
     { header: 'Overdue', key: 'overdue', width: 10 },
@@ -265,8 +265,8 @@ export async function reportXlsx(r: Report): Promise<Buffer> {
   for (const o of r.outstanding) {
     outstanding.addRow({
       due: o.date,
-      name: o.subscription.name,
-      company: o.subscription.company.name,
+      name: o.bill.name,
+      company: o.bill.company.name,
       amount: dollars(o.amountCents),
       overdue: o.overdue ? 'Yes' : '',
     });

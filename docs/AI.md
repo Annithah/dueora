@@ -23,13 +23,13 @@ workspace comes only from that workspace's own data (through tools) and its own 
 1. `POST /api/v1/ai/chat { conversationId?, message }` as the signed-in user, in their workspace.
    Refused with a clear message if an admin switched AI off (403), no key is configured (503 — "DueOra AI
    is resting right now…"), or the user sent `AI_MESSAGES_PER_HOUR` (default 30) messages this hour (429).
-2. Any subscription key pasted into the message is replaced with `[subscription key hidden]` before it
+2. Any account reference pasted into the message is replaced with `[account reference hidden]` before it
    goes anywhere (matched by the key's keyed hash).
 3. Gemini gets the system prompt + today's date, the workspace's timezone, name, companies, the user's role
    and first name, and the workspace's memory; plus the last 20 messages.
-4. It calls **read tools** (list subscriptions, overview, spending, compare months, forecast, insights,
+4. It calls **read tools** (list bills, overview, spending, compare months, forecast, insights,
    budgets, companies/categories, help search). These use the same services as the app's screens, so roles
-   and workspace isolation apply. Tool results never contain subscription keys.
+   and workspace isolation apply. Tool results never contain account references.
 5. For changes it calls **propose_… tools**. They change nothing: they return a confirmation card.
    Viewers are only offered the personal ones (snooze, mute). The reply streams to the phone (SSE).
 6. The user taps **Confirm** → `POST /ai/messages/:id/actions/:actionId/confirm` runs it through the normal

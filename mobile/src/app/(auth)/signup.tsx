@@ -42,7 +42,7 @@ export default function Signup() {
             Create your account
           </Text>
           <Text variant="body" tone="muted">
-            Start tracking your recurring subscriptions in minutes.
+            Start tracking your recurring bills in minutes.
           </Text>
         </View>
 

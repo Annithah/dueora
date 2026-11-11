@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AppContext } from '../../context.js';
 import { requireAuth, requirePermission, requireWorkspace, userIdOf, workspaceIdOf } from '../../http/middleware/auth.js';
 import { parseBody, parseQuery } from '../../http/validate.js';
-import { workspaceToday } from '../subscriptions/service.js';
+import { workspaceToday } from '../bills/service.js';
 
 import * as svc from './service.js';
 

@@ -17,10 +17,10 @@ const CATEGORY_KEYWORDS: [string, RegExp][] = [
   ['Utilities', /\b(electric\w*|power|water|gas|utilit\w*|waste|garbage|security guard)\b/i],
   ['Transport', /\b(transport|fuel|petrol|diesel|car|vehicle|taxi|bus|parking|fleet|delivery)\b/i],
   ['Education & training', /\b(school|tuition|course|training|education|class|university|exam|books?|learning)\b/i],
-  ['Technology & software', /\b(software|licen[cs]e|saas|app|subscription|office ?365|microsoft|adobe|antivirus|it support|api|crm|erp|accounting)\b/i],
+  ['Technology & software', /\b(software|licen[cs]e|saas|app|bill|office ?365|microsoft|adobe|antivirus|it support|api|crm|erp|accounting)\b/i],
 ];
 
-/** Best-matching default category name for a free-text subscription name/provider, or null. */
+/** Best-matching default category name for a free-text bill name/provider, or null. */
 export function guessCategoryName(text: string): string | null {
   const t = text.trim();
   if (!t) return null;

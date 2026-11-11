@@ -8,7 +8,7 @@ import { DonutChart, LineChart, monthShort } from '@/components/charts/Charts';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
-import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import { BillRow } from '@/components/bills/BillRow';
 import {
   Button,
   Card,
@@ -173,11 +173,11 @@ function Body({ r }: { r: Report }) {
           <SectionHeader title="Overdue now" action={`${r.overdue.length}`} />
           <Card padding={0} style={{ overflow: 'hidden' }}>
             {r.overdue.map((o, i) => (
-              <SubscriptionRow
+              <BillRow
                 key={o.id}
                 compact
                 divider={i > 0}
-                onPress={() => router.push(`/subscriptions/${o.id}`)}
+                onPress={() => router.push(`/bills/${o.id}`)}
                 item={{
                   id: o.id,
                   name: o.name,

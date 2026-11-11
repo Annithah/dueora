@@ -127,7 +127,7 @@ describe('nextDueDate', () => {
     expect(previousDueDate('2026-11-20', 'ONCE', 1, 20)).toBeNull();
   });
 
-  it('seed subscriptions advance correctly', () => {
+  it('seed bills advance correctly', () => {
     expect(advance('2026-01-30', 'YEAR', 1, 30)).toBe('2027-01-30'); // yearly CDN plan
     expect(advance('2026-10-20', 'YEAR', 1, 20)).toBe('2027-10-20'); // yearly hosting
     expect(advance('2026-11-30', 'MONTH', 1, 31)).toBe('2026-12-31'); // rent anchored to month end
@@ -308,7 +308,7 @@ describe('reminders', () => {
   });
 });
 
-describe('calculateNextDueDate (new subscriptions)', () => {
+describe('calculateNextDueDate (new bills)', () => {
   const today = '2026-11-03';
 
   it('uses the start date when it is today or in the future', () => {
@@ -316,7 +316,7 @@ describe('calculateNextDueDate (new subscriptions)', () => {
     expect(calculateNextDueDate('2027-01-15', 'YEAR', 1, 15, today)).toBe('2027-01-15');
   });
 
-  it('keeps one-time subscriptions on their start date, even in the past', () => {
+  it('keeps one-time bills on their start date, even in the past', () => {
     expect(calculateNextDueDate('2026-10-01', 'ONCE', 1, 1, today)).toBe('2026-10-01');
   });
 

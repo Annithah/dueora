@@ -143,7 +143,7 @@ export default function Team() {
               <View style={{ flex: 1 }}>
                 <Text variant="smallStrong">Everyone gets the reminders</Text>
                 <Text variant="small" tone="muted">
-                  Admins, finance and viewers are all reminded before due dates. Viewers can’t change anything and see subscription keys
+                  Admins, finance and viewers are all reminded before due dates. Viewers can’t change anything and see account references
                   masked.
                 </Text>
               </View>

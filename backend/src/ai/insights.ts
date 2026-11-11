@@ -17,7 +17,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const PHRASE = 'You are DueOra AI. Write ONE short, warm sentence (max 140 characters, at most one emoji) for a dashboard card, using only the facts given. Amounts are USD. No preamble.';
 
 async function facts(ctx: AppContext, workspaceId: string, today: string) {
-  const subs = await ctx.db.subscription.findMany({ where: { workspaceId, status: 'ACTIVE' }, include: { company: { select: { name: true } } } });
+  const subs = await ctx.db.bill.findMany({ where: { workspaceId, status: 'ACTIVE' }, include: { company: { select: { name: true } } } });
   const horizon = addDays(today, 90);
   const byMonth = new Map<string, { count: number; cents: number }>();
   for (const s of subs) {
@@ -44,7 +44,7 @@ async function facts(ctx: AppContext, workspaceId: string, today: string) {
 
 function plainInsight(f: Awaited<ReturnType<typeof facts>>): string | null {
   if (f.activeCount === 0) return null;
-  if (f.overdue > 0) return `${plural(f.overdue, 'subscription')} ${f.overdue === 1 ? 'is' : 'are'} overdue — recording ${f.overdue === 1 ? 'it' : 'them'} keeps reminders quiet. ⚠️`;
+  if (f.overdue > 0) return `${plural(f.overdue, 'bill')} ${f.overdue === 1 ? 'is' : 'are'} overdue — recording ${f.overdue === 1 ? 'it' : 'them'} keeps reminders quiet. ⚠️`;
   if (f.trialsEndingThisWeek.length) return `🎁 ${f.trialsEndingThisWeek[0]}'s free trial ends this week — keep it or cancel it?`;
   if (f.biggestRenewalMonth) return `${plural(f.biggestRenewalMonth.count, 'renewal')} in ${f.biggestRenewalMonth.month} totalling ${f.biggestRenewalMonth.total} — plan ahead. 📅`;
   return 'Everything is on track. Nice work! 🎉';
@@ -103,8 +103,8 @@ export async function suggestCategory(ctx: AppContext, workspaceId: string, user
   if (ws.aiEnabled && ctx.ai && name.trim().length >= 3) {
     try {
       const r = await ctx.ai.complete(
-        `Pick the single best category for a subscription. Answer with exactly one of these names and nothing else: ${categories.map((c) => c.name).join(' | ')}`,
-        `Subscription: "${name.slice(0, 120)}"${provider ? `, provider "${provider.slice(0, 120)}"` : ''}`,
+        `Pick the single best category for a bill. Answer with exactly one of these names and nothing else: ${categories.map((c) => c.name).join(' | ')}`,
+        `Bill: "${name.slice(0, 120)}"${provider ? `, provider "${provider.slice(0, 120)}"` : ''}`,
       );
       await logUsage(ctx, workspaceId, userId, ctx.ai.name, 'suggest', r.usage);
       const hit = byName(r.text.replace(/["'.]/g, ''));

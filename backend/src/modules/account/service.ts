@@ -65,24 +65,24 @@ export async function deleteAccount(ctx: AppContext, userId: string, password: s
   return { deletedWorkspaces, leftWorkspaces };
 }
 
-/** Everything in one workspace, for "Export my data". Subscription keys are never exported in plain text. */
+/** Everything in one workspace, for "Export my data". Account references are never exported in plain text. */
 export async function exportWorkspaceData(ctx: AppContext, workspaceId: string) {
-  const [workspace, members, companies, categories, subscriptions, payments, priceChanges, budgets] = await Promise.all([
+  const [workspace, members, companies, categories, bills, payments, priceChanges, budgets] = await Promise.all([
     ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId } }),
     ctx.db.membership.findMany({ where: { workspaceId }, include: { user: { select: { name: true, email: true } } } }),
     ctx.db.company.findMany({ where: { workspaceId }, orderBy: { name: 'asc' } }),
     ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] }, orderBy: { name: 'asc' } }),
-    ctx.db.subscription.findMany({
+    ctx.db.bill.findMany({
       where: { workspaceId },
       include: { company: { select: { name: true } }, category: { select: { name: true } } },
       orderBy: { nextDueDate: 'asc' },
     }),
     ctx.db.paymentRecord.findMany({
       where: { workspaceId },
-      include: { subscription: { select: { name: true, company: { select: { name: true } } } } },
+      include: { bill: { select: { name: true, company: { select: { name: true } } } } },
       orderBy: { paidOn: 'desc' },
     }),
-    ctx.db.priceChange.findMany({ where: { workspaceId }, include: { subscription: { select: { name: true } } }, orderBy: { changedAt: 'desc' } }),
+    ctx.db.priceChange.findMany({ where: { workspaceId }, include: { bill: { select: { name: true } } }, orderBy: { changedAt: 'desc' } }),
     ctx.db.budget.findMany({ where: { workspaceId }, include: { category: { select: { name: true } } } }),
   ]);
   const usd = (cents: number) => Math.round(cents) / 100;
@@ -98,13 +98,13 @@ export async function exportWorkspaceData(ctx: AppContext, workspaceId: string) 
     members: members.map((m) => ({ name: m.user.name, email: m.user.email, role: m.role })),
     companies: companies.map((c) => ({ name: c.name, archived: c.archivedAt !== null })),
     categories: categories.map((c) => ({ name: c.name, default: c.isDefault })),
-    subscriptions: subscriptions.map((s) => ({
+    bills: bills.map((s) => ({
       company: s.company.name,
       category: s.category.name,
       name: s.name,
       provider: s.provider,
       description: s.description,
-      subscriptionKey: s.subscriptionKeyLast4 ? `••••••${s.subscriptionKeyLast4}` : null,
+      accountReference: s.accountRefLast4 ? `••••••${s.accountRefLast4}` : null,
       amountUSD: usd(s.amountCents),
       frequency: s.frequencyUnit === 'ONCE' ? 'ONE_TIME' : `EVERY_${s.frequencyInterval}_${s.frequencyUnit}`,
       startDate: s.startDate,
@@ -116,8 +116,8 @@ export async function exportWorkspaceData(ctx: AppContext, workspaceId: string) 
       status: s.status,
     })),
     payments: payments.map((p) => ({
-      company: p.subscription.company.name,
-      subscription: p.subscription.name,
+      company: p.bill.company.name,
+      bill: p.bill.name,
       cycleDueDate: p.cycleDueDate,
       paidOn: p.paidOn,
       amountUSD: usd(p.amountCents),
@@ -126,7 +126,7 @@ export async function exportWorkspaceData(ctx: AppContext, workspaceId: string) 
       notes: p.notes,
     })),
     priceChanges: priceChanges.map((c) => ({
-      subscription: c.subscription.name,
+      bill: c.bill.name,
       fromUSD: usd(c.oldAmountCents),
       toUSD: usd(c.newAmountCents),
       changedAt: c.changedAt.toISOString(),
@@ -152,7 +152,7 @@ export async function exportWorkbook(data: WorkspaceExport): Promise<Buffer> {
   sheet('Members', data.members);
   sheet('Companies', data.companies);
   sheet('Categories', data.categories);
-  sheet('Subscriptions', data.subscriptions);
+  sheet('Bills', data.bills);
   sheet('Payments', data.payments);
   sheet('Price changes', data.priceChanges);
   sheet('Budgets', data.budgets);

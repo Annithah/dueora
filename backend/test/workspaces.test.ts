@@ -35,11 +35,11 @@ describe('creating and reading workspaces', () => {
       myRole: 'ADMIN',
       memberCount: 1,
       companyCount: 1,
-      subscriptionCount: 0,
+      billCount: 0,
     });
     expect(res.body).not.toHaveProperty('defaultCurrency');
     const companies = await asAdmin().get('/api/v1/companies');
-    expect(companies.body).toEqual([expect.objectContaining({ name: 'Acme Ltd', archived: false, subscriptionCount: 0 })]);
+    expect(companies.body).toEqual([expect.objectContaining({ name: 'Acme Ltd', archived: false, billCount: 0 })]);
     const me = await client(app, admin).get('/api/v1/me');
     expect(me.body.workspaces).toEqual([expect.objectContaining({ id: workspaceId, role: 'ADMIN' })]);
   });
@@ -107,24 +107,24 @@ describe('companies', () => {
     expect((await asAdmin().get('/api/v1/companies')).body.map((c: { name: string }) => c.name)).toEqual(['Acme Ltd', 'Radio 2']);
   });
 
-  it('deletes a company without subscriptions, and archives one that has them', async () => {
+  it('deletes a company without bills, and archives one that has them', async () => {
     const unused = await asAdmin().post('/api/v1/companies').send({ name: 'Unused' });
     const del = await asAdmin().delete(`/api/v1/companies/${unused.body.id}`);
     expect(del.body).toEqual({ deleted: true, archived: false });
 
     const cats = await asAdmin().get('/api/v1/categories');
     await asAdmin()
-      .post('/api/v1/subscriptions')
+      .post('/api/v1/bills')
       .send({ name: 'Streaming', companyId, categoryId: cats.body[0].id, amountCents: 999, frequencyUnit: 'MONTH' });
     const archive = await asAdmin().delete(`/api/v1/companies/${companyId}`);
     expect(archive.body).toEqual({ deleted: false, archived: true });
     expect((await asAdmin().get('/api/v1/companies')).body.map((c: { name: string }) => c.name)).toEqual(['Acme Ltd']);
     const all = await asAdmin().get('/api/v1/companies').query({ includeArchived: 'true' });
-    expect(all.body.find((c: { id: string }) => c.id === companyId)).toMatchObject({ archived: true, subscriptionCount: 1 });
+    expect(all.body.find((c: { id: string }) => c.id === companyId)).toMatchObject({ archived: true, billCount: 1 });
 
-    // Archived companies can't take new subscriptions, but can be restored.
+    // Archived companies can't take new bills, but can be restored.
     const blocked = await asAdmin()
-      .post('/api/v1/subscriptions')
+      .post('/api/v1/bills')
       .send({ name: 'Another', companyId, categoryId: cats.body[0].id, amountCents: 100, frequencyUnit: 'MONTH' });
     expect(blocked.status).toBe(400);
     expect((await asAdmin().post(`/api/v1/companies/${companyId}/unarchive`)).body.archived).toBe(false);

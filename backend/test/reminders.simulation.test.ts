@@ -8,7 +8,7 @@
  * - the worker is down 20–25 Feb 2027 (the API keeps running; payments still happen)
  * - two schedulers run concurrently for the first 30 days
  * - the workspace moves from Africa/Kigali to America/New_York on 1 Jul 2027
- * - four extra subscriptions make digest days happen
+ * - four extra bills make digest days happen
  *
  * The expected reminders come from an independent oracle below (plain calendar maths,
  * not the production engine), and must match what was sent exactly.
@@ -20,7 +20,7 @@ import { workOnce } from '../src/notifications/scheduler.js';
 
 import { client } from './helpers/api.js';
 import { createTestContext } from './helpers/context.js';
-import { buildFixture, USERS, type Fixture, type SubscriptionKey, type UserKey } from './helpers/fixture.js';
+import { buildFixture, USERS, type Fixture, type BillKey, type UserKey } from './helpers/fixture.js';
 
 // ---------- independent calendar helpers (no production code) ----------
 const DAY = 86_400_000;
@@ -108,9 +108,9 @@ beforeAll(async () => {
   for (const who of ['admin', 'finance'] as const) {
     await client(app, fx.sessions[who]).post('/api/v1/devices').send({ expoPushToken: TOKENS[who], platform: 'android' });
   }
-  await as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds.cleaning}/mute`);
+  await as('finance').post(`/api/v1/bills/${fx.billIds.cleaning}/mute`);
   for (const name of ['Figma', 'Notion', 'Slack', 'Zoom']) {
-    const res = await as('admin').post('/api/v1/subscriptions').send({
+    const res = await as('admin').post('/api/v1/bills').send({
       name,
       companyId: fx.companies.beta,
       categoryId: fx.categories['Technology & software'],
@@ -125,16 +125,16 @@ beforeAll(async () => {
   ctx.mailer.sent.length = 0;
 
   const policies = new Map<string, Policy>([
-    [fx.subscriptionIds.internet, { kind: 'onDue' }],
-    [fx.subscriptionIds.cleaning, { kind: 'onDue' }],
-    [fx.subscriptionIds.workspace, { kind: 'onDue' }],
-    [fx.subscriptionIds.redesign, { kind: 'onDue' }],
-    [fx.subscriptionIds['alpha-domain'], { kind: 'onDue' }],
-    [fx.subscriptionIds['beta-x'], { kind: 'onDue' }],
-    [fx.subscriptionIds['beta-hosting'], { kind: 'onDue' }],
-    [fx.subscriptionIds.rent, { kind: 'before', days: 1 }],
-    [fx.subscriptionIds.insurance, { kind: 'before', days: 5 }],
-    [fx.subscriptionIds['alpha-cdn'], { kind: 'never' }],
+    [fx.billIds.internet, { kind: 'onDue' }],
+    [fx.billIds.cleaning, { kind: 'onDue' }],
+    [fx.billIds.workspace, { kind: 'onDue' }],
+    [fx.billIds.redesign, { kind: 'onDue' }],
+    [fx.billIds['alpha-domain'], { kind: 'onDue' }],
+    [fx.billIds['beta-x'], { kind: 'onDue' }],
+    [fx.billIds['beta-hosting'], { kind: 'onDue' }],
+    [fx.billIds.rent, { kind: 'before', days: 1 }],
+    [fx.billIds.insurance, { kind: 'before', days: 5 }],
+    [fx.billIds['alpha-cdn'], { kind: 'never' }],
     ...extraIds.map((id) => [id, { kind: 'onDue' }] as [string, Policy]),
   ]);
 
@@ -152,8 +152,8 @@ beforeAll(async () => {
       // 15:00 UTC: after both the Kigali (07:00Z) and New York (13:00Z) runs, same local date.
       if (day === '2026-11-10') await pay('alpha-hosting');
       if (day === '2027-02-27') await pay('beta-domain');
-      if (day === ARCHIVE_CLOUDFLARE) await as('admin').post(`/api/v1/subscriptions/${fx.subscriptionIds['alpha-cdn']}/archive`);
-      const open = await ctx.db.subscription.findMany({ where: { workspaceId: fx.workspaceId, status: 'ACTIVE' } });
+      if (day === ARCHIVE_CLOUDFLARE) await as('admin').post(`/api/v1/bills/${fx.billIds['alpha-cdn']}/archive`);
+      const open = await ctx.db.bill.findMany({ where: { workspaceId: fx.workspaceId, status: 'ACTIVE' } });
       for (const o of open) {
         const p = policies.get(o.id);
         if (!p || p.kind === 'never') continue;
@@ -171,11 +171,11 @@ beforeAll(async () => {
   console.log(`simulated a year in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 }, 20 * 60_000);
 
-async function pay(key: SubscriptionKey) {
-  await payId(fx.subscriptionIds[key]);
+async function pay(key: BillKey) {
+  await payId(fx.billIds[key]);
 }
 async function payId(id: string) {
-  const res = await as('finance').post(`/api/v1/subscriptions/${id}/payments`).send({ method: 'BANK_TRANSFER' });
+  const res = await as('finance').post(`/api/v1/bills/${id}/payments`).send({ method: 'BANK_TRANSFER' });
   expect(res.status, JSON.stringify(res.body)).toBe(201);
 }
 
@@ -184,10 +184,10 @@ afterAll(async () => {
 });
 
 // ---------- helpers to read what happened ----------
-async function inApp(subscriptionKey: SubscriptionKey, userKey: UserKey) {
+async function inApp(accountReference: BillKey, userKey: UserKey) {
   const rows = await ctx.db.notification.findMany({
     where: {
-      subscriptionId: fx.subscriptionIds[subscriptionKey],
+      billId: fx.billIds[accountReference],
       userId: fx.userIds[userKey],
       channel: 'IN_APP',
       type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] },
@@ -204,7 +204,7 @@ function localDay(d: Date): string {
 
 /** Every member gets every reminder, minus mutes. */
 const ALL_USERS: UserKey[] = ['admin', 'finance', 'viewer'];
-const RECIPIENTS: Partial<Record<SubscriptionKey, UserKey[]>> = {
+const RECIPIENTS: Partial<Record<BillKey, UserKey[]>> = {
   internet: ALL_USERS,
   cleaning: ['admin', 'viewer'], // Finance muted it
   rent: ALL_USERS,
@@ -213,7 +213,7 @@ const RECIPIENTS: Partial<Record<SubscriptionKey, UserKey[]>> = {
   'alpha-cdn': ALL_USERS,
 };
 
-const CYCLES: Partial<Record<SubscriptionKey, Cycle[]>> = {
+const CYCLES: Partial<Record<BillKey, Cycle[]>> = {
   internet: monthly('2026-11-05', 5, 1, plusDays(END, 31)).map((due) => ({ due, paidOn: due })),
   cleaning: weekly('2026-11-06', plusDays(END, 7)).map((due) => ({ due, paidOn: due })),
   rent: monthly('2026-11-30', 31, 1, plusDays(END, 31)).map((due) => ({ due, paidOn: plusDays(due, -1) })),
@@ -229,7 +229,7 @@ const CYCLES: Partial<Record<SubscriptionKey, Cycle[]>> = {
 };
 
 describe('a year of reminders', () => {
-  for (const key of Object.keys(CYCLES) as SubscriptionKey[]) {
+  for (const key of Object.keys(CYCLES) as BillKey[]) {
     it(`sends exactly the expected reminders for ${key} to exactly the right people`, async () => {
       const stop = key === 'alpha-cdn' ? ARCHIVE_CLOUDFLARE : END;
       const expected = expectedReminders(CYCLES[key]!, stop);
@@ -261,17 +261,17 @@ describe('a year of reminders', () => {
     expect(hosting.filter((r) => r.cycle === '2027-10-20').map((r) => r.offset)).toEqual(OFFSETS);
   });
 
-  it('stops for muted people and archived subscriptions', async () => {
+  it('stops for muted people and archived bills', async () => {
     expect(await inApp('cleaning', 'finance')).toEqual([]);
     const cloudflare = await inApp('alpha-cdn', 'admin');
     expect(cloudflare.at(-1)!.day <= ARCHIVE_CLOUDFLARE).toBe(true);
     const after = await ctx.db.notification.count({
-      where: { subscriptionId: fx.subscriptionIds['alpha-cdn'], createdAt: { gt: new Date(`${ARCHIVE_CLOUDFLARE}T15:00:00Z`) } },
+      where: { billId: fx.billIds['alpha-cdn'], createdAt: { gt: new Date(`${ARCHIVE_CLOUDFLARE}T15:00:00Z`) } },
     });
     expect(after).toBe(0);
   });
 
-  it('sends nothing during the outage and catches up with one message per subscription', async () => {
+  it('sends nothing during the outage and catches up with one message per bill', async () => {
     const during = await ctx.db.notification.count({
       where: {
         createdAt: { gte: new Date(`${DOWN_FROM}T00:00:00Z`), lt: new Date(`${plusDays(DOWN_TO, 1)}T00:00:00Z`) },
@@ -287,9 +287,9 @@ describe('a year of reminders', () => {
         type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] },
       },
     });
-    const perSubscription = new Map<string, number>();
-    for (const r of restart) perSubscription.set(r.subscriptionId!, (perSubscription.get(r.subscriptionId!) ?? 0) + 1);
-    expect([...perSubscription.values()].every((n) => n === 1)).toBe(true);
+    const perBill = new Map<string, number>();
+    for (const r of restart) perBill.set(r.billId!, (perBill.get(r.billId!) ?? 0) + 1);
+    expect([...perBill.values()].every((n) => n === 1)).toBe(true);
   });
 
   it('sends at 09:00 local time — Kigali, then New York after the move', async () => {
@@ -307,11 +307,11 @@ describe('a year of reminders', () => {
   it('never sends a duplicate, even with two schedulers racing', async () => {
     const rows = await ctx.db.notification.findMany({
       where: { workspaceId: fx.workspaceId },
-      select: { dedupeKey: true, userId: true, subscriptionId: true, cycleDueDate: true, offsetDays: true, channel: true, type: true },
+      select: { dedupeKey: true, userId: true, billId: true, cycleDueDate: true, offsetDays: true, channel: true, type: true },
     });
     expect(new Set(rows.map((r) => r.dedupeKey)).size).toBe(rows.length);
     const reminders = rows.filter((r) => ['REMINDER', 'DUE_TODAY', 'OVERDUE'].includes(r.type));
-    const logical = reminders.map((r) => [r.userId, r.subscriptionId, r.cycleDueDate, r.offsetDays, r.channel].join('|'));
+    const logical = reminders.map((r) => [r.userId, r.billId, r.cycleDueDate, r.offsetDays, r.channel].join('|'));
     expect(new Set(logical).size).toBe(logical.length);
     // Each push reached the phone exactly once.
     const tickets = ctx.push.sent.map((m) => `${m.to}|${(m.data as { notificationId: string }).notificationId}`);
@@ -329,7 +329,7 @@ describe('a year of reminders', () => {
       expect(sameRun.filter((n) => n.channel === 'IN_APP').length, label).toBeGreaterThan(3);
       expect(sameRun.filter((n) => n.channel === 'PUSH'), label).toHaveLength(0);
     }
-    // The admin's first digest: 15 Nov 2026 — the four new subscriptions and Google Workspace
+    // The admin's first digest: 15 Nov 2026 — the four new bills and Google Workspace
     // (all due 15 Dec) hit their 30-day reminder together.
     expect(digests[0]!.createdAt.toISOString()).toBe('2026-11-15T07:00:00.000Z');
   });

@@ -18,7 +18,7 @@ import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
-import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import { BillRow } from '@/components/bills/BillRow';
 import {
   Avatar,
   Card,
@@ -35,7 +35,7 @@ import {
   useDashboard,
   type Dashboard,
   type MoneyBlock,
-  type SubscriptionLite,
+  type BillLite,
 } from '@/features/insights/api';
 import { useInbox } from '@/features/notifications/api';
 import { useActiveWorkspaceSummary, usePermissions } from '@/features/workspaces/api';
@@ -87,11 +87,11 @@ function SummaryCard({
   );
 }
 
-const countLabel = (n: number) => `${n} ${n === 1 ? 'subscription' : 'subscriptions'}`;
+const countLabel = (n: number) => `${n} ${n === 1 ? 'bill' : 'bills'}`;
 
-/** One warm sentence about the most urgent subscription. */
+/** One warm sentence about the most urgent bill. */
 function headline(d: Dashboard): string {
-  const top: SubscriptionLite | undefined = d.needsAttention[0];
+  const top: BillLite | undefined = d.needsAttention[0];
   if (!top) return d.counts.active ? 'All caught up — nothing due this week 🎉' : '';
   const label = `${top.company.name} · ${top.name}`;
   const n = Math.abs(top.daysUntilDue);
@@ -120,28 +120,28 @@ function DashboardBody({ d }: { d: Dashboard }) {
   if (d.counts.total === 0) {
     return (
       <EmptyState
-        illustration="empty-subscriptions"
-        title="No subscriptions yet"
+        illustration="empty-bills"
+        title="No bills yet"
         message={
-          can.manageSubscriptions
+          can.manageBills
             ? 'Add your first one — hosting, domains, internet, rent… and DueOra will remind everyone before it’s due.'
             : 'Nothing has been added to this workspace yet. You’ll get reminders once it has.'
         }
-        actionLabel={can.manageSubscriptions ? 'Add your first subscription' : undefined}
-        onAction={can.manageSubscriptions ? () => router.push('/subscriptions/new') : undefined}
+        actionLabel={can.manageBills ? 'Add your first bill' : undefined}
+        onAction={can.manageBills ? () => router.push('/bills/new') : undefined}
       />
     );
   }
 
   const quick = [
-    ...(can.manageSubscriptions
+    ...(can.manageBills
       ? [
-          { label: t('home.qaAdd'), icon: Plus, onPress: () => router.push('/subscriptions/new') },
-          // A payment belongs to a subscription: start from the list, soonest due first.
+          { label: t('home.qaAdd'), icon: Plus, onPress: () => router.push('/bills/new') },
+          // A payment belongs to a bill: start from the list, soonest due first.
           {
             label: t('home.qaRecord'),
             icon: ReceiptText,
-            onPress: () => router.push('/subscriptions'),
+            onPress: () => router.push('/bills'),
           },
         ]
       : []),
@@ -246,16 +246,16 @@ function DashboardBody({ d }: { d: Dashboard }) {
         <SectionHeader
           title={t('home.needsAttention')}
           action={d.needsAttentionCount > 5 ? `View all ${d.needsAttentionCount}` : undefined}
-          onAction={() => router.push('/subscriptions')}
+          onAction={() => router.push('/bills')}
         />
         {d.needsAttention.length ? (
           <Card padding={0} style={{ overflow: 'hidden' }}>
             {d.needsAttention.map((s, i) => (
-              <SubscriptionRow
+              <BillRow
                 key={s.id}
                 compact
                 divider={i > 0}
-                onPress={() => router.push(`/subscriptions/${s.id}`)}
+                onPress={() => router.push(`/bills/${s.id}`)}
                 item={{
                   id: s.id,
                   name: s.name,
@@ -331,7 +331,7 @@ function DashboardBody({ d }: { d: Dashboard }) {
           <View style={{ gap: 10 }}>
             {d.next30Days.map((t) => (
               <View
-                key={`${t.subscription.id}-${t.date}`}
+                key={`${t.bill.id}-${t.date}`}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
               >
                 <View style={{ width: 44, alignItems: 'center' }}>
@@ -341,18 +341,18 @@ function DashboardBody({ d }: { d: Dashboard }) {
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <SubscriptionRow
+                  <BillRow
                     bordered
                     compact
-                    onPress={() => router.push(`/subscriptions/${t.subscription.id}`)}
+                    onPress={() => router.push(`/bills/${t.bill.id}`)}
                     item={{
-                      id: t.subscription.id,
-                      name: t.subscription.name,
-                      icon: t.subscription.category.icon,
+                      id: t.bill.id,
+                      name: t.bill.name,
+                      icon: t.bill.category.icon,
                       amountCents: t.amountCents,
                       date: t.date,
                       status: t.status,
-                      subtitle: `${t.subscription.company.name} · ${t.subscription.frequencyLabel}`,
+                      subtitle: `${t.bill.company.name} · ${t.bill.frequencyLabel}`,
                     }}
                   />
                 </View>

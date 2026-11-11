@@ -110,13 +110,13 @@ export function aiRouter(ctx: AppContext): Router {
     res.json(rows);
   });
 
-  router.post('/memory', requirePermission('subscriptions:manage'), async (req, res) => {
+  router.post('/memory', requirePermission('bills:manage'), async (req, res) => {
     const { text } = parseBody(req, MemoryBody);
     const m = await ctx.db.aiMemory.create({ data: { workspaceId: workspaceIdOf(req), text, createdBy: userIdOf(req), createdAt: ctx.clock.now() } });
     res.status(201).json({ id: m.id, text: m.text, createdAt: m.createdAt });
   });
 
-  router.delete('/memory/:id', requirePermission('subscriptions:manage'), async (req, res) => {
+  router.delete('/memory/:id', requirePermission('bills:manage'), async (req, res) => {
     const { id: mid } = parseParams(req, z.object({ id }));
     const r = await ctx.db.aiMemory.deleteMany({ where: { id: mid, workspaceId: workspaceIdOf(req) } });
     if (r.count === 0) throw notFound('Memory');

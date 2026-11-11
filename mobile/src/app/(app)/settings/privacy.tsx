@@ -42,17 +42,17 @@ export default function PrivacyScreen() {
   return (
     <Screen header={<TopBar title="Data & privacy" />} contentStyle={{ gap: 20, paddingBottom: 32 }}>
       <Text variant="small" tone="muted">
-        Your data belongs to you. DueOra never sells it, and subscription keys stay encrypted — exports only include them masked. 🔒
+        Your data belongs to you. DueOra never sells it, and account references stay encrypted — exports only include them masked. 🔒
       </Text>
 
-      {can.manageSubscriptions ? (
+      {can.manageBills ? (
         <View>
           <SectionHeader title="Export this workspace" />
           <Card padding={0} style={{ overflow: 'hidden' }}>
             <ListItem
               icon={<FileSpreadsheet size={19} color={colors.primaryStrong} />}
               title={exporting === 'xlsx' ? 'Preparing…' : 'Export as Excel'}
-              subtitle="Subscriptions, payments, companies, budgets"
+              subtitle="Bills, payments, companies, budgets"
               onPress={() => void exportAs('xlsx')}
             />
             <ListItem

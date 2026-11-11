@@ -280,3 +280,24 @@ kept their ids, so no data moves.
   plain sentence from the same facts is shown. Cached per workspace per local day.
 - **Evals** run offline with a scripted model in CI (pipeline and safety) and live with `npm run ai:eval`
   (tool-choice quality ≥ 80%) once the owner adds `GEMINI_API_KEY`.
+
+---
+
+# Finalize brief (11 Nov 2026)
+
+Reviewers' requirements: company-based bills, tracking, reports and notifications. Where the brief differs from
+the master prompt, the brief wins.
+
+## D34 — "Subscription" is now "Bill"; the subscription key is the bill's "Reference / account number"
+- Model, columns, routes (`/bills`), types, screens, copy, AI tools and knowledge base all say bill. The migration
+  renames tables, columns and indexes in place (SQLite and Postgres, hand-written; Prisma's generated diff
+  would have dropped the tables) and rewrites stored deep links (`dueora://subscriptions/…` → `bills/…`) and
+  audit-log labels. Verified on a copy of the local database and on PGlite (`npm run db:pg:verify`).
+- The key field is `accountReference` in the API (payments already use `reference` for the transfer reference);
+  columns `accountRef*`; env var `ACCOUNT_REF_SECRET` (was `SUBSCRIPTION_KEY_SECRET`); permission
+  `accountRefs:reveal`; reveal endpoint `GET /bills/:id/reference`. Same AES-256-GCM, HMAC search, masking and
+  ADMIN/FINANCE-only reveal.
+- Kept on purpose: the HKDF label `dueora.subscription-key` in `lib/secretBox.ts`. It is part of key derivation;
+  changing it would make every stored reference unreadable. "Subscription(s)" otherwise only appears as a kind
+  of bill (e.g. the "Software & subscriptions" category suggestion).
+- No `/subscriptions` alias is kept: production was never deployed, so no installed app calls the old paths.

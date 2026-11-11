@@ -11,8 +11,8 @@ import { Prisma, type NotificationType } from '../generated/prisma/client.js';
 
 import { checkBudgetAlerts } from '../modules/budgets/service.js';
 
-import { autoRenewCopy, digestCopy, subscriptionLabel, reminderCopy, trialEndingCopy } from './messages.js';
-import { createNotification, dedupeKey, subscriptionUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
+import { autoRenewCopy, digestCopy, billLabel, reminderCopy, trialEndingCopy } from './messages.js';
+import { createNotification, dedupeKey, billUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
 import { runSummaries } from './summaries.js';
 
 /** TRIAL_ENDING goes out this many days before the trial ends. */
@@ -33,7 +33,7 @@ interface OrgForReminders {
 }
 
 export interface PlannedReminder {
-  subscriptionId: string;
+  billId: string;
   cycleDueDate: string;
   offsetDays: number;
   type: NotificationType;
@@ -44,7 +44,7 @@ export interface PlannedReminder {
   /** Who gets it: every member, ADMIN/FINANCE only, or one user (the end of their snooze). */
   audience: 'all' | 'managers' | { userId: string };
   emailItem: {
-    subscriptionId: string;
+    billId: string;
     cycleDueDate: string;
     label: string;
     company: string;
@@ -107,14 +107,14 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   // Catch-up window: everything since the last run (yesterday on a normal day).
   const since = previous?.localDate ?? addDays(today, -1);
 
-  const subscriptions = await ctx.db.subscription.findMany({
+  const bills = await ctx.db.bill.findMany({
     where: { workspaceId: org.id, status: 'ACTIVE' },
     include: { company: { select: { name: true } } },
   });
-  const payments = subscriptions.length
+  const payments = bills.length
     ? await ctx.db.paymentRecord.findMany({
-        where: { workspaceId: org.id, OR: subscriptions.map((o) => ({ subscriptionId: o.id, cycleDueDate: o.nextDueDate })) },
-        select: { subscriptionId: true, cycleDueDate: true, amountCents: true },
+        where: { workspaceId: org.id, OR: bills.map((o) => ({ billId: o.id, cycleDueDate: o.nextDueDate })) },
+        select: { billId: true, cycleDueDate: true, amountCents: true },
       })
     : [];
   const members = await ctx.db.membership.findMany({
@@ -123,21 +123,21 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   });
   const everyone = recipientsFor(members);
   const managers = new Set(members.filter((m) => m.role !== 'VIEWER').map((m) => m.userId));
-  const snoozes = subscriptions.length
-    ? await ctx.db.reminderSnooze.findMany({ where: { subscriptionId: { in: subscriptions.map((s) => s.id) } } })
+  const snoozes = bills.length
+    ? await ctx.db.reminderSnooze.findMany({ where: { billId: { in: bills.map((s) => s.id) } } })
     : [];
-  const snoozeOf = (userId: string, subscriptionId: string, cycle: string) =>
-    snoozes.find((z) => z.userId === userId && z.subscriptionId === subscriptionId && z.cycleDueDate === cycle);
+  const snoozeOf = (userId: string, billId: string, cycle: string) =>
+    snoozes.find((z) => z.userId === userId && z.billId === billId && z.cycleDueDate === cycle);
 
   const planned: PlannedReminder[] = [];
-  for (const o of subscriptions) {
+  for (const o of bills) {
     const offsets = o.reminderOffsets as number[];
-    const paid = paidForCycle(payments.filter((p) => p.subscriptionId === o.id), o.nextDueDate);
+    const paid = paidForCycle(payments.filter((p) => p.billId === o.id), o.nextDueDate);
     const remaining = o.amountCents - paid;
-    const label = subscriptionLabel(o.name, o.company.name);
+    const label = billLabel(o.name, o.company.name);
     const days = daysBetween(today, o.nextDueDate);
     const emailItem = {
-      subscriptionId: o.id,
+      billId: o.id,
       cycleDueDate: o.nextDueDate,
       label,
       company: o.company.name,
@@ -146,12 +146,12 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
       dueDate: o.nextDueDate,
       daysUntilDue: days,
       partiallyPaid: paid > 0,
-      url: subscriptionUrl(ctx, o.id),
+      url: billUrl(ctx, o.id),
     };
     const dueReminder = (offsetDays: number, keyMoment: boolean, audience: PlannedReminder['audience']): PlannedReminder => {
       const copy = reminderCopy({ name: o.name, company: o.company.name, amountCents: remaining, dueDate: o.nextDueDate, daysUntilDue: days });
       return {
-        subscriptionId: o.id,
+        billId: o.id,
         cycleDueDate: o.nextDueDate,
         offsetDays,
         type: days > 0 ? 'REMINDER' : days === 0 ? 'DUE_TODAY' : 'OVERDUE',
@@ -169,7 +169,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
       if (t) {
         const copy = trialEndingCopy({ name: o.name, daysLeft: daysBetween(today, o.trialEndsOn) });
         planned.push({
-          subscriptionId: o.id,
+          billId: o.id,
           cycleDueDate: o.trialEndsOn,
           offsetDays: t.offsetDays,
           type: 'TRIAL_ENDING',
@@ -190,7 +190,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
       if (a && days > 0) {
         const copy = autoRenewCopy({ label, dueDate: o.nextDueDate, amountCents: remaining });
         planned.push({
-          subscriptionId: o.id,
+          billId: o.id,
           cycleDueDate: o.nextDueDate,
           offsetDays: a.offsetDays,
           type: 'AUTO_RENEW_NOTICE',
@@ -210,7 +210,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
     // A snooze that ended since the last run brings back one reminder for that user —
     // unless a scheduled one goes out today anyway.
     for (const z of snoozes) {
-      if (z.subscriptionId !== o.id || z.cycleDueDate !== o.nextDueDate) continue;
+      if (z.billId !== o.id || z.cycleDueDate !== o.nextDueDate) continue;
       if (z.snoozedUntil > since && z.snoozedUntil <= today && !r) planned.push(dueReminder(days, false, { userId: z.userId }));
     }
   }
@@ -222,7 +222,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
     for (const userId of targets) {
       if (!everyone.includes(userId)) continue;
       // Snoozed: nothing about this cycle until the snooze ends (trial notices still come).
-      const z = p.type !== 'TRIAL_ENDING' ? snoozeOf(userId, p.subscriptionId, p.cycleDueDate) : undefined;
+      const z = p.type !== 'TRIAL_ENDING' ? snoozeOf(userId, p.billId, p.cycleDueDate) : undefined;
       if (z && z.snoozedUntil > today) continue;
       perUser.set(userId, [...(perUser.get(userId) ?? []), p]);
     }
@@ -247,7 +247,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
 
 /**
  * Every workspace member (ADMIN, FINANCE and VIEWER) receives reminders. Users who muted
- * the subscription or turned a channel off are filtered later, per user (deliverToUser).
+ * the bill or turned a channel off are filtered later, per user (deliverToUser).
  */
 export function recipientsFor(members: { userId: string }[]): string[] {
   return [...new Set(members.map((m) => m.userId))];
@@ -262,17 +262,17 @@ async function deliverToUser(
   sendAfter: Date | null,
 ): Promise<number> {
   const prefs: Prefs = await prefsFor(ctx, userId, org.id);
-  const items = all.filter((i) => !prefs.muted.has(i.subscriptionId));
+  const items = all.filter((i) => !prefs.muted.has(i.billId));
   if (items.length === 0) return 0;
   const hasDevice = (await ctx.db.deviceToken.count({ where: { userId, active: true } })) > 0;
   const canPush = prefs.pushEnabled && hasDevice;
   let created = 0;
 
-  const key = (i: PlannedReminder, channel: string) => dedupeKey([org.id, i.subscriptionId, i.type, i.cycleDueDate, i.offsetDays, userId, channel]);
+  const key = (i: PlannedReminder, channel: string) => dedupeKey([org.id, i.billId, i.type, i.cycleDueDate, i.offsetDays, userId, channel]);
   const base = (i: PlannedReminder) => ({
     workspaceId: org.id,
     userId,
-    subscriptionId: i.subscriptionId,
+    billId: i.billId,
     type: i.type,
     title: i.title,
     body: i.body,

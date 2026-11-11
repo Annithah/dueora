@@ -26,12 +26,12 @@ export async function ensureAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('reminders', {
     name: 'Payment reminders',
-    description: 'Upcoming and due-today subscriptions',
+    description: 'Upcoming and due-today bills',
     importance: AndroidImportance.DEFAULT,
     lightColor: '#0F5C5C',
   });
   await Notifications.setNotificationChannelAsync('overdue', {
-    name: 'Overdue subscriptions',
+    name: 'Overdue bills',
     description: 'Payments that are past their due date',
     importance: AndroidImportance.HIGH,
     // Distinct from reminders: a longer pattern and the alarm-style default sound.
@@ -52,7 +52,7 @@ export async function ensureAndroidChannels(): Promise<void> {
 }
 
 /** Category id the server puts on reminder and overdue pushes. */
-export const REMINDER_CATEGORY = 'subscription-reminder';
+export const REMINDER_CATEGORY = 'bill-reminder';
 export const ACTIONS = { markPaid: 'mark-paid', snooze: 'snooze', open: 'open' } as const;
 
 /** "Mark as paid", "Snooze" and "Open" buttons on reminder pushes. Each opens the app. */
@@ -138,8 +138,8 @@ export function routeForNotification(
   action?: string,
 ): string | null {
   if (!data) return null;
-  if (typeof data.subscriptionId === 'string' && data.subscriptionId) {
-    const base = `/subscriptions/${data.subscriptionId}`;
+  if (typeof data.billId === 'string' && data.billId) {
+    const base = `/bills/${data.billId}`;
     if (action === ACTIONS.markPaid) return `${base}?record=1`;
     if (action === ACTIONS.snooze) return `${base}?snooze=1`;
     return base;
@@ -172,7 +172,7 @@ export async function setBadge(count: number): Promise<void> {
 
 export interface BackupEvent {
   key: string;
-  subscriptionId: string;
+  billId: string;
   type: 'DUE_TODAY' | 'OVERDUE';
   fireAt: string;
   title: string;
@@ -206,7 +206,7 @@ export async function syncBackupReminders(): Promise<number> {
         body: e.body,
         data: {
           backup: true,
-          subscriptionId: e.subscriptionId,
+          billId: e.billId,
           type: e.type,
           dedupeKey: e.key,
           url: e.url,

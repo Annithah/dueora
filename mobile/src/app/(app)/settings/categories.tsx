@@ -44,7 +44,7 @@ export default function CategoriesSettings() {
                   divider={i > 0}
                   leading={<CategoryIcon icon={c.icon} size={36} />}
                   title={c.name}
-                  subtitle={`${c.isDefault ? 'Built-in' : 'Custom'} · ${c.subscriptionCount ?? 0} subscription${c.subscriptionCount === 1 ? '' : 's'}`}
+                  subtitle={`${c.isDefault ? 'Built-in' : 'Custom'} · ${c.billCount ?? 0} bill${c.billCount === 1 ? '' : 's'}`}
                   trailing={
                     c.isDefault || !can.manageCategories ? undefined : (
                       <Pressable
@@ -63,7 +63,7 @@ export default function CategoriesSettings() {
           )}
         </QueryState>
         <Text variant="caption" tone="muted" style={{ marginTop: 6 }}>
-          A category in use can’t be deleted — move its subscriptions first.
+          A category in use can’t be deleted — move its bills first.
         </Text>
       </View>
 

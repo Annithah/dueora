@@ -38,7 +38,7 @@ enum FrequencyUnit {
   ONCE
 }
 
-enum SubscriptionStatus {
+enum BillStatus {
   ACTIVE
   ARCHIVED
   COMPLETED
@@ -145,7 +145,7 @@ model Workspace {
   memberships       Membership[]
   companies         Company[]
   categories        Category[]
-  subscriptions     Subscription[]
+  bills             Bill[]
   notifications     Notification[]
   notificationPrefs NotificationPreference[]
   auditLogs         AuditLog[]
@@ -226,18 +226,18 @@ model EmailToken {
   @@index([userId, purpose])
 }
 
-/// A company inside a workspace. Every subscription belongs to exactly one.
+/// A company inside a workspace. Every bill belongs to exactly one.
 model Company {
   id          String    @id @default(cuid())
   workspaceId String
   name        String
   color       String    @default("#0F5C5C")
-  /// Set when a company with subscriptions is "deleted": hidden from pickers, history kept.
+  /// Set when a company with bills is "deleted": hidden from pickers, history kept.
   archivedAt  DateTime?
   createdAt   DateTime  @default(now())
 
-  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  subscriptions Subscription[]
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  bills     Bill[]
 
   @@unique([workspaceId, name])
 }
@@ -252,49 +252,49 @@ model Category {
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  subscriptions Subscription[]
-  budgets       Budget[]
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  bills     Bill[]
+  budgets   Budget[]
 
   @@unique([workspaceId, name])
 }
 
-model Subscription {
-  id                       String             @id @default(cuid())
-  workspaceId              String
-  companyId                String
-  categoryId               String
-  name                     String
-  provider                 String?
-  description              String?
-  /// AES-256-GCM ciphertext of the subscription key (license key, account number, ...). See src/lib/secretBox.ts.
-  subscriptionKeyEncrypted String?
+model Bill {
+  id                   String         @id @default(cuid())
+  workspaceId          String
+  companyId            String
+  categoryId           String
+  name                 String
+  provider             String?
+  description          String?
+  /// AES-256-GCM ciphertext of the account reference (license key, account number, ...). See src/lib/secretBox.ts.
+  accountRefEncrypted  String?
   /// Last 4 characters, for the masked display "••••••4F7A".
-  subscriptionKeyLast4     String?
+  accountRefLast4      String?
   /// HMAC-SHA256 of the normalised key, for exact-match search without decrypting.
-  subscriptionKeyHash      String?
+  accountRefHash       String?
   /// US dollars, integer cents.
-  amountCents              Int
-  frequencyUnit            FrequencyUnit
-  frequencyInterval        Int                @default(1)
+  amountCents          Int
+  frequencyUnit        FrequencyUnit
+  frequencyInterval    Int            @default(1)
   /// Day of month (1–31) the schedule is anchored to, so month-end dates recover (31 → 28 → 31).
-  anchorDay                Int
+  anchorDay            Int
   /// "YYYY-MM-DD"
-  startDate                String
+  startDate            String
   /// "YYYY-MM-DD" — due date of the current (open) cycle.
-  nextDueDate              String
+  nextDueDate          String
   /// JSON int[] of days relative to the due date (negative = after).
-  reminderOffsets          Json
+  reminderOffsets      Json
   /// Renews (and charges) automatically: triggers an AUTO_RENEW_NOTICE before the due date.
-  autoRenew                Boolean            @default(false)
+  autoRenew            Boolean        @default(false)
   /// A free trial; trialEndsOn ("YYYY-MM-DD") triggers TRIAL_ENDING reminders.
-  isTrial                  Boolean            @default(false)
-  trialEndsOn              String?
+  isTrial              Boolean        @default(false)
+  trialEndsOn          String?
   /// Pre-selected method when recording a payment.
-  defaultPaymentMethod     PaymentMethod?
-  status                   SubscriptionStatus @default(ACTIVE)
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
+  defaultPaymentMethod PaymentMethod?
+  status               BillStatus     @default(ACTIVE)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
   workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   company       Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
@@ -308,29 +308,29 @@ model Subscription {
   @@index([workspaceId, status])
   @@index([workspaceId, companyId])
   @@index([workspaceId, categoryId])
-  @@index([workspaceId, subscriptionKeyHash])
+  @@index([workspaceId, accountRefHash])
 }
 
 model PaymentRecord {
-  id             String        @id @default(cuid())
+  id           String        @id @default(cuid())
   /// Denormalised for workspace-scoped queries and isolation checks.
-  workspaceId    String
-  subscriptionId String
+  workspaceId  String
+  billId       String
   /// "YYYY-MM-DD" — which cycle this payment belongs to.
-  cycleDueDate   String
+  cycleDueDate String
   /// US dollars, integer cents.
-  amountCents    Int
+  amountCents  Int
   /// "YYYY-MM-DD"
-  paidOn         String
-  method         PaymentMethod
-  reference      String?
-  notes          String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  paidOn       String
+  method       PaymentMethod
+  reference    String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
-  @@index([subscriptionId, cycleDueDate])
+  @@index([billId, cycleDueDate])
   @@index([workspaceId, paidOn])
   @@index([workspaceId, cycleDueDate])
 }
@@ -350,19 +350,19 @@ model DeviceToken {
 }
 
 model NotificationPreference {
-  userId               String
-  workspaceId          String
-  pushEnabled          Boolean  @default(true)
-  emailEnabled         Boolean  @default(true)
-  inAppEnabled         Boolean  @default(true)
-  digestEnabled        Boolean  @default(true)
-  weeklySummary        Boolean  @default(true)
-  monthlySummary       Boolean  @default(true)
-  budgetAlerts         Boolean  @default(true)
-  teamActivity         Boolean  @default(true)
-  /// JSON string[] of subscription ids the user muted.
-  mutedSubscriptionIds Json
-  updatedAt            DateTime @updatedAt
+  userId         String
+  workspaceId    String
+  pushEnabled    Boolean  @default(true)
+  emailEnabled   Boolean  @default(true)
+  inAppEnabled   Boolean  @default(true)
+  digestEnabled  Boolean  @default(true)
+  weeklySummary  Boolean  @default(true)
+  monthlySummary Boolean  @default(true)
+  budgetAlerts   Boolean  @default(true)
+  teamActivity   Boolean  @default(true)
+  /// JSON string[] of bill ids the user muted.
+  mutedBillIds   Json
+  updatedAt      DateTime @updatedAt
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -371,39 +371,39 @@ model NotificationPreference {
 }
 
 model Notification {
-  id             String              @id @default(cuid())
-  workspaceId    String
-  userId         String
-  subscriptionId String?
-  type           NotificationType
-  title          String
-  body           String
-  data           Json
+  id           String              @id @default(cuid())
+  workspaceId  String
+  userId       String
+  billId       String?
+  type         NotificationType
+  title        String
+  body         String
+  data         Json
   /// "YYYY-MM-DD"
-  cycleDueDate   String?
-  offsetDays     Int?
-  channel        NotificationChannel
-  status         NotificationStatus  @default(PENDING)
-  /// workspaceId:subscriptionId:type:cycleDueDate:offsetDays:userId:channel — unique so nothing is ever sent twice.
-  dedupeKey      String              @unique
-  attempts       Int                 @default(0)
-  error          String?
+  cycleDueDate String?
+  offsetDays   Int?
+  channel      NotificationChannel
+  status       NotificationStatus  @default(PENDING)
+  /// workspaceId:billId:type:cycleDueDate:offsetDays:userId:channel — unique so nothing is ever sent twice.
+  dedupeKey    String              @unique
+  attempts     Int                 @default(0)
+  error        String?
   /// Not delivered before this instant (quiet hours).
-  sendAfter      DateTime?
+  sendAfter    DateTime?
   /// Expo push ticket id, used to fetch the delivery receipt.
-  pushTicketId   String?
-  readAt         DateTime?
-  sentAt         DateTime?
-  createdAt      DateTime            @default(now())
+  pushTicketId String?
+  readAt       DateTime?
+  sentAt       DateTime?
+  createdAt    DateTime            @default(now())
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bill      Bill?     @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   @@index([userId, workspaceId, channel, createdAt])
   @@index([userId, workspaceId, channel, readAt])
   @@index([status, channel, sendAfter])
-  @@index([subscriptionId, cycleDueDate])
+  @@index([billId, cycleDueDate])
 }
 
 /// Internal audit trail. Never shown in the app as ownership ("created by", "assigned to").
@@ -458,18 +458,18 @@ model Job {
   @@index([queue, status, runAt])
 }
 
-/// Every change of a subscription's amount, for the price history ("$40.00 → $48.00 on 3 Mar").
+/// Every change of a bill's amount, for the price history ("$40.00 → $48.00 on 3 Mar").
 model PriceChange {
   id             String   @id @default(cuid())
   workspaceId    String
-  subscriptionId String
+  billId         String
   oldAmountCents Int
   newAmountCents Int
   changedAt      DateTime @default(now())
 
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
-  @@index([subscriptionId, changedAt])
+  @@index([billId, changedAt])
   @@index([workspaceId, changedAt])
 }
 
@@ -492,21 +492,21 @@ model Budget {
   @@unique([workspaceId, scope])
 }
 
-/// "Remind me later" for one cycle of one subscription.
+/// "Remind me later" for one cycle of one bill.
 model ReminderSnooze {
-  id             String   @id @default(cuid())
-  userId         String
-  subscriptionId String
+  id           String   @id @default(cuid())
+  userId       String
+  billId       String
   /// "YYYY-MM-DD" cycle the snooze applies to.
-  cycleDueDate   String
+  cycleDueDate String
   /// "YYYY-MM-DD" (workspace-local): reminders resume on this date.
-  snoozedUntil   String
-  createdAt      DateTime @default(now())
+  snoozedUntil String
+  createdAt    DateTime @default(now())
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, subscriptionId, cycleDueDate])
+  @@unique([userId, billId, cycleDueDate])
 }
 
 /// "Send feedback" from Help & feedback.
@@ -542,7 +542,7 @@ model AiMessage {
   conversationId String
   role           AiRole
   text           String
-  /// Cards (subscriptions, totals, pending actions) shown with the reply.
+  /// Cards (bills, totals, pending actions) shown with the reply.
   cards          Json
   createdAt      DateTime @default(now())
 

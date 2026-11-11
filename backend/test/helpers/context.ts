@@ -43,7 +43,7 @@ export function createTestContext(
     NODE_ENV: 'test',
     DATABASE_URL: `file:${file.split(path.sep).join('/')}`,
     JWT_ACCESS_SECRET: 'test-secret-test-secret-test-secret-123456',
-    SUBSCRIPTION_KEY_SECRET: 'test-subscription-key-secret-0123456789abcdef',
+    ACCOUNT_REF_SECRET: 'test-account-reference-secret-0123456789abcdef',
     LOG_LEVEL: 'silent',
     ...envOverrides,
   });
@@ -51,7 +51,7 @@ export function createTestContext(
     env,
     db: createDb(env.DATABASE_URL),
     logger: createLogger('silent'),
-    keys: createSecretBox('test-subscription-key-secret-0123456789abcdef'),
+    keys: createSecretBox('test-account-reference-secret-0123456789abcdef'),
     ...overrides,
     clock: new FakeClock(),
     mailer: new MemoryMailer(),

@@ -9,7 +9,7 @@ import { useTranslation } from '@/i18n';
 
 const TABS: Record<string, { icon: LucideIcon; label: string }> = {
   index: { icon: House, label: 'tabs.home' },
-  subscriptions: { icon: WalletCards, label: 'tabs.subscriptions' },
+  bills: { icon: WalletCards, label: 'tabs.bills' },
   calendar: { icon: CalendarDays, label: 'tabs.calendar' },
   more: { icon: Menu, label: 'tabs.more' },
 };
@@ -21,8 +21,8 @@ const FAB_RAISE = 14;
 const FAB_SIZE = 54;
 const ICON_SIZE = 24;
 const LABEL_SIZE = 11;
-/** Width of the longest label ("Subscriptions") in bold at 11px with -0.2 letter spacing. */
-const LONGEST_LABEL_WIDTH = 72;
+/** Width of the longest label (French "Calendrier") in bold at 11px with -0.2 letter spacing. */
+const LONGEST_LABEL_WIDTH = 58;
 
 /**
  * Label size for a given slot width: 11px wherever the longest label fits with a few px to
@@ -40,7 +40,7 @@ export interface TabBarProps extends BottomTabBarProps {
 }
 
 /**
- * Bottom navigation: equal slots — Home, Subscriptions, [+], Calendar, More.
+ * Bottom navigation: equal slots — Home, Bills, [+], Calendar, More.
  *
  * Every slot has the same fixed structure (24px icon over a one-line 11px label), so icons
  * and labels line up on one baseline. The "+" sits in its own slot and rises FAB_RAISE px
@@ -129,7 +129,7 @@ export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarP
         accessibilityLabel={t('tabs.add')}
         testID="tab-add"
         hitSlop={6}
-        onPress={() => router.push('/subscriptions/new')}
+        onPress={() => router.push('/bills/new')}
         style={({ pressed }) => ({
           width: FAB_SIZE,
           height: FAB_SIZE,
@@ -153,7 +153,7 @@ export function TabBar({ state, emitter, navigateToTab, canAdd = true }: TabBarP
   );
 
   const slots = tabs.map(renderTab);
-  // Home, Subscriptions, [+], Calendar, More.
+  // Home, Bills, [+], Calendar, More.
   if (canAdd) slots.splice(2, 0, addSlot);
 
   return (

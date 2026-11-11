@@ -33,7 +33,7 @@ export async function unsubscribeEmail(ctx: AppContext, userId: string, workspac
   if (!member) return false;
   await ctx.db.notificationPreference.upsert({
     where: { userId_workspaceId: { userId, workspaceId } },
-    create: { userId, workspaceId, emailEnabled: false, mutedSubscriptionIds: [] },
+    create: { userId, workspaceId, emailEnabled: false, mutedBillIds: [] },
     update: { emailEnabled: false },
   });
   return true;

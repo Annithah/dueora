@@ -50,22 +50,22 @@ export default function BudgetsSettings() {
               illustration="track"
               title="No budgets yet"
               message="A budget helps you spot a costly month before it happens."
-              actionLabel={can.manageSubscriptions ? 'Set a budget' : undefined}
-              onAction={can.manageSubscriptions ? () => edit(null) : undefined}
+              actionLabel={can.manageBills ? 'Set a budget' : undefined}
+              onAction={can.manageBills ? () => edit(null) : undefined}
             />
           ) : (
             <View style={{ gap: 12 }}>
               {list.map((b) => (
                 <Card key={b.id} style={{ gap: 10 }}>
                   <Pressable
-                    accessibilityRole={can.manageSubscriptions ? 'button' : undefined}
-                    accessibilityHint={can.manageSubscriptions ? 'Edit this budget' : undefined}
-                    disabled={!can.manageSubscriptions}
+                    accessibilityRole={can.manageBills ? 'button' : undefined}
+                    accessibilityHint={can.manageBills ? 'Edit this budget' : undefined}
+                    disabled={!can.manageBills}
                     onPress={() => edit(b.categoryId, b.monthlyLimitCents, b.alertAtPercent)}
                   >
                     <BudgetBar b={b} />
                   </Pressable>
-                  {can.manageSubscriptions ? (
+                  {can.manageBills ? (
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Remove the ${b.category?.name ?? 'workspace'} budget`}
@@ -80,7 +80,7 @@ export default function BudgetsSettings() {
                   ) : null}
                 </Card>
               ))}
-              {can.manageSubscriptions ? (
+              {can.manageBills ? (
                 <Button variant="secondary" onPress={() => edit(null)}>
                   Add a budget
                 </Button>

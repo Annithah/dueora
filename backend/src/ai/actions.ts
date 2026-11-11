@@ -7,7 +7,7 @@ import { AppError, forbidden, notFound } from '../http/errors.js';
 import { actorOf, workspaceIdOf } from '../http/middleware/auth.js';
 import { checkBudgetAlerts, upsertBudget } from '../modules/budgets/service.js';
 import { recordPayment } from '../modules/payments/service.js';
-import { createSubscription, loadSubscription, setArchived, snooze, updateSubscription, workspaceToday } from '../modules/subscriptions/service.js';
+import { createBill, loadBill, setArchived, snooze, updateBill, workspaceToday } from '../modules/bills/service.js';
 import { audit } from '../modules/workspaces/service.js';
 import { prefsFor } from '../notifications/store.js';
 
@@ -18,14 +18,14 @@ import type { ActionKind, Card } from './tools.js';
  * the same services and permission checks as the app's own screens, as the signed-in user.
  */
 const NEEDS: Record<ActionKind, WorkspaceAction | null> = {
-  add_subscription: 'subscriptions:manage',
+  add_bill: 'bills:manage',
   record_payment: 'payments:record',
-  update_subscription: 'subscriptions:manage',
-  archive: 'subscriptions:manage',
+  update_bill: 'bills:manage',
+  archive: 'bills:manage',
   create_company: 'companies:manage',
   create_category: 'categories:manage',
   set_budget: 'budgets:manage',
-  remember: 'subscriptions:manage',
+  remember: 'bills:manage',
   // Personal: they only change the caller's own reminders.
   snooze: null,
   mute: null,
@@ -35,13 +35,13 @@ async function execute(ctx: AppContext, req: Request, card: Extract<Card, { type
   const p = card.payload;
   const workspaceId = workspaceIdOf(req);
   switch (card.kind) {
-    case 'add_subscription': {
+    case 'add_bill': {
       let companyId = p.companyId as string | null;
       if (!companyId && p.newCompanyName) {
         const existing = await ctx.db.company.findFirst({ where: { workspaceId, name: String(p.newCompanyName) } });
         companyId = existing?.id ?? (await ctx.db.company.create({ data: { workspaceId, name: String(p.newCompanyName) } })).id;
       }
-      const s = await createSubscription(ctx, req, {
+      const s = await createBill(ctx, req, {
         name: String(p.name),
         companyId: companyId!,
         categoryId: String(p.categoryId),
@@ -58,38 +58,38 @@ async function execute(ctx: AppContext, req: Request, card: Extract<Card, { type
       return `Added ${s.company.name} · ${s.name} ✅ — next due ${s.nextDueDate}.`;
     }
     case 'record_payment': {
-      const r = await recordPayment(ctx, req, String(p.subscriptionId), {
+      const r = await recordPayment(ctx, req, String(p.billId), {
         amountCents: Number(p.amountCents),
         paidOn: String(p.paidOn),
         ...(p.method ? { method: p.method as PaymentMethod } : {}),
       });
       return r.cycleCompleted
-        ? `Payment recorded ✅ Next due: ${r.subscription.nextDueDate}.`
-        : `Payment recorded ✅ ${(r.subscription.remainingCents / 100).toFixed(2)} USD is still open on this cycle.`;
+        ? `Payment recorded ✅ Next due: ${r.bill.nextDueDate}.`
+        : `Payment recorded ✅ ${(r.bill.remainingCents / 100).toFixed(2)} USD is still open on this cycle.`;
     }
-    case 'update_subscription': {
-      const s = await updateSubscription(ctx, req, String(p.subscriptionId), p.changes as Record<string, never>);
+    case 'update_bill': {
+      const s = await updateBill(ctx, req, String(p.billId), p.changes as Record<string, never>);
       return `Updated ${s.company.name} · ${s.name} ✅`;
     }
     case 'snooze': {
-      const r = await snooze(ctx, req, String(p.subscriptionId), { days: Number(p.days) });
+      const r = await snooze(ctx, req, String(p.billId), { days: Number(p.days) });
       return `Snoozed until ${r.snoozedUntil} 😴`;
     }
     case 'mute': {
-      const s = await loadSubscription(ctx, req, String(p.subscriptionId));
+      const s = await loadBill(ctx, req, String(p.billId));
       const userId = actorOf(req).userId;
       const prefs = await prefsFor(ctx, userId, workspaceId);
       if (p.muted) prefs.muted.add(s.id);
       else prefs.muted.delete(s.id);
       await ctx.db.notificationPreference.upsert({
         where: { userId_workspaceId: { userId, workspaceId } },
-        update: { mutedSubscriptionIds: [...prefs.muted] },
-        create: { userId, workspaceId, mutedSubscriptionIds: [...prefs.muted] },
+        update: { mutedBillIds: [...prefs.muted] },
+        create: { userId, workspaceId, mutedBillIds: [...prefs.muted] },
       });
       return p.muted ? 'Muted for you 🔕' : 'Reminders are back on 🔔';
     }
     case 'archive': {
-      const s = await setArchived(ctx, req, String(p.subscriptionId), true);
+      const s = await setArchived(ctx, req, String(p.billId), true);
       return `Archived ${s.name}. Its history is kept.`;
     }
     case 'create_company': {

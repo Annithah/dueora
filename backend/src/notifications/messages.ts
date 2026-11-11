@@ -1,18 +1,18 @@
 import { formatLongDate, formatShortDay, formatUSD, plural } from '../lib/format.js';
 
 /**
- * Notification copy: human, specific, short, always in USD. Never includes a subscription key.
+ * Notification copy: human, specific, short, always in USD. Never includes an account reference.
  *
- *   ⏰ {Company} · {Subscription} is due in {n} days — {amount} on {weekday, date}.
- *   📅 Today: {Company} · {Subscription} — {amount}.
- *   ⚠️ {Company} · {Subscription} is {n} days overdue — {amount}. Tap to record the payment.
- *   ✅ {amount} recorded for {Company} · {Subscription}. Next due: {date}.
+ *   ⏰ {Company} · {Bill} is due in {n} days — {amount} on {weekday, date}.
+ *   📅 Today: {Company} · {Bill} — {amount}.
+ *   ⚠️ {Company} · {Bill} is {n} days overdue — {amount}. Tap to record the payment.
+ *   ✅ {amount} recorded for {Company} · {Bill}. Next due: {date}.
  *
  * Every name comes from the workspace's own data; nothing here is hardcoded.
  */
 
-/** "{Company} · {Subscription}" */
-export function subscriptionLabel(name: string, company: string): string {
+/** "{Company} · {Bill}" */
+export function billLabel(name: string, company: string): string {
   return `${company} · ${name}`;
 }
 
@@ -33,7 +33,7 @@ export interface Copy {
 
 /** Reminder copy from today's point of view (also correct for catch-up sends). */
 export function reminderCopy(r: ReminderCopyInput): Copy {
-  const label = subscriptionLabel(r.name, r.company);
+  const label = billLabel(r.name, r.company);
   const amount = formatUSD(r.amountCents);
   const d = r.daysUntilDue;
   if (d > 1) {
@@ -59,7 +59,7 @@ export function paymentRecordedCopy(input: {
   nextDueDate: string | null;
   cycleCompleted: boolean;
 }): Copy {
-  const label = subscriptionLabel(input.name, input.company);
+  const label = billLabel(input.name, input.company);
   const amount = formatUSD(input.amountCents);
   let tail: string;
   if (!input.nextDueDate) tail = 'That’s fully paid. 🎉';
@@ -71,7 +71,7 @@ export function paymentRecordedCopy(input: {
 export function digestCopy(count: number, labels: string[]): Copy {
   const shown = labels.slice(0, 3).join(', ');
   const more = labels.length > 3 ? ` and ${labels.length - 3} more` : '';
-  return { title: `🔔 ${plural(count, 'subscription')} need attention this week`, body: `${shown}${more}.` };
+  return { title: `🔔 ${plural(count, 'bill')} need attention this week`, body: `${shown}${more}.` };
 }
 
 export function trialEndingCopy(input: { name: string; daysLeft: number }): Copy {
@@ -117,13 +117,13 @@ export function weeklyDigestCopy(input: { count: number; totalCents: number; aiL
   const head =
     input.count === 0
       ? 'Nothing due this week — enjoy the calm. 🌿'
-      : `${plural(input.count, 'subscription')} due this week — ${formatUSD(input.totalCents)} in total.`;
+      : `${plural(input.count, 'bill')} due this week — ${formatUSD(input.totalCents)} in total.`;
   return { title: '🗓️ Your week ahead', body: input.aiLine ? `${head} ${input.aiLine}` : head };
 }
 
 export function monthlySummaryCopy(input: { monthLabel: string; paidCents: number; comingCents: number; comingCount: number }): Copy {
   return {
     title: `📈 ${input.monthLabel} in review`,
-    body: `You paid ${formatUSD(input.paidCents)} in ${input.monthLabel}. This month: ${plural(input.comingCount, 'subscription')}, ${formatUSD(input.comingCents)}.`,
+    body: `You paid ${formatUSD(input.paidCents)} in ${input.monthLabel}. This month: ${plural(input.comingCount, 'bill')}, ${formatUSD(input.comingCents)}.`,
   };
 }

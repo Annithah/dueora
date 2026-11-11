@@ -2,8 +2,8 @@
  * Role permissions (pure, no I/O).
  *
  * ADMIN    everything
- * FINANCE  manage subscriptions, payments, companies, categories and reports; cannot manage members
- * VIEWER   read-only; receives reminders; sees subscription keys masked only
+ * FINANCE  manage bills, payments, companies, categories and reports; cannot manage members
+ * VIEWER   read-only; receives reminders; sees account references masked only
  */
 
 export type Role = 'ADMIN' | 'FINANCE' | 'VIEWER';
@@ -17,8 +17,8 @@ export type WorkspaceAction =
   | 'invites:manage'
   | 'companies:manage'
   | 'categories:manage'
-  | 'subscriptions:manage'
-  | 'subscriptionKeys:reveal'
+  | 'bills:manage'
+  | 'accountRefs:reveal'
   | 'payments:record'
   | 'payments:edit'
   | 'reports:view'
@@ -37,8 +37,8 @@ const WORKSPACE_ACTIONS: Record<WorkspaceAction, readonly Role[]> = {
   'invites:manage': ['ADMIN'],
   'companies:manage': MANAGERS,
   'categories:manage': MANAGERS,
-  'subscriptions:manage': MANAGERS,
-  'subscriptionKeys:reveal': MANAGERS,
+  'bills:manage': MANAGERS,
+  'accountRefs:reveal': MANAGERS,
   'payments:record': MANAGERS,
   'payments:edit': MANAGERS,
   // Read-only access includes reports (see DECISIONS.md D15).

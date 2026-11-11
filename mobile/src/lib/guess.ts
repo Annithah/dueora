@@ -1,5 +1,5 @@
 /**
- * Offline category suggestion while typing a subscription name (mirrors
+ * Offline category suggestion while typing a bill name (mirrors
  * backend/src/domain/guess.ts). DueOra AI refines it when it's switched on.
  * Suggestions are only ever shown as a tappable chip, never applied silently.
  */
@@ -14,7 +14,7 @@ const CATEGORY_KEYWORDS: [string, RegExp][] = [
   ['Utilities', /\b(electric\w*|power|water|gas|utilit\w*|waste|garbage|security guard)\b/i],
   ['Transport', /\b(transport|fuel|petrol|diesel|car|vehicle|taxi|bus|parking|fleet|delivery)\b/i],
   ['Education & training', /\b(school|tuition|course|training|education|class|university|exam|books?|learning)\b/i],
-  ['Technology & software', /\b(software|licen[cs]e|saas|app|subscription|microsoft|adobe|antivirus|it support|api|crm|erp|accounting)\b/i],
+  ['Technology & software', /\b(software|licen[cs]e|saas|app|bill|microsoft|adobe|antivirus|it support|api|crm|erp|accounting)\b/i],
 ];
 
 export function guessCategoryName(text: string): string | null {

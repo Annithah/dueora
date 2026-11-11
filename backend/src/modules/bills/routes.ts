@@ -20,7 +20,7 @@ const fields = {
   categoryId: id,
   provider: optionalText(120),
   description: optionalText(2000),
-  subscriptionKey: optionalText(500),
+  accountReference: optionalText(500),
   amountCents,
   frequencyUnit: z.enum(UNITS),
   frequencyInterval: z.number().int().min(1).max(120),
@@ -39,7 +39,7 @@ const CreateBody = z
     ...fields,
     provider: fields.provider.optional(),
     description: fields.description.optional(),
-    subscriptionKey: fields.subscriptionKey.optional(),
+    accountReference: fields.accountReference.optional(),
     frequencyInterval: fields.frequencyInterval.default(1),
     anchorDay: fields.anchorDay.optional(),
     startDate: fields.startDate.optional(),
@@ -87,16 +87,16 @@ const SnoozeBody = z
   .strict()
   .refine((b) => (b.days === undefined) !== (b.until === undefined), 'Send either days or until');
 
-export function subscriptionsRouter(ctx: AppContext): Router {
+export function billsRouter(ctx: AppContext): Router {
   const router = Router();
   router.use(requireAuth(ctx), requireWorkspace(ctx));
-  const manage = requirePermission('subscriptions:manage');
+  const manage = requirePermission('bills:manage');
 
-  /** GET /subscriptions?page=&limit=10&sort=&q=&status=&companyId=&categoryId=&frequency=&dueFrom=&dueTo= */
+  /** GET /bills?page=&limit=10&sort=&q=&status=&companyId=&categoryId=&frequency=&dueFrom=&dueTo= */
   router.get('/', async (req, res) => {
     const q = parseQuery(req, ListQuery);
     res.json(
-      await svc.listSubscriptions(ctx, req, {
+      await svc.listBills(ctx, req, {
         q: q.q,
         sort: q.sort,
         statuses: q.status,
@@ -112,25 +112,25 @@ export function subscriptionsRouter(ctx: AppContext): Router {
   });
 
   router.post('/', manage, async (req, res) => {
-    res.status(201).json(await svc.createSubscription(ctx, req, parseBody(req, CreateBody)));
+    res.status(201).json(await svc.createBill(ctx, req, parseBody(req, CreateBody)));
   });
 
   router.get('/:id', async (req, res) => {
-    res.json(await svc.subscriptionDetail(ctx, req, parseParams(req, Params).id));
+    res.json(await svc.billDetail(ctx, req, parseParams(req, Params).id));
   });
 
-  /** The plain subscription key — ADMIN and FINANCE only; VIEWER only ever sees the masked value. */
-  router.get('/:id/key', requirePermission('subscriptionKeys:reveal'), async (req, res) => {
+  /** The plain account reference — ADMIN and FINANCE only; VIEWER only ever sees the masked value. */
+  router.get('/:id/reference', requirePermission('accountRefs:reveal'), async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json(await svc.revealKey(ctx, req, parseParams(req, Params).id));
+    res.json(await svc.revealReference(ctx, req, parseParams(req, Params).id));
   });
 
   router.patch('/:id', manage, async (req, res) => {
     const body = parseBody(req, UpdateBody);
     if (body.frequencyUnit === 'ONCE' && body.frequencyInterval && body.frequencyInterval > 1) {
-      throw badRequest('One-time subscriptions have no interval');
+      throw badRequest('One-time bills have no interval');
     }
-    res.json(await svc.updateSubscription(ctx, req, parseParams(req, Params).id, body));
+    res.json(await svc.updateBill(ctx, req, parseParams(req, Params).id, body));
   });
 
   router.post('/:id/archive', manage, async (req, res) => {
@@ -153,7 +153,7 @@ export function subscriptionsRouter(ctx: AppContext): Router {
   });
 
   router.delete('/:id', manage, async (req, res) => {
-    await svc.deleteSubscription(ctx, req, parseParams(req, Params).id);
+    await svc.deleteBill(ctx, req, parseParams(req, Params).id);
     res.status(204).end();
   });
 

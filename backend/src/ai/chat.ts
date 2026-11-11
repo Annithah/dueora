@@ -4,7 +4,7 @@ import type { AppContext } from '../context.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { AppError, notFound } from '../http/errors.js';
 import { actorOf, workspaceIdOf } from '../http/middleware/auth.js';
-import { workspaceToday } from '../modules/subscriptions/service.js';
+import { workspaceToday } from '../modules/bills/service.js';
 
 import { AiUnavailableError, type AiModel, type ToolCall, type Turn } from './model.js';
 import { SYSTEM_PROMPT, contextBlock } from './systemPrompt.js';
@@ -38,19 +38,19 @@ export async function logUsage(ctx: AppContext, workspaceId: string, userId: str
 }
 
 /**
- * A subscription key pasted into the chat must never reach the model: any word that matches
+ * An account reference pasted into the chat must never reach the model: any word that matches
  * a stored key of this workspace (by its keyed hash) is replaced before sending.
  */
 export async function redactKeys(ctx: AppContext, workspaceId: string, text: string): Promise<string> {
-  const rows = await ctx.db.subscription.findMany({ where: { workspaceId, subscriptionKeyHash: { not: null } }, select: { subscriptionKeyHash: true } });
+  const rows = await ctx.db.bill.findMany({ where: { workspaceId, accountRefHash: { not: null } }, select: { accountRefHash: true } });
   if (rows.length === 0) return text;
-  const hashes = new Set(rows.map((r) => r.subscriptionKeyHash));
+  const hashes = new Set(rows.map((r) => r.accountRefHash));
   return text.replace(/[A-Za-z0-9][A-Za-z0-9\-_ ]{3,80}[A-Za-z0-9]/g, (chunk) => {
     // Try the whole run and each word in it (keys can contain spaces or dashes).
-    if (hashes.has(ctx.keys.hash(chunk))) return '[subscription key hidden]';
+    if (hashes.has(ctx.keys.hash(chunk))) return '[account reference hidden]';
     return chunk
       .split(' ')
-      .map((w) => (w.length >= 4 && hashes.has(ctx.keys.hash(w)) ? '[subscription key hidden]' : w))
+      .map((w) => (w.length >= 4 && hashes.has(ctx.keys.hash(w)) ? '[account reference hidden]' : w))
       .join(' ');
   });
 }

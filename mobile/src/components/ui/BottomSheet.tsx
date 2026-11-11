@@ -28,7 +28,7 @@ export interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
   title?: string;
-  /** Small line above the title (e.g. the subscription name). */
+  /** Small line above the title (e.g. the bill name). */
   eyebrow?: string;
   children: ReactNode;
   /** Max height as a fraction of the window (default 0.92). */

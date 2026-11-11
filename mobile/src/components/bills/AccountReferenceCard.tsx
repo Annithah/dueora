@@ -5,11 +5,11 @@ import { ActivityIndicator, View } from 'react-native';
 
 import { ApiError } from '@/api';
 import { Card, IconButton, Text, toast } from '@/components/ui';
-import { useRevealKey, type MaskedKey } from '@/features/subscriptions/api';
+import { useRevealReference, type MaskedKey } from '@/features/bills/api';
 import { useTheme } from '@/theme';
 
-export interface SubscriptionKeyCardProps {
-  subscriptionId: string;
+export interface AccountReferenceCardProps {
+  billId: string;
   value: MaskedKey;
   /** ADMIN and FINANCE may reveal and copy the plain key; VIEWER only sees the masked value. */
   canReveal: boolean;
@@ -19,9 +19,9 @@ export interface SubscriptionKeyCardProps {
 const HIDE_AFTER_MS = 30_000;
 
 /** Shows "••••••4F7A" with Show (eye) and Copy buttons. The plain key never enters the query cache. */
-export function SubscriptionKeyCard({ subscriptionId, value, canReveal }: SubscriptionKeyCardProps) {
+export function AccountReferenceCard({ billId, value, canReveal }: AccountReferenceCardProps) {
   const { colors } = useTheme();
-  const reveal = useRevealKey();
+  const reveal = useRevealReference();
   const [plain, setPlain] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export function SubscriptionKeyCard({ subscriptionId, value, canReveal }: Subscr
   const fetchPlain = async (): Promise<string | null> => {
     if (plain) return plain;
     try {
-      const res = await reveal.mutateAsync(subscriptionId);
+      const res = await reveal.mutateAsync(billId);
       return res.value;
     } catch (err) {
       toast.error('Could not show the key', err instanceof ApiError ? err.message : undefined);
@@ -57,14 +57,14 @@ export function SubscriptionKeyCard({ subscriptionId, value, canReveal }: Subscr
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="caption" tone="muted">
-          Subscription key
+          Reference / account number
         </Text>
-        <Text variant="bodyStrong" selectable={!!plain} numberOfLines={2} accessibilityLabel={plain ? `Key ${plain}` : `Key ending in ${value.last4}`}>
+        <Text variant="bodyStrong" selectable={!!plain} numberOfLines={2} accessibilityLabel={plain ? `Reference ${plain}` : `Reference ending in ${value.last4}`}>
           {plain ?? value.masked}
         </Text>
         {!canReveal ? (
           <Text variant="caption" tone="muted">
-            Only admins and finance can view the full key
+            Only admins and finance can view the full reference
           </Text>
         ) : null}
       </View>

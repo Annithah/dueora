@@ -197,9 +197,9 @@ describe('EmptyState', () => {
     const onAction = jest.fn();
     await renderWithTheme(
       <EmptyState
-        illustration="empty-subscriptions"
+        illustration="empty-bills"
         title="No payments yet"
-        message="Add your first subscription and DueOra will keep watch."
+        message="Add your first bill and DueOra will keep watch."
         actionLabel="Add payment"
         onAction={onAction}
       />,

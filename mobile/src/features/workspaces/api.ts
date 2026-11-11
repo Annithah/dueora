@@ -15,7 +15,7 @@ export interface Workspace {
   quietHoursEnd: number | null;
   defaultReminderOffsets: number[];
   memberCount: number;
-  subscriptionCount: number;
+  billCount: number;
   companyCount: number;
   myRole?: Role;
 }
@@ -101,7 +101,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ADMIN: 'Everything, including team and workspace settings',
-  FINANCE: 'Manage subscriptions, payments and reports',
+  FINANCE: 'Manage bills, payments and reports',
   VIEWER: 'Read-only, receives reminders',
 };
 
@@ -109,7 +109,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 export function permissionsFor(role: Role | undefined) {
   const manager = role === 'ADMIN' || role === 'FINANCE';
   return {
-    manageSubscriptions: manager,
+    manageBills: manager,
     recordPayments: manager,
     editPayments: manager,
     manageCompanies: manager,

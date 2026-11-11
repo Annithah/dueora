@@ -48,7 +48,7 @@ export function inviteMessage(opts: {
     html: renderLayout({
       preheader: `Join ${opts.orgName} as ${opts.roleLabel}.`,
       heading: `You're invited to ${opts.orgName}`,
-      bodyHtml: `<p style="margin:0 0 12px">${esc(opts.inviterName)} added you as <b>${esc(opts.roleLabel)}</b> so you can keep track of subscriptions and renewals together.</p><p style="margin:0 0 16px;color:#667373">The invitation expires in 7 days.</p>`,
+      bodyHtml: `<p style="margin:0 0 12px">${esc(opts.inviterName)} added you as <b>${esc(opts.roleLabel)}</b> so you can keep track of bills and renewals together.</p><p style="margin:0 0 16px;color:#667373">The invitation expires in 7 days.</p>`,
       button: { label: 'Accept invitation', url: opts.acceptUrl },
       footerNote: "If you weren't expecting this, you can ignore it.",
     }),

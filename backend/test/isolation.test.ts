@@ -19,7 +19,7 @@ let wsB: string;
 let bMemberId: string;
 let bCompanyId: string;
 let bCategoryId: string;
-let bSubscriptionId: string;
+let bBillId: string;
 let bPaymentId: string;
 
 const a = () => client(app, aliceA, wsA);
@@ -37,17 +37,17 @@ beforeAll(async () => {
   bMemberId = members.body.find((m: { email: string }) => m.email === 'carol@b.test').id;
   bCompanyId = (await b.post('/api/v1/companies').send({ name: 'B-Company' })).body.id;
   bCategoryId = (await b.post('/api/v1/categories').send({ name: 'B-Only', icon: 'tag', color: '#111111' })).body.id;
-  const created = await b.post('/api/v1/subscriptions').send({
+  const created = await b.post('/api/v1/bills').send({
     name: 'B secret hosting',
     companyId: bCompanyId,
     categoryId: bCategoryId,
     amountCents: 99_900,
     frequencyUnit: 'YEAR',
-    subscriptionKey: 'B-SECRET-KEY-1234',
+    accountReference: 'B-SECRET-KEY-1234',
   });
   expect(created.status).toBe(201);
-  bSubscriptionId = created.body.id;
-  const paid = await b.post(`/api/v1/subscriptions/${bSubscriptionId}/payments`).send({ amountCents: 100, method: 'CASH' });
+  bBillId = created.body.id;
+  const paid = await b.post(`/api/v1/bills/${bBillId}/payments`).send({ amountCents: 100, method: 'CASH' });
   bPaymentId = paid.body.payment.id;
 });
 
@@ -70,7 +70,7 @@ describe('workspace-level isolation', () => {
     ['post', '/api/v1/workspaces/current/invites', { email: 'spy@a.test', role: 'ADMIN' }],
     ['delete', '/api/v1/workspaces/current', { confirmName: 'Workspace B' }],
     ['get', '/api/v1/companies', undefined],
-    ['get', '/api/v1/subscriptions', undefined],
+    ['get', '/api/v1/bills', undefined],
     ['get', '/api/v1/payments', undefined],
     ['get', '/api/v1/dashboard', undefined],
     ['get', '/api/v1/reports', undefined],
@@ -92,11 +92,11 @@ describe('workspace-level isolation', () => {
   });
 });
 
-describe('data isolation: companies, categories, subscriptions, payments', () => {
+describe('data isolation: companies, categories, bills, payments', () => {
   it("workspace A never sees workspace B's data in any list", async () => {
-    expect((await a().get('/api/v1/subscriptions')).body.total).toBe(0);
-    expect((await a().get('/api/v1/subscriptions').query({ companyId: bCompanyId })).body.total).toBe(0);
-    expect((await a().get('/api/v1/subscriptions').query({ q: 'B-SECRET-KEY-1234' })).body.total).toBe(0);
+    expect((await a().get('/api/v1/bills')).body.total).toBe(0);
+    expect((await a().get('/api/v1/bills').query({ companyId: bCompanyId })).body.total).toBe(0);
+    expect((await a().get('/api/v1/bills').query({ q: 'B-SECRET-KEY-1234' })).body.total).toBe(0);
     expect((await a().get('/api/v1/payments')).body.total).toBe(0);
     expect((await a().get('/api/v1/companies')).body.map((c: { name: string }) => c.name)).toEqual(['Workspace A']);
     expect((await a().get('/api/v1/categories')).body.some((c: { id: string }) => c.id === bCategoryId)).toBe(false);
@@ -108,16 +108,16 @@ describe('data isolation: companies, categories, subscriptions, payments', () =>
 
   it.each([
     ['get', ''],
-    ['get', '/key'],
+    ['get', '/reference'],
     ['patch', ''],
     ['post', '/archive'],
     ['post', '/unarchive'],
     ['post', '/payments'],
     ['post', '/mute'],
     ['delete', ''],
-  ] as const)("workspace A cannot %s workspace B's subscription%s", async (method, suffix) => {
+  ] as const)("workspace A cannot %s workspace B's bill%s", async (method, suffix) => {
     const body = suffix === '/payments' ? { method: 'CASH' } : method === 'patch' ? { name: 'Hijacked' } : {};
-    const res = await a()[method](`/api/v1/subscriptions/${bSubscriptionId}${suffix}`).send(body);
+    const res = await a()[method](`/api/v1/bills/${bBillId}${suffix}`).send(body);
     expect(res.status).toBe(404);
   });
 
@@ -132,18 +132,18 @@ describe('data isolation: companies, categories, subscriptions, payments', () =>
     expect((await a().delete(`/api/v1/categories/${bCategoryId}`)).status).toBe(404);
   });
 
-  it("workspace A cannot use workspace B's company or category on its own subscription", async () => {
+  it("workspace A cannot use workspace B's company or category on its own bill", async () => {
     const own = (await a().get('/api/v1/companies')).body[0].id;
     const cats = await a().get('/api/v1/categories');
     const body = { name: 'X', amountCents: 100, frequencyUnit: 'MONTH' };
-    expect((await a().post('/api/v1/subscriptions').send({ ...body, companyId: bCompanyId, categoryId: cats.body[0].id })).status).toBe(400);
-    expect((await a().post('/api/v1/subscriptions').send({ ...body, companyId: own, categoryId: bCategoryId })).status).toBe(400);
+    expect((await a().post('/api/v1/bills').send({ ...body, companyId: bCompanyId, categoryId: cats.body[0].id })).status).toBe(400);
+    expect((await a().post('/api/v1/bills').send({ ...body, companyId: own, categoryId: bCategoryId })).status).toBe(400);
   });
 
   it("workspace B's data is unchanged after every attempt", async () => {
     expect((await ctx.db.workspace.findUniqueOrThrow({ where: { id: wsB } })).name).toBe('Workspace B');
     expect((await ctx.db.membership.findUniqueOrThrow({ where: { id: bMemberId } })).role).toBe('VIEWER');
-    expect(await ctx.db.subscription.findUniqueOrThrow({ where: { id: bSubscriptionId } })).toMatchObject({
+    expect(await ctx.db.bill.findUniqueOrThrow({ where: { id: bBillId } })).toMatchObject({
       name: 'B secret hosting',
       status: 'ACTIVE',
       workspaceId: wsB,

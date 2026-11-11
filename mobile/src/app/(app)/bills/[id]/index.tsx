@@ -23,7 +23,7 @@ import { useState } from 'react';
 import { RefreshControl, View } from 'react-native';
 
 import { QueryState } from '@/components/layout/QueryState';
-import { SubscriptionKeyCard } from '@/components/subscriptions/SubscriptionKeyCard';
+import { AccountReferenceCard } from '@/components/bills/AccountReferenceCard';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
 import {
@@ -45,13 +45,13 @@ import { useMute } from '@/features/notifications/api';
 import {
   METHOD_LABELS,
   SNOOZE_CHOICES,
-  useArchiveSubscription,
+  useArchiveBill,
   useSnooze,
-  useDeleteSubscription,
-  useSubscription,
-  type SubscriptionDetail,
-} from '@/features/subscriptions/api';
-import { RecordPaymentSheet } from '@/features/subscriptions/RecordPaymentSheet';
+  useDeleteBill,
+  useBill,
+  type BillDetail,
+} from '@/features/bills/api';
+import { RecordPaymentSheet } from '@/features/bills/RecordPaymentSheet';
 import { usePermissions, useWorkspaceToday } from '@/features/workspaces/api';
 import { formatDate, humanSpan } from '@/lib/dates';
 import { formatUSD } from '@/lib/money';
@@ -72,7 +72,7 @@ function Detail({
   setMenuOpen,
   intent,
 }: {
-  o: SubscriptionDetail;
+  o: BillDetail;
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
   /** Set when opened from a notification button ("Mark as paid" / "Snooze"). */
@@ -80,10 +80,10 @@ function Detail({
 }) {
   const { colors } = useTheme();
   const can = usePermissions();
-  const canManage = can.manageSubscriptions;
+  const canManage = can.manageBills;
   const mute = useMute();
-  const archive = useArchiveSubscription();
-  const del = useDeleteSubscription();
+  const archive = useArchiveBill();
+  const del = useDeleteBill();
   // Opened from "Mark as paid" or "Snooze" on a notification: start with that sheet open.
   const [recordOpen, setRecordOpen] = useState(intent === 'record' && canManage && o.status === 'ACTIVE');
   // A new key per opening gives the sheet fresh fields every time.
@@ -221,9 +221,9 @@ function Detail({
             trailing={<Text variant="bodyStrong">{formatDate(o.startDate)}</Text>}
           />
         </Card>
-        {o.subscriptionKey ? (
+        {o.accountReference ? (
           <View style={{ marginTop: 12 }}>
-            <SubscriptionKeyCard subscriptionId={o.id} value={o.subscriptionKey} canReveal={can.revealKeys} />
+            <AccountReferenceCard billId={o.id} value={o.accountReference} canReveal={can.revealKeys} />
           </View>
         ) : null}
         {o.description ? (
@@ -238,7 +238,7 @@ function Detail({
           <SectionHeader
             title="Reminder schedule"
             action={canManage ? 'Edit' : undefined}
-            onAction={() => router.push(`/subscriptions/${o.id}/edit`)}
+            onAction={() => router.push(`/bills/${o.id}/edit`)}
           />
           <Card style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 12 }}>
             {o.reminders.map((r) => (
@@ -278,7 +278,7 @@ function Detail({
         <SectionHeader
           title="Payment history"
           action={o.historyTotal > o.history.length ? `View all ${o.historyTotal}` : undefined}
-          onAction={() => router.push({ pathname: '/history', params: { subscriptionId: o.id, name: o.name } })}
+          onAction={() => router.push({ pathname: '/history', params: { billId: o.id, name: o.name } })}
         />
         {o.history.length ? (
           <Card style={{ paddingVertical: 4 }}>
@@ -350,7 +350,7 @@ function Detail({
           <Button
             variant="secondary"
             style={{ flex: 0.7 }}
-            onPress={() => router.push(`/subscriptions/${o.id}/edit`)}
+            onPress={() => router.push(`/bills/${o.id}/edit`)}
           >
             Edit
           </Button>
@@ -369,7 +369,7 @@ function Detail({
 
       <RecordPaymentSheet
         key={recordKey}
-        subscription={o}
+        bill={o}
         today={today}
         visible={recordOpen}
         onClose={() => setRecordOpen(false)}
@@ -427,7 +427,7 @@ function Detail({
           onPress={() => {
             setMenuOpen(false);
             mute.mutate(
-              { subscriptionId: o.id, muted: !muted },
+              { billId: o.id, muted: !muted },
               { onSuccess: () => toast.info(muted ? 'Reminders back on' : 'Muted for you') },
             );
           }}
@@ -463,7 +463,7 @@ function Detail({
             divider
             destructive
             icon={<Trash2 size={19} color={colors.red} />}
-            title="Delete subscription"
+            title="Delete bill"
             onPress={() => {
               setMenuOpen(false);
               setConfirmDelete(true);
@@ -478,7 +478,7 @@ function Detail({
         title={`Delete ${o.name}?`}
       >
         <Text variant="body" tone="muted">
-          This removes the subscription and its reminders. It can’t be undone.
+          This removes the bill and its reminders. It can’t be undone.
         </Text>
         <Button
           full
@@ -520,11 +520,11 @@ function TopBarMenu({
   );
 }
 
-export default function SubscriptionDetailScreen() {
+export default function BillDetailScreen() {
   const { colors } = useTheme();
   const { id, record, snooze } = useLocalSearchParams<{ id: string; record?: string; snooze?: string }>();
   const intent = record ? 'record' : snooze ? 'snooze' : undefined;
-  const query = useSubscription(id);
+  const query = useBill(id);
   const [refreshing, setRefreshing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -532,7 +532,7 @@ export default function SubscriptionDetailScreen() {
     <Screen
       header={
         <TopBar
-          title="Subscription"
+          title="Bill"
           action={
             query.data ? (
               <IconButton accessibilityLabel="More options" onPress={() => setMenuOpen(true)}>
@@ -560,7 +560,7 @@ export default function SubscriptionDetailScreen() {
           o ? (
             <Detail o={o} menuOpen={menuOpen} setMenuOpen={setMenuOpen} intent={intent} />
           ) : (
-            <EmptyState illustration="no-results" title="Subscription not found" />
+            <EmptyState illustration="no-results" title="Bill not found" />
           )
         }
       </QueryState>

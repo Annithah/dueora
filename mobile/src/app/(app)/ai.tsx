@@ -100,7 +100,7 @@ function CardView({
 }) {
   const { colors } = useTheme();
   const resolve = useResolveAction();
-  if (card.type === 'subscriptions') {
+  if (card.type === 'bills') {
     return (
       <Card padding={0} style={{ overflow: 'hidden' }}>
         <Text variant="captionStrong" tone="muted" style={{ padding: 10, paddingBottom: 4 }}>
@@ -110,7 +110,7 @@ function CardView({
           <Pressable
             key={s.id}
             accessibilityRole="button"
-            onPress={() => router.push(`/subscriptions/${s.id}`)}
+            onPress={() => router.push(`/bills/${s.id}`)}
             style={{
               flexDirection: 'row',
               alignItems: 'center',

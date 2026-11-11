@@ -53,7 +53,7 @@ export default function CompaniesSettings() {
   return (
     <Screen header={<TopBar title="Companies" />} contentStyle={{ gap: 20, paddingBottom: 32 }}>
       <Text variant="body" tone="muted">
-        Every subscription belongs to one company — e.g. each brand, site or business you pay for.
+        Every bill belongs to one company — e.g. each brand, site or business you pay for.
       </Text>
       <QueryState query={companies}>
         {(list) => {
@@ -75,14 +75,14 @@ export default function CompaniesSettings() {
                         divider={i > 0}
                         leading={<View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: c.color }} />}
                         title={c.name}
-                        subtitle={`${c.subscriptionCount} subscription${c.subscriptionCount === 1 ? '' : 's'}`}
+                        subtitle={`${c.billCount} bill${c.billCount === 1 ? '' : 's'}`}
                         onPress={can.manageCompanies ? () => open({ mode: 'edit', company: c }) : undefined}
                         trailing={can.manageCompanies ? <Pencil size={17} color={colors.muted} /> : undefined}
                       />
                     ))}
                   </Card>
                 ) : (
-                  <EmptyState compact illustration="team" title="No companies yet" message="Add one to start adding subscriptions." />
+                  <EmptyState compact illustration="team" title="No companies yet" message="Add one to start adding bills." />
                 )}
               </View>
               {archived.length ? (
@@ -153,18 +153,18 @@ export default function CompaniesSettings() {
                 setEditing(null);
               }}
             >
-              {editing.company.subscriptionCount ? 'Archive company' : 'Delete company'}
+              {editing.company.billCount ? 'Archive company' : 'Delete company'}
             </Button>
           ) : null}
         </View>
       </BottomSheet>
 
-      <BottomSheet visible={!!confirm} onClose={() => setConfirm(null)} title={confirm?.subscriptionCount ? `Archive ${confirm.name}?` : `Delete ${confirm?.name}?`}>
+      <BottomSheet visible={!!confirm} onClose={() => setConfirm(null)} title={confirm?.billCount ? `Archive ${confirm.name}?` : `Delete ${confirm?.name}?`}>
         <View style={{ gap: 14 }}>
           <Text variant="body" tone="muted">
-            {confirm?.subscriptionCount
-              ? 'It has subscriptions, so it will be archived: hidden from pickers, with every subscription and payment kept.'
-              : 'It has no subscriptions, so it will be deleted.'}
+            {confirm?.billCount
+              ? 'It has bills, so it will be archived: hidden from pickers, with every bill and payment kept.'
+              : 'It has no bills, so it will be deleted.'}
           </Text>
           <Button
             full
@@ -180,7 +180,7 @@ export default function CompaniesSettings() {
               })
             }
           >
-            {confirm?.subscriptionCount ? 'Archive' : 'Delete'}
+            {confirm?.billCount ? 'Archive' : 'Delete'}
           </Button>
         </View>
       </BottomSheet>

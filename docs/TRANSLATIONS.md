@@ -32,7 +32,7 @@ strings at the same time. Push notifications and emails are written by the serve
 
 | Key | Draft | Question |
 |---|---|---|
-| `tabs.subscriptions` | Ifatabuguzi | Is this the word people use for a recurring subscription? Alternatives: "Abonema", "Kwiyandikisha". |
+| `tabs.bills` | Ifatabuguzi | Is this the word people use for a recurring bill? Alternatives: "Abonema", "Kwiyandikisha". |
 | `home.goodAfternoon` / `home.goodEvening` | Mwiriwe | Both use "Mwiriwe" — is a separate evening greeting better? |
 | `home.budget` | Ingengo y'imari y'ukwezi | Too formal for a card label? |
 | `more.eyebrow` | Aho ukorera | "Workspace" — would "Ikigo" or keeping "Workspace" read better? |

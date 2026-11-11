@@ -16,7 +16,7 @@ export async function createWorkspace(
 ) {
   await ensureDefaultCategories(ctx.db);
   const name = input.name.trim();
-  // Every subscription belongs to a company, so a workspace always starts with one.
+  // Every bill belongs to a company, so a workspace always starts with one.
   const firstCompany = input.firstCompanyName?.trim() || (input.type === 'PERSONAL' ? 'Personal' : name);
   const org = await ctx.db.workspace.create({
     data: {
@@ -26,7 +26,7 @@ export async function createWorkspace(
       companies: { create: { name: firstCompany } },
       defaultReminderOffsets: [...DEFAULT_REMINDER_OFFSETS],
       memberships: { create: { userId, role: 'ADMIN' } },
-      notificationPrefs: { create: { userId, mutedSubscriptionIds: [] } },
+      notificationPrefs: { create: { userId, mutedBillIds: [] } },
     },
   });
   await audit(ctx, org.id, userId, 'workspace.create', 'Workspace', org.id, { name: org.name });
@@ -36,7 +36,7 @@ export async function createWorkspace(
 export async function getWorkspace(ctx: AppContext, workspaceId: string) {
   const org = await ctx.db.workspace.findUniqueOrThrow({
     where: { id: workspaceId },
-    include: { _count: { select: { memberships: true, subscriptions: true, companies: true } } },
+    include: { _count: { select: { memberships: true, bills: true, companies: true } } },
   });
   return {
     id: org.id,
@@ -48,7 +48,7 @@ export async function getWorkspace(ctx: AppContext, workspaceId: string) {
     quietHoursEnd: org.quietHoursEnd,
     defaultReminderOffsets: org.defaultReminderOffsets as number[],
     memberCount: org._count.memberships,
-    subscriptionCount: org._count.subscriptions,
+    billCount: org._count.bills,
     companyCount: org._count.companies,
     createdAt: org.createdAt,
   };
@@ -237,7 +237,7 @@ export async function acceptInvite(ctx: AppContext, userId: string, token: strin
   await ctx.db.notificationPreference.upsert({
     where: { userId_workspaceId: { userId, workspaceId: invite.workspaceId } },
     update: {},
-    create: { userId, workspaceId: invite.workspaceId, mutedSubscriptionIds: [] },
+    create: { userId, workspaceId: invite.workspaceId, mutedBillIds: [] },
   });
   // Accepting via the emailed link proves the address.
   if (!user.emailVerifiedAt) await ctx.db.user.update({ where: { id: userId }, data: { emailVerifiedAt: now } });

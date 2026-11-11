@@ -38,23 +38,23 @@ const base = () => ({
 
 describe('trials, auto-renew and default payment method', () => {
   it('stores the toggles and requires a trial end date', async () => {
-    const missing = await fx.as('admin').post('/api/v1/subscriptions').send({ ...base(), name: 'Design tool', isTrial: true });
+    const missing = await fx.as('admin').post('/api/v1/bills').send({ ...base(), name: 'Design tool', isTrial: true });
     expect(missing.status).toBe(400);
 
     const res = await fx
       .as('admin')
-      .post('/api/v1/subscriptions')
+      .post('/api/v1/bills')
       .send({ ...base(), name: 'Design tool', isTrial: true, trialEndsOn: '2026-11-20', autoRenew: true, defaultPaymentMethod: 'CARD' });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ isTrial: true, trialEndsOn: '2026-11-20', autoRenew: true, defaultPaymentMethod: 'CARD' });
 
-    const off = await fx.as('admin').patch(`/api/v1/subscriptions/${res.body.id}`).send({ isTrial: false });
+    const off = await fx.as('admin').patch(`/api/v1/bills/${res.body.id}`).send({ isTrial: false });
     expect(off.body).toMatchObject({ isTrial: false, trialEndsOn: null });
   });
 
-  it('a payment without a method uses the subscription default', async () => {
-    const sub = await fx.as('admin').post('/api/v1/subscriptions').send({ ...base(), name: 'Phone plan', defaultPaymentMethod: 'MOBILE_MONEY' });
-    const pay = await fx.as('finance').post(`/api/v1/subscriptions/${sub.body.id}/payments`).send({});
+  it('a payment without a method uses the bill default', async () => {
+    const sub = await fx.as('admin').post('/api/v1/bills').send({ ...base(), name: 'Phone plan', defaultPaymentMethod: 'MOBILE_MONEY' });
+    const pay = await fx.as('finance').post(`/api/v1/bills/${sub.body.id}/payments`).send({});
     expect(pay.status).toBe(201);
     expect(pay.body.payment.method).toBe('MOBILE_MONEY');
   });
@@ -62,10 +62,10 @@ describe('trials, auto-renew and default payment method', () => {
 
 describe('price changes', () => {
   it('editing the amount records history and tells the other managers', async () => {
-    const id = fx.subscriptionIds.internet;
-    const res = await fx.as('admin').patch(`/api/v1/subscriptions/${id}`).send({ amountCents: 14_400 });
+    const id = fx.billIds.internet;
+    const res = await fx.as('admin').patch(`/api/v1/bills/${id}`).send({ amountCents: 14_400 });
     expect(res.status).toBe(200);
-    const detail = await fx.as('viewer').get(`/api/v1/subscriptions/${id}`);
+    const detail = await fx.as('viewer').get(`/api/v1/bills/${id}`);
     expect(detail.body.priceHistory).toHaveLength(1);
     expect(detail.body.priceHistory[0]).toMatchObject({ oldAmountCents: 12_000, newAmountCents: 14_400 });
 
@@ -75,16 +75,16 @@ describe('price changes', () => {
   });
 
   it('saving the same amount does not create a change', async () => {
-    const id = fx.subscriptionIds.internet;
-    await fx.as('admin').patch(`/api/v1/subscriptions/${id}`).send({ amountCents: 14_400 });
-    expect(await ctx.db.priceChange.count({ where: { subscriptionId: id } })).toBe(1);
+    const id = fx.billIds.internet;
+    await fx.as('admin').patch(`/api/v1/bills/${id}`).send({ amountCents: 14_400 });
+    expect(await ctx.db.priceChange.count({ where: { billId: id } })).toBe(1);
   });
 });
 
 describe('payment notices', () => {
   it('go to ADMIN and FINANCE only, never the person who recorded it', async () => {
     const before = await ctx.db.notification.count({ where: { type: 'PAYMENT_RECORDED' } });
-    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds['beta-x']}/payments`).send({ method: 'CARD' });
+    await fx.as('finance').post(`/api/v1/bills/${fx.billIds['beta-x']}/payments`).send({ method: 'CARD' });
     const rows = await ctx.db.notification.findMany({ where: { type: 'PAYMENT_RECORDED' }, skip: before });
     expect(new Set(rows.map((r) => r.userId))).toEqual(new Set([fx.userIds.admin]));
   });
@@ -124,21 +124,21 @@ describe('budgets', () => {
 
 describe('snooze', () => {
   it('snoozes the current cycle for the caller only', async () => {
-    const id = fx.subscriptionIds.cleaning;
-    const res = await fx.as('viewer').post(`/api/v1/subscriptions/${id}/snooze`).send({ days: 3 });
+    const id = fx.billIds.cleaning;
+    const res = await fx.as('viewer').post(`/api/v1/bills/${id}/snooze`).send({ days: 3 });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ snoozedUntil: '2026-11-05' });
-    expect((await fx.as('viewer').get(`/api/v1/subscriptions/${id}`)).body.snoozedUntil).toBe('2026-11-05');
-    expect((await fx.as('admin').get(`/api/v1/subscriptions/${id}`)).body.snoozedUntil).toBeNull();
-    expect((await fx.as('viewer').post(`/api/v1/subscriptions/${id}/snooze`).send({ until: '2026-11-01' })).status).toBe(400);
-    expect((await fx.as('viewer').delete(`/api/v1/subscriptions/${id}/snooze`)).status).toBe(204);
-    expect((await fx.as('viewer').get(`/api/v1/subscriptions/${id}`)).body.snoozedUntil).toBeNull();
+    expect((await fx.as('viewer').get(`/api/v1/bills/${id}`)).body.snoozedUntil).toBe('2026-11-05');
+    expect((await fx.as('admin').get(`/api/v1/bills/${id}`)).body.snoozedUntil).toBeNull();
+    expect((await fx.as('viewer').post(`/api/v1/bills/${id}/snooze`).send({ until: '2026-11-01' })).status).toBe(400);
+    expect((await fx.as('viewer').delete(`/api/v1/bills/${id}/snooze`)).status).toBe(204);
+    expect((await fx.as('viewer').get(`/api/v1/bills/${id}`)).body.snoozedUntil).toBeNull();
   });
 });
 
 describe('spreadsheet import', () => {
   const csv = [
-    'Company,Category,Subscription name,Provider,Amount (USD),Frequency,Next due date',
+    'Company,Category,Bill name,Provider,Amount (USD),Frequency,Next due date',
     'Alpha News,,Fibre internet,Lakeside Telecom,"$1,050.00",Monthly,2026-12-05',
     'Gamma Bakery,Utilities,Electricity,,45.5,Quarterly,15/01/2027',
     'Alpha News,Brand new cat,Yearbook,,30,yearly,2026-03-01',
@@ -149,12 +149,12 @@ describe('spreadsheet import', () => {
   it('downloads a header-only template', async () => {
     const res = await fx.as('admin').get('/api/v1/import/template?format=csv');
     expect(res.status).toBe(200);
-    expect(res.text.replace(/^\W+/, '').trim()).toBe('Company,Category,Subscription name,Provider,Amount (USD),Frequency,Next due date');
+    expect(res.text.replace(/^\W+/, '').trim()).toBe('Company,Category,Bill name,Provider,Amount (USD),Frequency,Next due date');
     expect((await fx.as('viewer').get('/api/v1/import/template')).status).toBe(403);
   });
 
   it('previews with mapping, guesses and validation errors, writing nothing', async () => {
-    const before = await ctx.db.subscription.count();
+    const before = await ctx.db.bill.count();
     const res = await fx.as('finance').post('/api/v1/import/preview').send(file);
     expect(res.status).toBe(200);
     expect(res.body.mapping).toEqual({ company: 0, category: 1, name: 2, provider: 3, amount: 4, frequency: 5, nextDueDate: 6 });
@@ -165,14 +165,14 @@ describe('spreadsheet import', () => {
     expect(b.warnings).toContain('New company "Gamma Bakery" will be created');
     expect(c.warnings).toContain('New category "Brand new cat" will be created');
     expect(bad.errors).toEqual(['Name is missing', '"abc" is not an amount', '"sometimes" is not a frequency we know (try Monthly, Quarterly, Yearly…)', '"not a date" is not a date']);
-    expect(await ctx.db.subscription.count()).toBe(before);
+    expect(await ctx.db.bill.count()).toBe(before);
   });
 
   it('imports the valid rows, creating companies and categories', async () => {
     const res = await fx.as('admin').post('/api/v1/import/commit').send(file);
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ imported: 3, skipped: 1, createdCompanies: 1, createdCategories: 1 });
-    const list = await fx.as('admin').get('/api/v1/subscriptions?q=Yearbook');
+    const list = await fx.as('admin').get('/api/v1/bills?q=Yearbook');
     // A past date in a recurring row rolls forward to the next renewal.
     expect(list.body.items[0]).toMatchObject({ nextDueDate: '2027-03-01', category: { name: 'Brand new cat' } });
   });
@@ -216,13 +216,13 @@ describe('import parsing helpers', () => {
 describe('data export', () => {
   it('exports JSON with masked keys only, for managers', async () => {
     const key = 'LIC-4242-SECRET-4F7A';
-    await fx.as('admin').patch(`/api/v1/subscriptions/${fx.subscriptionIds.workspace}`).send({ subscriptionKey: key });
+    await fx.as('admin').patch(`/api/v1/bills/${fx.billIds.workspace}`).send({ accountReference: key });
     expect((await fx.as('viewer').get('/api/v1/workspaces/current/export')).status).toBe(403);
     const res = await fx.as('finance').get('/api/v1/workspaces/current/export?format=json');
     expect(res.status).toBe(200);
     expect(res.headers['content-disposition']).toMatch(/attachment; filename="dueora-export-2026-11-02\.json"/);
     expect(JSON.stringify(res.body)).not.toContain('SECRET');
-    expect(res.body.subscriptions.find((s: { name: string }) => s.name === 'Google Workspace').subscriptionKey).toBe('••••••4F7A');
+    expect(res.body.bills.find((s: { name: string }) => s.name === 'Google Workspace').accountReference).toBe('••••••4F7A');
     expect(res.body.members).toHaveLength(3);
     expect(res.body.payments.length).toBeGreaterThan(0);
   });
@@ -239,7 +239,7 @@ describe('data export', () => {
       });
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(res.body as ArrayBuffer);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Workspace', 'Members', 'Companies', 'Categories', 'Subscriptions', 'Payments', 'Price changes', 'Budgets']);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Workspace', 'Members', 'Companies', 'Categories', 'Bills', 'Payments', 'Price changes', 'Budgets']);
   });
 });
 

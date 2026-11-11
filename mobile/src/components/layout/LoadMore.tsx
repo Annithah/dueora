@@ -13,7 +13,7 @@ export interface LoadMoreProps {
 }
 
 /** Footer for server-paginated lists (10 per page): "Load more" or a quiet "that's all". */
-export function LoadMore({ shown, total, hasMore, loading, onLoadMore, noun = 'subscriptions' }: LoadMoreProps) {
+export function LoadMore({ shown, total, hasMore, loading, onLoadMore, noun = 'bills' }: LoadMoreProps) {
   const { colors } = useTheme();
   if (total === 0) return null;
   return (

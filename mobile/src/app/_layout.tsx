@@ -98,7 +98,7 @@ export default function RootLayout() {
         <PersistQueryClientProvider
           client={queryClient}
           // Bump `buster` whenever API response shapes change: an old cache would crash new screens.
-          persistOptions={{ persister, maxAge: 7 * 24 * 60 * 60 * 1000, buster: 'v2-subscriptions' }}
+          persistOptions={{ persister, maxAge: 7 * 24 * 60 * 60 * 1000, buster: 'v2-bills' }}
         >
           <ThemeProvider>
             <RootNavigator />

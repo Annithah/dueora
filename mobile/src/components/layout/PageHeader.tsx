@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { Text } from '@/components/ui';
 
 export interface PageHeaderProps {
-  /** Small muted line above the title ("All subscriptions", "Plan ahead"). */
+  /** Small muted line above the title ("All bills", "Plan ahead"). */
   eyebrow?: string;
   title: string;
   right?: ReactNode;

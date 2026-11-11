@@ -3,8 +3,8 @@ import type { Request } from 'express';
 import type { AppContext } from '../../context.js';
 import { addDays, computeStatus, daysBetween, DUE_SOON_DAYS, localTimeIn, type PaymentStatus } from '../../domain/schedule.js';
 import { workspaceIdOf } from '../../http/middleware/auth.js';
-import { viewsFor } from '../subscriptions/service.js';
-import { subscriptionInclude, type SubscriptionView } from '../subscriptions/view.js';
+import { viewsFor } from '../bills/service.js';
+import { billInclude, type BillView } from '../bills/view.js';
 
 import { addMonthsKey, lastMonths, monthRange, occurrencesBetween } from './projection.js';
 
@@ -18,9 +18,9 @@ async function loadScope(ctx: AppContext, req: Request) {
   const workspaceId = workspaceIdOf(req);
   const workspace = await ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
   const local = localTimeIn(ctx.clock.now(), workspace.timezone);
-  const rows = await ctx.db.subscription.findMany({
+  const rows = await ctx.db.bill.findMany({
     where: { workspaceId, status: { in: ['ACTIVE', 'COMPLETED'] } },
-    include: subscriptionInclude,
+    include: billInclude,
   });
   const views = await viewsFor(ctx, workspaceId, rows, local.date);
   const rowById = new Map(rows.map((r) => [r.id, r]));
@@ -39,7 +39,7 @@ const URGENCY: Record<PaymentStatus, number> = {
   ARCHIVED: 6,
 };
 
-function lite(v: SubscriptionView) {
+function lite(v: BillView) {
   return {
     id: v.id,
     name: v.name,
@@ -64,7 +64,7 @@ async function paymentsBetween(ctx: AppContext, s: Scope, from: string, to: stri
       cycleDueDate: true,
       reference: true,
       method: true,
-      subscription: {
+      bill: {
         select: {
           id: true,
           name: true,
@@ -164,7 +164,7 @@ export async function dashboard(ctx: AppContext, req: Request) {
     .flatMap((v) =>
       occurrencesBetween(s.rowById.get(v.id)!, today, addDays(today, 30)).map((occ) => ({
         date: occ.date,
-        subscription: lite(v),
+        bill: lite(v),
         amountCents: occ.kind === 'current' ? v.remainingCents : v.amountCents,
         status: (occ.kind === 'current'
           ? v.paymentStatus
@@ -174,7 +174,7 @@ export async function dashboard(ctx: AppContext, req: Request) {
       })),
     )
     .filter((t) => t.amountCents > 0)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.subscription.name.localeCompare(b.subscription.name));
+    .sort((a, b) => a.date.localeCompare(b.date) || a.bill.name.localeCompare(b.bill.name));
 
   return {
     today,
@@ -187,8 +187,8 @@ export async function dashboard(ctx: AppContext, req: Request) {
     needsAttentionCount: attention.length,
     next30Days: timeline.slice(0, 20),
     spending: { months: trend, paidLast12Months: paidYear, changePercent: pctChange(paidYear, prevYear) },
-    byCategory: buckets(lastYear.map((p) => ({ key: p.subscription.category, amountCents: p.amountCents }))),
-    byCompany: buckets(lastYear.map((p) => ({ key: p.subscription.company, amountCents: p.amountCents }))),
+    byCategory: buckets(lastYear.map((p) => ({ key: p.bill.category, amountCents: p.amountCents }))),
+    byCompany: buckets(lastYear.map((p) => ({ key: p.bill.company, amountCents: p.amountCents }))),
     counts: { active: active.length, total: views.length, overdue: summary.overdue.count, upcoming30: timeline.length },
   };
 }
@@ -197,7 +197,7 @@ export async function dashboard(ctx: AppContext, req: Request) {
 
 export interface CalendarEvent {
   date: string;
-  subscriptionId: string;
+  billId: string;
   name: string;
   company: string;
   categoryIcon: string;
@@ -220,7 +220,7 @@ export async function calendar(ctx: AppContext, req: Request, from: string, to: 
           : computeStatus({ status: 'ACTIVE', nextDueDate: occ.date, amountCents: v.amountCents }, [], s.today);
       events.push({
         date: occ.date,
-        subscriptionId: v.id,
+        billId: v.id,
         name: v.name,
         company: v.company.name,
         categoryIcon: v.category.icon,
@@ -234,22 +234,22 @@ export async function calendar(ctx: AppContext, req: Request, from: string, to: 
 
   // Closed cycles from payment history (one event per cycle, on its due date).
   const paid = await ctx.db.paymentRecord.groupBy({
-    by: ['subscriptionId', 'cycleDueDate'],
+    by: ['billId', 'cycleDueDate'],
     where: { workspaceId: s.workspaceId, cycleDueDate: { gte: from, lte: to } },
     _sum: { amountCents: true },
   });
-  const paidSubs = await ctx.db.subscription.findMany({
-    where: { workspaceId: s.workspaceId, id: { in: [...new Set(paid.map((p) => p.subscriptionId))] } },
-    include: subscriptionInclude,
+  const paidSubs = await ctx.db.bill.findMany({
+    where: { workspaceId: s.workspaceId, id: { in: [...new Set(paid.map((p) => p.billId))] } },
+    include: billInclude,
   });
   const subById = new Map(paidSubs.map((x) => [x.id, x]));
   for (const p of paid) {
-    const sub = subById.get(p.subscriptionId);
+    const sub = subById.get(p.billId);
     if (!sub) continue;
     if (sub.status === 'ACTIVE' && sub.nextDueDate === p.cycleDueDate) continue; // the open cycle, shown above
     events.push({
       date: p.cycleDueDate,
-      subscriptionId: sub.id,
+      billId: sub.id,
       name: sub.name,
       company: sub.company.name,
       categoryIcon: sub.category.icon,
@@ -286,14 +286,14 @@ export async function report(ctx: AppContext, req: Request, period: ReportPeriod
 
   // Still to pay within the period: open cycles (remaining) and projected cycles.
   let outstanding = 0;
-  const outstandingItems: { date: string; subscription: ReturnType<typeof lite>; amountCents: number; overdue: boolean }[] = [];
+  const outstandingItems: { date: string; bill: ReturnType<typeof lite>; amountCents: number; overdue: boolean }[] = [];
   const outstandingByMonth = new Map<string, number>();
   for (const v of active) {
     for (const occ of occurrencesBetween(s.rowById.get(v.id)!, from, to)) {
       const amount = occ.kind === 'current' ? v.remainingCents : v.amountCents;
       if (amount === 0) continue;
       outstanding += amount;
-      outstandingItems.push({ date: occ.date, subscription: lite(v), amountCents: amount, overdue: occ.date < today });
+      outstandingItems.push({ date: occ.date, bill: lite(v), amountCents: amount, overdue: occ.date < today });
       const mk = occ.date.slice(0, 7);
       outstandingByMonth.set(mk, (outstandingByMonth.get(mk) ?? 0) + amount);
     }
@@ -330,8 +330,8 @@ export async function report(ctx: AppContext, req: Request, period: ReportPeriod
       outstanding: { amountCents: outstanding, count: outstandingItems.length },
       overdue: { amountCents: overdue, count: overdueItems.length },
     },
-    byCategory: buckets(payments.map((p) => ({ key: p.subscription.category, amountCents: p.amountCents }))),
-    byCompany: buckets(payments.map((p) => ({ key: p.subscription.company, amountCents: p.amountCents }))),
+    byCategory: buckets(payments.map((p) => ({ key: p.bill.category, amountCents: p.amountCents }))),
+    byCompany: buckets(payments.map((p) => ({ key: p.bill.company, amountCents: p.amountCents }))),
     months: monthKeys.map((m) => ({ month: m, paidCents: paidByMonth.get(m) ?? 0, outstandingCents: outstandingByMonth.get(m) ?? 0 })),
     forecast: forecastMonths.map((m) => ({ month: m, amountCents: forecast.get(m) ?? 0 })),
     overdue: overdueItems,
@@ -340,10 +340,10 @@ export async function report(ctx: AppContext, req: Request, period: ReportPeriod
       .map((p) => ({
         paidOn: p.paidOn,
         cycleDueDate: p.cycleDueDate,
-        name: p.subscription.name,
-        provider: p.subscription.provider,
-        company: p.subscription.company.name,
-        category: p.subscription.category.name,
+        name: p.bill.name,
+        provider: p.bill.provider,
+        company: p.bill.company.name,
+        category: p.bill.category.name,
         method: p.method,
         reference: p.reference,
         amountCents: p.amountCents,

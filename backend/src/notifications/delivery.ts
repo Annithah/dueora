@@ -35,7 +35,7 @@ export function channelFor(type: NotificationType): string {
 
 /** Pushes about one unpaid cycle get the Mark as paid / Snooze / Open buttons. */
 export function categoryFor(type: NotificationType): string | undefined {
-  return type === 'REMINDER' || type === 'DUE_TODAY' || type === 'OVERDUE' ? 'subscription-reminder' : undefined;
+  return type === 'REMINDER' || type === 'DUE_TODAY' || type === 'OVERDUE' ? 'bill-reminder' : undefined;
 }
 
 async function unreadCount(ctx: AppContext, userId: string): Promise<number> {
@@ -79,7 +79,7 @@ export const deliverPush: JobHandler = async (ctx, payload) => {
     ...(category ? { categoryId: category } : {}),
     data: {
       url: data.url,
-      subscriptionId: n.subscriptionId,
+      billId: n.billId,
       cycleDueDate: n.cycleDueDate,
       notificationId: n.id,
       type: n.type,
@@ -148,7 +148,7 @@ async function fallbackToEmail(
   await createNotification(ctx, {
     workspaceId: n.workspaceId,
     userId: n.userId,
-    subscriptionId: n.subscriptionId,
+    billId: n.billId,
     type: n.type,
     channel: 'EMAIL',
     title: n.title,

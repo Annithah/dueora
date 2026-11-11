@@ -1,8 +1,8 @@
 import type { AppContext } from '../context.js';
 import type { NotificationType, Role } from '../generated/prisma/client.js';
 
-import { budgetAlertCopy, priceChangeCopy, subscriptionLabel, teamCopy, type Copy, type TeamEvent } from './messages.js';
-import { createNotification, dedupeKey, prefsFor, quietHoursEnd, subscriptionUrl, type Prefs } from './store.js';
+import { budgetAlertCopy, priceChangeCopy, billLabel, teamCopy, type Copy, type TeamEvent } from './messages.js';
+import { createNotification, dedupeKey, prefsFor, quietHoursEnd, billUrl, type Prefs } from './store.js';
 
 /**
  * Event notifications (something happened, rather than something is due):
@@ -17,7 +17,7 @@ export interface EventNotification {
   roles: Role[];
   /** The person who caused the event never gets told about it. */
   excludeUserId?: string;
-  subscriptionId?: string | null;
+  billId?: string | null;
   cycleDueDate?: string | null;
   copy: Copy;
   data: Record<string, unknown>;
@@ -37,12 +37,12 @@ export async function notifyMembers(ctx: AppContext, e: EventNotification): Prom
   for (const { userId } of members) {
     if (userId === e.excludeUserId) continue;
     const prefs = await prefsFor(ctx, userId, e.workspaceId);
-    if (e.subscriptionId && prefs.muted.has(e.subscriptionId)) continue;
+    if (e.billId && prefs.muted.has(e.billId)) continue;
     if (e.prefFlag && !prefs[e.prefFlag]) continue;
     const base = {
       workspaceId: e.workspaceId,
       userId,
-      subscriptionId: e.subscriptionId ?? null,
+      billId: e.billId ?? null,
       type: e.type,
       title: e.copy.title,
       body: e.copy.body,
@@ -50,7 +50,7 @@ export async function notifyMembers(ctx: AppContext, e: EventNotification): Prom
       data: e.data,
     };
     const key = (channel: string) =>
-      dedupeKey([e.workspaceId, e.subscriptionId ?? null, e.type, e.cycleDueDate ?? null, e.eventKey, userId, channel]);
+      dedupeKey([e.workspaceId, e.billId ?? null, e.type, e.cycleDueDate ?? null, e.eventKey, userId, channel]);
     if (prefs.inAppEnabled && (await createNotification(ctx, { ...base, channel: 'IN_APP', dedupeKey: key('IN_APP') }))) created++;
     const hasDevice = (await ctx.db.deviceToken.count({ where: { userId, active: true } })) > 0;
     if (prefs.pushEnabled && hasDevice) {
@@ -64,17 +64,17 @@ const MANAGERS: Role[] = ['ADMIN', 'FINANCE'];
 
 export async function notifyPriceChanged(
   ctx: AppContext,
-  e: { workspaceId: string; subscriptionId: string; actorUserId: string; oldAmountCents: number; newAmountCents: number; changeId: string },
+  e: { workspaceId: string; billId: string; actorUserId: string; oldAmountCents: number; newAmountCents: number; changeId: string },
 ): Promise<void> {
-  const s = await ctx.db.subscription.findUniqueOrThrow({ where: { id: e.subscriptionId }, include: { company: { select: { name: true } } } });
+  const s = await ctx.db.bill.findUniqueOrThrow({ where: { id: e.billId }, include: { company: { select: { name: true } } } });
   await notifyMembers(ctx, {
     workspaceId: e.workspaceId,
     type: 'PRICE_CHANGE',
     roles: MANAGERS,
     excludeUserId: e.actorUserId,
-    subscriptionId: s.id,
-    copy: priceChangeCopy({ label: subscriptionLabel(s.name, s.company.name), oldAmountCents: e.oldAmountCents, newAmountCents: e.newAmountCents }),
-    data: { url: subscriptionUrl(ctx, s.id), subscriptionId: s.id },
+    billId: s.id,
+    copy: priceChangeCopy({ label: billLabel(s.name, s.company.name), oldAmountCents: e.oldAmountCents, newAmountCents: e.newAmountCents }),
+    data: { url: billUrl(ctx, s.id), billId: s.id },
     eventKey: `price-${e.changeId}`,
   });
 }

@@ -5,7 +5,7 @@ import type { AppContext } from '../../context.js';
 import { requireAuth, requirePermission, requireWorkspace, workspaceIdOf } from '../../http/middleware/auth.js';
 import { amountCents, id } from '../../http/schemas.js';
 import { parseBody, parseParams } from '../../http/validate.js';
-import { workspaceToday } from '../subscriptions/service.js';
+import { workspaceToday } from '../bills/service.js';
 
 import * as svc from './service.js';
 

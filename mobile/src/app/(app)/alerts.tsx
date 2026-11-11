@@ -286,7 +286,7 @@ export default function AlertsScreen() {
                               if (!n.readAt) markRead.mutate(n.id);
                               const to = routeForNotification({
                                 ...n.data,
-                                subscriptionId: n.subscriptionId ?? undefined,
+                                billId: n.billId ?? undefined,
                                 type: n.type,
                               });
                               if (to && to !== '/alerts') router.push(to as never);

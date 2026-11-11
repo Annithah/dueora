@@ -73,7 +73,7 @@ describe('GET /dashboard', () => {
       'Cleaning:DUE_SOON',
     ]);
     expect(d.needsAttention[0].company).toMatchObject({ name: 'Alpha News' });
-    expect(d.next30Days[0]).toMatchObject({ date: '2026-11-05', subscription: { name: 'Internet' }, status: 'DUE_SOON', amountCents: 12_000 });
+    expect(d.next30Days[0]).toMatchObject({ date: '2026-11-05', bill: { name: 'Internet' }, status: 'DUE_SOON', amountCents: 12_000 });
     const dates = d.next30Days.map((t: { date: string }) => t.date);
     expect(dates).toEqual([...dates].sort());
     expect(dates.every((t: string) => t >= '2026-11-02' && t <= '2026-12-02')).toBe(true);
@@ -176,7 +176,7 @@ describe('reports', () => {
 describe('after a payment', () => {
   it('the calendar shows the paid cycle and the dashboard counts it', async () => {
     await fx.as('finance')
-      .post(`/api/v1/subscriptions/${fx.subscriptionIds['alpha-hosting']}/payments`)
+      .post(`/api/v1/bills/${fx.billIds['alpha-hosting']}/payments`)
       .send({ method: 'BANK_TRANSFER', paidOn: '2026-11-01' });
     const oct = await fx.as('admin').get('/api/v1/calendar').query({ from: '2026-10-01', to: '2026-10-31' });
     expect(oct.body.events.filter((e: { name: string }) => e.name === 'Hosting')).toEqual([

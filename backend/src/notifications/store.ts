@@ -11,7 +11,7 @@ export const QUEUES = {
 export interface NewNotification {
   workspaceId: string;
   userId: string;
-  subscriptionId?: string | null;
+  billId?: string | null;
   type: NotificationType;
   channel: NotificationChannel;
   title: string;
@@ -56,7 +56,7 @@ export async function createNotification(
     const row = await ctx.db.notification.create({
       data: {
         ...n,
-        subscriptionId: n.subscriptionId ?? null,
+        billId: n.billId ?? null,
         cycleDueDate: n.cycleDueDate ?? null,
         offsetDays: n.offsetDays ?? null,
         data: n.data as Prisma.InputJsonValue,
@@ -113,14 +113,14 @@ export async function prefsFor(ctx: AppContext, userId: string, workspaceId: str
     monthlySummary: p.monthlySummary,
     budgetAlerts: p.budgetAlerts,
     teamActivity: p.teamActivity,
-    muted: new Set(p.mutedSubscriptionIds as string[]),
+    muted: new Set(p.mutedBillIds as string[]),
   };
 }
 
-/** Snoozes for one user still in effect on `today`, keyed "subscriptionId:cycleDueDate". */
+/** Snoozes for one user still in effect on `today`, keyed "billId:cycleDueDate". */
 export async function activeSnoozes(ctx: AppContext, userId: string, today: string): Promise<Map<string, string>> {
   const rows = await ctx.db.reminderSnooze.findMany({ where: { userId, snoozedUntil: { gt: today } } });
-  return new Map(rows.map((r) => [`${r.subscriptionId}:${r.cycleDueDate}`, r.snoozedUntil]));
+  return new Map(rows.map((r) => [`${r.billId}:${r.cycleDueDate}`, r.snoozedUntil]));
 }
 
 /**
@@ -130,48 +130,48 @@ export async function activeSnoozes(ctx: AppContext, userId: string, today: stri
  */
 export async function cancellationReason(
   ctx: AppContext,
-  n: { userId: string; workspaceId: string; subscriptionId: string | null; cycleDueDate: string | null; type: NotificationType; data: unknown },
+  n: { userId: string; workspaceId: string; billId: string | null; cycleDueDate: string | null; type: NotificationType; data: unknown },
   prefs: Prefs,
 ): Promise<string | null> {
   const isReminder = n.type === 'REMINDER' || n.type === 'DUE_TODAY' || n.type === 'OVERDUE' || n.type === 'AUTO_RENEW_NOTICE';
-  if (isReminder && n.subscriptionId && n.cycleDueDate) {
-    const due = await subscriptionStillDue(ctx, n.subscriptionId, n.cycleDueDate, prefs);
+  if (isReminder && n.billId && n.cycleDueDate) {
+    const due = await billStillDue(ctx, n.billId, n.cycleDueDate, prefs);
     if (due) return due;
     if (n.type === 'AUTO_RENEW_NOTICE') {
-      const s = await ctx.db.subscription.findUnique({ where: { id: n.subscriptionId }, select: { autoRenew: true } });
+      const s = await ctx.db.bill.findUnique({ where: { id: n.billId }, select: { autoRenew: true } });
       if (!s?.autoRenew) return 'cancelled: auto-renew turned off';
     }
-    return snoozedReason(ctx, n.userId, n.workspaceId, n.subscriptionId, n.cycleDueDate);
+    return snoozedReason(ctx, n.userId, n.workspaceId, n.billId, n.cycleDueDate);
   }
-  if (n.type === 'TRIAL_ENDING' && n.subscriptionId) {
-    if (prefs.muted.has(n.subscriptionId)) return 'cancelled: muted';
-    const s = await ctx.db.subscription.findUnique({ where: { id: n.subscriptionId }, select: { status: true, isTrial: true, trialEndsOn: true } });
+  if (n.type === 'TRIAL_ENDING' && n.billId) {
+    if (prefs.muted.has(n.billId)) return 'cancelled: muted';
+    const s = await ctx.db.bill.findUnique({ where: { id: n.billId }, select: { status: true, isTrial: true, trialEndsOn: true } });
     if (!s || s.status !== 'ACTIVE') return 'cancelled: not active';
     if (!s.isTrial || s.trialEndsOn !== n.cycleDueDate) return 'cancelled: trial changed';
     return null;
   }
   if (n.type === 'DIGEST') {
-    const items = ((n.data as { items?: { subscriptionId: string; cycleDueDate: string }[] }).items ?? []);
-    const reasons = await Promise.all(items.map((i) => subscriptionStillDue(ctx, i.subscriptionId, i.cycleDueDate, prefs)));
+    const items = ((n.data as { items?: { billId: string; cycleDueDate: string }[] }).items ?? []);
+    const reasons = await Promise.all(items.map((i) => billStillDue(ctx, i.billId, i.cycleDueDate, prefs)));
     return reasons.every((r) => r !== null) ? 'cancelled: nothing left to remind about' : null;
   }
   return null;
 }
 
-async function subscriptionStillDue(ctx: AppContext, subscriptionId: string, cycleDueDate: string, prefs: Prefs): Promise<string | null> {
-  if (prefs.muted.has(subscriptionId)) return 'cancelled: muted';
-  const o = await ctx.db.subscription.findUnique({ where: { id: subscriptionId }, select: { status: true, nextDueDate: true, amountCents: true } });
+async function billStillDue(ctx: AppContext, billId: string, cycleDueDate: string, prefs: Prefs): Promise<string | null> {
+  if (prefs.muted.has(billId)) return 'cancelled: muted';
+  const o = await ctx.db.bill.findUnique({ where: { id: billId }, select: { status: true, nextDueDate: true, amountCents: true } });
   if (!o) return 'cancelled: deleted';
   if (o.status !== 'ACTIVE') return `cancelled: ${o.status.toLowerCase()}`;
   if (o.nextDueDate !== cycleDueDate) return 'cancelled: paid';
-  const payments = await ctx.db.paymentRecord.findMany({ where: { subscriptionId, cycleDueDate }, select: { cycleDueDate: true, amountCents: true } });
+  const payments = await ctx.db.paymentRecord.findMany({ where: { billId, cycleDueDate }, select: { cycleDueDate: true, amountCents: true } });
   if (paidForCycle(payments, cycleDueDate) >= o.amountCents) return 'cancelled: paid';
   return null;
 }
 
 /** Snoozed after the reminder was planned (e.g. it was waiting for quiet hours to end). */
-async function snoozedReason(ctx: AppContext, userId: string, workspaceId: string, subscriptionId: string, cycleDueDate: string): Promise<string | null> {
-  const z = await ctx.db.reminderSnooze.findUnique({ where: { userId_subscriptionId_cycleDueDate: { userId, subscriptionId, cycleDueDate } } });
+async function snoozedReason(ctx: AppContext, userId: string, workspaceId: string, billId: string, cycleDueDate: string): Promise<string | null> {
+  const z = await ctx.db.reminderSnooze.findUnique({ where: { userId_billId_cycleDueDate: { userId, billId, cycleDueDate } } });
   if (!z) return null;
   const ws = await ctx.db.workspace.findUnique({ where: { id: workspaceId }, select: { timezone: true } });
   return ws && z.snoozedUntil > todayIn(ctx.clock.now(), ws.timezone) ? 'cancelled: snoozed' : null;
@@ -181,6 +181,6 @@ export async function markCancelled(ctx: AppContext, id: string, reason: string)
   await ctx.db.notification.update({ where: { id }, data: { status: 'FAILED', error: reason } });
 }
 
-export function subscriptionUrl(ctx: AppContext, subscriptionId: string): string {
-  return `${ctx.env.APP_URL}subscriptions/${subscriptionId}`;
+export function billUrl(ctx: AppContext, billId: string): string {
+  return `${ctx.env.APP_URL}bills/${billId}`;
 }

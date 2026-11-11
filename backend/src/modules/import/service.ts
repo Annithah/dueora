@@ -8,7 +8,7 @@ import { audit } from '../workspaces/service.js';
 
 /**
  * Settings → Import from spreadsheet. The organisation's existing payment sheet (CSV or
- * Excel) → DueOra subscriptions in one step: template → map columns → preview with
+ * Excel) → DueOra bills in one step: template → map columns → preview with
  * validation → import the valid rows. Nothing is written until "commit".
  */
 
@@ -19,7 +19,7 @@ export type Mapping = Partial<Record<ImportField, number>>;
 export const TEMPLATE_HEADERS: Record<ImportField, string> = {
   company: 'Company',
   category: 'Category',
-  name: 'Subscription name',
+  name: 'Bill name',
   provider: 'Provider',
   amount: 'Amount (USD)',
   frequency: 'Frequency',
@@ -110,7 +110,7 @@ export async function readSheet(fileName: string, base64: string): Promise<Cell[
 const HEADER_HINTS: Record<ImportField, RegExp> = {
   company: /^(company|organi[sz]ation|business|entity|client|soci[eé]t[eé])/i,
   category: /^(category|type|cat[eé]gorie|group)/i,
-  name: /^(subscription|name|service|item|description|title|nom|subscription name)/i,
+  name: /^(bill|name|service|item|description|title|nom|bill name)/i,
   provider: /^(provider|vendor|supplier|fournisseur|paid to|payee)/i,
   amount: /^(amount|price|cost|usd|\$|montant|fee|total)/i,
   frequency: /^(frequency|billing|cycle|period|recurr|fr[eé]quence|interval)/i,
@@ -155,7 +155,7 @@ const text = (c: Cell | undefined): string =>
   c === null || c === undefined ? '' : c instanceof Date ? c.toISOString().slice(0, 10) : String(c).trim();
 
 export async function buildPreview(ctx: AppContext, workspaceId: string, rows: Cell[][], mapping: Mapping | undefined) {
-  if (rows.length < 2) throw badRequest('The file needs a header row and at least one subscription');
+  if (rows.length < 2) throw badRequest('The file needs a header row and at least one bill');
   const headers = rows[0]!.map((h) => text(h));
   const map = mapping ?? suggestMapping(headers);
   const missing = (['name', 'amount', 'frequency', 'nextDueDate'] as const).filter((f) => map[f] === undefined);
@@ -281,7 +281,7 @@ export async function commitImport(ctx: AppContext, workspaceId: string, userId:
       const anchorDay = parseDate(p.nextDueDate!).d;
       // A past date in a recurring sheet means "the last renewal": roll forward to the next one.
       const nextDueDate = unit === 'ONCE' ? p.nextDueDate! : calculateNextDueDate(p.nextDueDate!, unit, interval, anchorDay, today);
-      await tx.subscription.create({
+      await tx.bill.create({
         data: {
           workspaceId,
           companyId,
@@ -299,7 +299,7 @@ export async function commitImport(ctx: AppContext, workspaceId: string, userId:
       });
     }
   });
-  await audit(ctx, workspaceId, userId, 'subscription.import', 'Workspace', workspaceId, { imported: valid.length });
+  await audit(ctx, workspaceId, userId, 'bill.import', 'Workspace', workspaceId, { imported: valid.length });
   return { imported: valid.length, skipped: preview.total - valid.length, createdCompanies, createdCategories };
 }
 
@@ -309,7 +309,7 @@ export async function template(format: 'csv' | 'xlsx'): Promise<Buffer> {
   if (format === 'csv') return Buffer.from(`${BOM}${headers.join(',')}\r\n`, 'utf8');
   const wb = new ExcelJS.Workbook();
   wb.creator = 'DueOra';
-  const ws = wb.addWorksheet('Subscriptions');
+  const ws = wb.addWorksheet('Bills');
   ws.columns = headers.map((h) => ({ header: h, width: Math.max(16, h.length + 4) }));
   ws.getRow(1).font = { bold: true };
   const help = wb.addWorksheet('How to fill');
@@ -318,7 +318,7 @@ export async function template(format: 'csv' | 'xlsx'): Promise<Buffer> {
   help.addRows([
     ['Company', 'Which of your companies pays it. New names are created for you.'],
     ['Category', 'Optional. One of your categories; DueOra guesses it when empty.'],
-    ['Subscription name', 'Required. What you pay for.'],
+    ['Bill name', 'Required. What you pay for.'],
     ['Provider', 'Optional. Who you pay.'],
     ['Amount (USD)', 'Required. US dollars, e.g. 49.99'],
     ['Frequency', 'Required. Weekly, Every 2 weeks, Monthly, Every 2 months, Quarterly, Every 6 months, Yearly or One-time'],

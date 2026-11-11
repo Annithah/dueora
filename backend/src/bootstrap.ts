@@ -18,7 +18,7 @@ export function createContext(env: Env): AppContext {
     clock: systemClock,
     mailer: env.RESEND_API_KEY ? new ResendMailer(env.RESEND_API_KEY, env.EMAIL_FROM) : new LogMailer(logger),
     push: new ExpoPushProvider(env.EXPO_ACCESS_TOKEN),
-    keys: createSecretBox(env.SUBSCRIPTION_KEY_SECRET),
+    keys: createSecretBox(env.ACCOUNT_REF_SECRET),
     ai: createModel(env),
   };
 }

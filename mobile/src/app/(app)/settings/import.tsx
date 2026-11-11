@@ -73,15 +73,15 @@ export default function ImportScreen() {
       <Screen header={<TopBar title="Import" />} contentStyle={{ gap: 18, alignItems: 'center', paddingTop: 40 }}>
         <SuccessCheck />
         <Text variant="title" align="center">
-          {done.imported} subscription{done.imported === 1 ? '' : 's'} imported 🎉
+          {done.imported} bill{done.imported === 1 ? '' : 's'} imported 🎉
         </Text>
         {done.skipped ? (
           <Text tone="muted" align="center">
             {done.skipped} row{done.skipped === 1 ? ' was' : 's were'} skipped because of errors.
           </Text>
         ) : null}
-        <Button full onPress={() => router.replace('/subscriptions')}>
-          See my subscriptions
+        <Button full onPress={() => router.replace('/bills')}>
+          See my bills
         </Button>
       </Screen>
     );
@@ -107,7 +107,7 @@ export default function ImportScreen() {
               }
             }}
           >
-            {`Import ${result.valid} subscription${result.valid === 1 ? '' : 's'}`}
+            {`Import ${result.valid} bill${result.valid === 1 ? '' : 's'}`}
           </Button>
         ) : undefined
       }

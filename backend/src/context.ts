@@ -21,7 +21,7 @@ export interface AppContext {
   clock: Clock;
   mailer: Mailer;
   push: PushProvider;
-  /** Encrypts/decrypts subscription keys (SUBSCRIPTION_KEY_SECRET). */
+  /** Encrypts/decrypts account references (ACCOUNT_REF_SECRET). */
   keys: SecretBox;
   /** DueOra AI's model; null when GEMINI_API_KEY isn't set. */
   ai?: AiModel | null;

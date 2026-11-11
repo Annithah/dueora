@@ -1,10 +1,10 @@
-import type { Subscription } from './api';
+import type { Bill } from './api';
 import { autoNextDueDate, defaultsFrom, formSchema, frequencyKeyFor, toInput } from './form';
 
 // Test-only values.
 const base = { ...defaultsFrom(undefined, { offsets: [7, 1, 0], today: '2026-11-03' }), name: 'Test', companyId: 'co', categoryId: 'cat' };
 
-describe('subscription form', () => {
+describe('bill form', () => {
   it('starts today with the next due date following it', () => {
     const d = defaultsFrom(undefined, { offsets: [7], today: '2026-11-03' });
     expect(d).toMatchObject({ startDate: '2026-11-03', nextDueDate: '2026-11-03', nextDueManual: false, frequency: 'monthly' });
@@ -70,12 +70,12 @@ describe('subscription form', () => {
     expect(parsed.error?.issues.map((i) => i.path.join('.'))).toContain('trialEndsOn');
   });
 
-  it('handles the subscription key: set, keep (blank) and remove', () => {
-    expect(toInput({ ...base, amount: '1', subscriptionKey: ' LIC-1234 ' }).subscriptionKey).toBe('LIC-1234');
-    const existing = { nextDueDate: '2026-12-01', subscriptionKey: { hasKey: true, last4: '1234', masked: '••••••1234' } } as Subscription;
+  it('handles the account reference: set, keep (blank) and remove', () => {
+    expect(toInput({ ...base, amount: '1', accountReference: ' LIC-1234 ' }).accountReference).toBe('LIC-1234');
+    const existing = { nextDueDate: '2026-12-01', accountReference: { hasKey: true, last4: '1234', masked: '••••••1234' } } as Bill;
     const values = { ...base, amount: '1', nextDueDate: '2026-12-01' };
-    expect(toInput(values, existing)).not.toHaveProperty('subscriptionKey');
-    expect(toInput({ ...values, removeKey: true }, existing).subscriptionKey).toBeNull();
+    expect(toInput(values, existing)).not.toHaveProperty('accountReference');
+    expect(toInput({ ...values, removeKey: true }, existing).accountReference).toBeNull();
     // An unchanged due date is left to the server when editing.
     expect(toInput(values, existing)).not.toHaveProperty('nextDueDate');
   });

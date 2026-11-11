@@ -2,7 +2,7 @@ import type { AppContext } from '../context.js';
 import { addDays, daysBetween, localTimeIn, paidForCycle, reminderSchedule, todayIn } from '../domain/schedule.js';
 
 import { reminderCopy } from './messages.js';
-import { dedupeKey, prefsFor, subscriptionUrl } from './store.js';
+import { dedupeKey, prefsFor, billUrl } from './store.js';
 
 /**
  * Local backup reminders (master prompt 2.3). After every sync the app schedules on-device
@@ -16,7 +16,7 @@ import { dedupeKey, prefsFor, subscriptionUrl } from './store.js';
  */
 export interface BackupEvent {
   key: string;
-  subscriptionId: string;
+  billId: string;
   type: 'DUE_TODAY' | 'OVERDUE';
   cycleDueDate: string;
   offsetDays: number;
@@ -49,19 +49,19 @@ export async function backupSchedule(ctx: AppContext, userId: string, workspaceI
   const prefs = await prefsFor(ctx, userId, workspaceId);
   if (!prefs.pushEnabled) return [];
 
-  const subs = await ctx.db.subscription.findMany({
+  const subs = await ctx.db.bill.findMany({
     where: { workspaceId, status: 'ACTIVE', nextDueDate: { lte: until } },
     include: { company: { select: { name: true } } },
   });
   if (subs.length === 0) return [];
   const [payments, snoozes, delivered] = await Promise.all([
     ctx.db.paymentRecord.findMany({
-      where: { workspaceId, OR: subs.map((s) => ({ subscriptionId: s.id, cycleDueDate: s.nextDueDate })) },
-      select: { subscriptionId: true, cycleDueDate: true, amountCents: true },
+      where: { workspaceId, OR: subs.map((s) => ({ billId: s.id, cycleDueDate: s.nextDueDate })) },
+      select: { billId: true, cycleDueDate: true, amountCents: true },
     }),
-    ctx.db.reminderSnooze.findMany({ where: { userId, subscriptionId: { in: subs.map((s) => s.id) } } }),
+    ctx.db.reminderSnooze.findMany({ where: { userId, billId: { in: subs.map((s) => s.id) } } }),
     ctx.db.notification.findMany({
-      where: { userId, workspaceId, channel: 'PUSH', status: 'DELIVERED', subscriptionId: { in: subs.map((s) => s.id) } },
+      where: { userId, workspaceId, channel: 'PUSH', status: 'DELIVERED', billId: { in: subs.map((s) => s.id) } },
       select: { dedupeKey: true },
     }),
   ]);
@@ -79,10 +79,10 @@ export async function backupSchedule(ctx: AppContext, userId: string, workspaceI
   const out: BackupEvent[] = [];
   for (const s of subs) {
     if (prefs.muted.has(s.id)) continue;
-    const paid = paidForCycle(payments.filter((p) => p.subscriptionId === s.id), s.nextDueDate);
+    const paid = paidForCycle(payments.filter((p) => p.billId === s.id), s.nextDueDate);
     const remaining = s.amountCents - paid;
     if (remaining <= 0) continue;
-    const snooze = snoozes.find((z) => z.subscriptionId === s.id && z.cycleDueDate === s.nextDueDate);
+    const snooze = snoozes.find((z) => z.billId === s.id && z.cycleDueDate === s.nextDueDate);
     const offsets = (s.reminderOffsets as number[]).filter((o) => o <= 0);
     for (const r of reminderSchedule(s.nextDueDate, offsets, until)) {
       if (r.date < today || r.date > until) continue;
@@ -95,14 +95,14 @@ export async function backupSchedule(ctx: AppContext, userId: string, workspaceI
       const copy = reminderCopy({ name: s.name, company: s.company.name, amountCents: remaining, dueDate: s.nextDueDate, daysUntilDue: daysBetween(r.date, s.nextDueDate) });
       out.push({
         key,
-        subscriptionId: s.id,
+        billId: s.id,
         type,
         cycleDueDate: s.nextDueDate,
         offsetDays: r.offsetDays,
         fireAt: fireAt.toISOString(),
         title: copy.title,
         body: copy.body,
-        url: subscriptionUrl(ctx, s.id),
+        url: billUrl(ctx, s.id),
       });
     }
   }

@@ -29,6 +29,6 @@ describe('translations', () => {
     expect(i18n.t('home.goodMorning', { firstName: 'Lina' })).toBe('Mwaramutse, Lina 👋');
     expect(i18n.t('more.reportsSub')).toBe(en.more.reportsSub); // not translated yet → English
     await i18n.changeLanguage('en');
-    expect(i18n.t('tabs.subscriptions')).toBe('Subscriptions');
+    expect(i18n.t('tabs.bills')).toBe('Bills');
   });
 });

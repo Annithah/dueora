@@ -10,7 +10,7 @@ import { createTestContext } from './helpers/context.js';
 
 /**
  * A full year with a fake clock, three fictional organisations in three timezones.
- * Each has a monthly subscription that is paid on its due date and one that is never
+ * Each has a monthly bill that is paid on its due date and one that is never
  * paid (archived after three months). Asserts: reminders land on the right local day,
  * every member gets them, nothing is ever duplicated, paying stops reminders at once,
  * overdue follow-ups run 1, 3, 7 days then weekly, and archiving stops them.
@@ -52,7 +52,7 @@ beforeAll(async () => {
     await ctx.db.notificationPreference.updateMany({ where: { workspaceId }, data: { weeklySummary: false, monthlySummary: false } });
     const make = async (name: string, due: string) =>
       (
-        await as.post('/api/v1/subscriptions').send({
+        await as.post('/api/v1/bills').send({
           name,
           companyId: company,
           categoryId: category,
@@ -84,16 +84,16 @@ beforeAll(async () => {
     for (const o of orgs) {
       const local = localTimeIn(ctx.clock.now(), o.tz);
       const as = client(app, o.admin, o.workspaceId);
-      // Pay the "paid" subscription on its due date, after that day's reminders went out.
-      const paid = await ctx.db.subscription.findUniqueOrThrow({ where: { id: o.paidSub } });
+      // Pay the "paid" bill on its due date, after that day's reminders went out.
+      const paid = await ctx.db.bill.findUniqueOrThrow({ where: { id: o.paidSub } });
       if (paid.nextDueDate === local.date && local.hour >= 10) {
-        const r = await as.post(`/api/v1/subscriptions/${o.paidSub}/payments`).send({ method: 'BANK_TRANSFER', paidOn: local.date });
+        const r = await as.post(`/api/v1/bills/${o.paidSub}/payments`).send({ method: 'BANK_TRANSFER', paidOn: local.date });
         expect(r.status).toBe(201);
       }
       // The unpaid one is archived once it's three months overdue.
       if (local.date === '2027-02-20') {
-        const s = await ctx.db.subscription.findUniqueOrThrow({ where: { id: o.unpaidSub } });
-        if (s.status === 'ACTIVE') await as.post(`/api/v1/subscriptions/${o.unpaidSub}/archive`);
+        const s = await ctx.db.bill.findUniqueOrThrow({ where: { id: o.unpaidSub } });
+        if (s.status === 'ACTIVE') await as.post(`/api/v1/bills/${o.unpaidSub}/archive`);
       }
     }
   }
@@ -103,9 +103,9 @@ afterAll(async () => {
   await ctx.db.$disconnect();
 });
 
-const reminders = (workspaceId: string, subscriptionId: string) =>
+const reminders = (workspaceId: string, billId: string) =>
   ctx.db.notification.findMany({
-    where: { workspaceId, subscriptionId, channel: 'IN_APP', type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] } },
+    where: { workspaceId, billId, channel: 'IN_APP', type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] } },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -120,7 +120,7 @@ describe('a year of reminders in three timezones', () => {
     }
     // Each (cycle, offset) reaches all three members exactly once.
     const byEvent = new Map<string, string[]>();
-    for (const n of rows) byEvent.set(`${n.subscriptionId}:${n.cycleDueDate}:${n.offsetDays}`, [...(byEvent.get(`${n.subscriptionId}:${n.cycleDueDate}:${n.offsetDays}`) ?? []), n.userId]);
+    for (const n of rows) byEvent.set(`${n.billId}:${n.cycleDueDate}:${n.offsetDays}`, [...(byEvent.get(`${n.billId}:${n.cycleDueDate}:${n.offsetDays}`) ?? []), n.userId]);
     for (const users of byEvent.values()) expect(users.sort()).toEqual([...o.memberIds].sort());
   });
 
@@ -154,10 +154,10 @@ describe('a year of reminders in three timezones', () => {
 
   it('keeps every workspace to its own data', async () => {
     for (const o of orgs) {
-      const rows = await ctx.db.notification.findMany({ where: { workspaceId: o.workspaceId }, select: { userId: true, subscriptionId: true } });
+      const rows = await ctx.db.notification.findMany({ where: { workspaceId: o.workspaceId }, select: { userId: true, billId: true } });
       for (const n of rows) {
         expect(o.memberIds).toContain(n.userId);
-        if (n.subscriptionId) expect([o.paidSub, o.unpaidSub]).toContain(n.subscriptionId);
+        if (n.billId) expect([o.paidSub, o.unpaidSub]).toContain(n.billId);
       }
     }
   });

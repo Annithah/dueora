@@ -15,7 +15,7 @@ const RecordBody = z
   .object({
     amountCents: amountCents.optional(),
     paidOn: isoDate.optional(),
-    /** Defaults to the subscription's default payment method (or OTHER). */
+    /** Defaults to the bill's default payment method (or OTHER). */
     method: method.optional(),
     reference: text(100).optional(),
     notes: text(2000).optional(),
@@ -41,7 +41,7 @@ const HistoryQuery = pagination.extend({
   to: isoDate.optional(),
   companyId: idList,
   categoryId: idList,
-  subscriptionId: id.optional(),
+  billId: id.optional(),
   method: method.optional(),
 });
 
@@ -51,9 +51,9 @@ export function paymentsRouter(ctx: AppContext): Router {
   const router = Router();
   const guard = [requireAuth(ctx), requireWorkspace(ctx)];
 
-  router.post('/subscriptions/:id/payments', ...guard, requirePermission('payments:record'), async (req, res) => {
-    const { id: subscriptionId } = parseParams(req, Params);
-    res.status(201).json(await svc.recordPayment(ctx, req, subscriptionId, parseBody(req, RecordBody)));
+  router.post('/bills/:id/payments', ...guard, requirePermission('payments:record'), async (req, res) => {
+    const { id: billId } = parseParams(req, Params);
+    res.status(201).json(await svc.recordPayment(ctx, req, billId, parseBody(req, RecordBody)));
   });
 
   /** GET /payments?page=&limit=10&sort=&q=&from=&to=&companyId=&categoryId= */
@@ -67,7 +67,7 @@ export function paymentsRouter(ctx: AppContext): Router {
         to: q.to,
         companyIds: q.companyId,
         categoryIds: q.categoryId,
-        subscriptionId: q.subscriptionId,
+        billId: q.billId,
         method: q.method,
         page: q.page,
         limit: q.limit,

@@ -44,7 +44,7 @@ async function setup() {
   const who = (userId: string) => (Object.entries(fx.userIds).find(([, id]) => id === userId)?.[0] ?? '?') as string;
   const addMonthly = async (names: string[], startDate: string) => {
     for (const name of names) {
-      const res = await fx.as('admin').post('/api/v1/subscriptions').send({
+      const res = await fx.as('admin').post('/api/v1/bills').send({
         name,
         companyId: fx.companies.alpha,
         categoryId: fx.categories['Technology & software'],
@@ -72,7 +72,7 @@ describe('daily reminder run', () => {
     const all = await notes();
     // Only Internet (due 5 Nov, 3-day reminder) is due today. Every member (ADMIN, FINANCE,
     // VIEWER) receives it; the viewer has no phone, so they get email instead of push.
-    expect(new Set(all.map((n) => n.subscriptionId))).toEqual(new Set([fx.subscriptionIds.internet]));
+    expect(new Set(all.map((n) => n.billId))).toEqual(new Set([fx.billIds.internet]));
     expect(all.map((n) => `${who(n.userId)}:${n.channel}`).sort()).toEqual([
       'admin:IN_APP',
       'admin:PUSH',
@@ -88,7 +88,7 @@ describe('daily reminder run', () => {
       title: 'Due in 3 days',
       body: '⏰ Alpha News · Internet is due in 3 days — $120.00 on Thu, 5 Nov.',
       channelId: 'reminders',
-      data: { url: `dueora://subscriptions/${fx.subscriptionIds.internet}` },
+      data: { url: `dueora://bills/${fx.billIds.internet}` },
     });
     expect((await notes({ channel: 'PUSH' })).every((n) => n.status === 'SENT' && n.pushTicketId)).toBe(true);
     expect(ctx.mailer.sent.map((m) => `${m.to}:${m.subject}`)).toEqual([
@@ -134,28 +134,28 @@ describe('stopping reminders', () => {
   it('stops as soon as the cycle is paid', async () => {
     const { fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z'); // 3-day reminder for internet
-    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds.internet}/payments`).send({ method: 'MOBILE_MONEY' });
+    await fx.as('finance').post(`/api/v1/bills/${fx.billIds.internet}/payments`).send({ method: 'MOBILE_MONEY' });
     for (const day of ['03', '04', '05', '06']) await at(`2026-11-${day}T07:00:00Z`);
     const paidCycle = await notes({
-      subscriptionId: fx.subscriptionIds.internet,
+      billId: fx.billIds.internet,
       cycleDueDate: '2026-11-05',
       type: { in: ['REMINDER', 'DUE_TODAY', 'OVERDUE'] },
     });
     expect(new Set(paidCycle.map((n) => n.offsetDays))).toEqual(new Set([3]));
     // The next cycle (5 Dec) starts fresh: its 30-day reminder correctly falls on 5 Nov.
-    const nextCycle = await notes({ subscriptionId: fx.subscriptionIds.internet, cycleDueDate: '2026-12-05', channel: 'IN_APP', userId: fx.userIds.viewer });
+    const nextCycle = await notes({ billId: fx.billIds.internet, cycleDueDate: '2026-12-05', channel: 'IN_APP', userId: fx.userIds.viewer });
     expect(nextCycle.map((n) => n.offsetDays)).toEqual([30]);
   });
 
   it('stops for people who mute, and for everyone when archived', async () => {
     const { fx, at, notes } = await setup();
-    await fx.as('admin').post(`/api/v1/subscriptions/${fx.subscriptionIds.cleaning}/mute`);
-    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds['alpha-hosting']}/archive`);
+    await fx.as('admin').post(`/api/v1/bills/${fx.billIds.cleaning}/mute`);
+    await fx.as('finance').post(`/api/v1/bills/${fx.billIds['alpha-hosting']}/archive`);
     for (const day of ['02', '03', '04', '05', '06', '10']) await at(`2026-11-${day}T07:00:00Z`);
-    expect(await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.admin })).toHaveLength(0);
-    expect((await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.finance })).length).toBeGreaterThan(0);
-    expect((await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.viewer })).length).toBeGreaterThan(0);
-    expect(await notes({ subscriptionId: fx.subscriptionIds['alpha-hosting'] })).toHaveLength(0);
+    expect(await notes({ billId: fx.billIds.cleaning, userId: fx.userIds.admin })).toHaveLength(0);
+    expect((await notes({ billId: fx.billIds.cleaning, userId: fx.userIds.finance })).length).toBeGreaterThan(0);
+    expect((await notes({ billId: fx.billIds.cleaning, userId: fx.userIds.viewer })).length).toBeGreaterThan(0);
+    expect(await notes({ billId: fx.billIds['alpha-hosting'] })).toHaveLength(0);
   });
 
   it('cancels a queued push if the bill is paid during quiet hours', async () => {
@@ -168,7 +168,7 @@ describe('stopping reminders', () => {
     expect(ctx.push.sent).toHaveLength(0);
     expect(await notes({ channel: 'IN_APP' })).toHaveLength(3); // in-app appears immediately
 
-    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds.internet}/payments`).send({ method: 'CASH' });
+    await fx.as('finance').post(`/api/v1/bills/${fx.billIds.internet}/payments`).send({ method: 'CASH' });
     await at('2026-11-02T08:00:00Z');
     const after = await notes({ channel: 'PUSH', type: 'REMINDER' });
     expect(after.every((p) => p.status === 'FAILED' && p.error === 'cancelled: paid')).toBe(true);
@@ -242,27 +242,27 @@ describe('delivery reliability', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('uses the deterministic dedupe key workspace:subscription:type:cycle:offset:user:channel', async () => {
+  it('uses the deterministic dedupe key workspace:bill:type:cycle:offset:user:channel', async () => {
     const { fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z');
     const n = (await notes({ userId: fx.userIds.admin, channel: 'IN_APP' }))[0]!;
-    expect(n.dedupeKey).toBe([fx.workspaceId, fx.subscriptionIds.internet, 'REMINDER', '2026-11-05', 3, fx.userIds.admin, 'IN_APP'].join(':'));
+    expect(n.dedupeKey).toBe([fx.workspaceId, fx.billIds.internet, 'REMINDER', '2026-11-05', 3, fx.userIds.admin, 'IN_APP'].join(':'));
   });
 });
 
 describe('catch-up after downtime', () => {
-  it('sends only the most relevant missed reminder per subscription', async () => {
+  it('sends only the most relevant missed reminder per bill', async () => {
     const { fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z');
     await at('2026-11-03T07:00:00Z');
     // Down 4–7 Nov. Cleaning (due 6 Nov) missed its 1-day, due-day and 1-day-overdue
     // reminders; on 8 Nov only the latest (offset -1) goes out, phrased for today.
     await at('2026-11-08T07:00:00Z');
-    const cleaning = await notes({ subscriptionId: fx.subscriptionIds.cleaning, userId: fx.userIds.finance, channel: 'IN_APP' });
+    const cleaning = await notes({ billId: fx.billIds.cleaning, userId: fx.userIds.finance, channel: 'IN_APP' });
     expect(cleaning.map((n) => n.offsetDays)).toEqual([3, -1]);
     expect(cleaning[1]!.body).toBe('⚠️ Alpha News · Cleaning is 2 days overdue — $40.00. Tap to record the payment.');
     // Internet (due 5 Nov) missed 1, 0 and -1; on 8 Nov its own -3 reminder is due.
-    const internet = await notes({ subscriptionId: fx.subscriptionIds.internet, userId: fx.userIds.finance, channel: 'IN_APP' });
+    const internet = await notes({ billId: fx.billIds.internet, userId: fx.userIds.finance, channel: 'IN_APP' });
     expect(internet.map((n) => n.offsetDays)).toEqual([3, -3]);
     expect(internet[1]!.body).toContain('3 days overdue');
   });
@@ -277,10 +277,10 @@ describe('digest', () => {
     expect(admin.filter((n) => n.channel === 'IN_APP')).toHaveLength(5);
     const pushes = admin.filter((n) => n.channel === 'PUSH');
     expect(pushes).toHaveLength(1);
-    expect(pushes[0]).toMatchObject({ type: 'DIGEST', title: '🔔 5 subscriptions need attention this week' });
+    expect(pushes[0]).toMatchObject({ type: 'DIGEST', title: '🔔 5 bills need attention this week' });
     const email = ctx.mailer.sent.filter((m) => m.to === USERS.admin.email);
     expect(email).toHaveLength(1);
-    expect(email[0]!.subject).toBe('🔔 5 subscriptions need attention this week');
+    expect(email[0]!.subject).toBe('🔔 5 bills need attention this week');
     expect(email[0]!.text).toContain('Alpha News · Figma — $15.00');
     expect((await notes({ userId: fx.userIds.finance, channel: 'PUSH' }))[0]!.type).toBe('DIGEST');
     // The viewer (no phone) gets the single digest email, not five reminder emails.
@@ -302,7 +302,7 @@ describe('payment recorded', () => {
   it('tells the other admins and finance members, without naming who recorded it', async () => {
     const { ctx, fx, at, notes, who } = await setup();
     ctx.clock.set('2026-11-02T08:00:00Z');
-    await fx.as('finance').post(`/api/v1/subscriptions/${fx.subscriptionIds['beta-hosting']}/payments`).send({ method: 'CARD', paidOn: '2026-11-02' });
+    await fx.as('finance').post(`/api/v1/bills/${fx.billIds['beta-hosting']}/payments`).send({ method: 'CARD', paidOn: '2026-11-02' });
     await at('2026-11-02T08:01:00Z');
     const recorded = await notes({ type: 'PAYMENT_RECORDED' });
     expect(recorded.map((n) => `${who(n.userId)}:${n.channel}`).sort()).toEqual(['admin:IN_APP', 'admin:PUSH']);
@@ -344,17 +344,17 @@ describe('notifications API', () => {
       monthlySummary: false,
       budgetAlerts: true,
       teamActivity: true,
-      mutedSubscriptionIds: [],
+      mutedBillIds: [],
     });
     expect((await fx.as('viewer').patch('/api/v1/notifications/preferences').send({ nonsense: true })).status).toBe(400);
     expect((await fx.as('viewer').patch('/api/v1/notifications/preferences').send({ emailEnabled: false })).body.emailEnabled).toBe(false);
 
     // Viewers receive reminders, so they may mute them.
-    const id = fx.subscriptionIds['alpha-hosting'];
-    expect((await fx.as('viewer').post(`/api/v1/subscriptions/${id}/mute`)).status).toBe(200);
-    expect((await fx.as('viewer').get(`/api/v1/subscriptions/${id}`)).body.muted).toBe(true);
-    expect((await fx.as('viewer').post(`/api/v1/subscriptions/${id}/unmute`)).status).toBe(200);
-    expect((await fx.as('viewer').get(`/api/v1/subscriptions/${id}`)).body.muted).toBe(false);
+    const id = fx.billIds['alpha-hosting'];
+    expect((await fx.as('viewer').post(`/api/v1/bills/${id}/mute`)).status).toBe(200);
+    expect((await fx.as('viewer').get(`/api/v1/bills/${id}`)).body.muted).toBe(true);
+    expect((await fx.as('viewer').post(`/api/v1/bills/${id}/unmute`)).status).toBe(200);
+    expect((await fx.as('viewer').get(`/api/v1/bills/${id}`)).body.muted).toBe(false);
 
     const bad = await client(app, fx.sessions.viewer).post('/api/v1/devices').send({ expoPushToken: 'not-a-token', platform: 'ios' });
     expect(bad.status).toBe(400);

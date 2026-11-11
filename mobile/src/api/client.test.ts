@@ -34,9 +34,9 @@ const header = (init: RequestInit, name: string) => (init.headers as Record<stri
 describe('createApiClient', () => {
   it('sends JSON with auth and org headers under /api/v1', async () => {
     const { api, calls } = setup(() => json(200, { ok: true }));
-    await expect(api.post('/subscriptions', { name: 'Hosting' })).resolves.toEqual({ ok: true });
+    await expect(api.post('/bills', { name: 'Hosting' })).resolves.toEqual({ ok: true });
     const [call] = calls;
-    expect(call?.url).toBe('https://api.dueora.test/api/v1/subscriptions');
+    expect(call?.url).toBe('https://api.dueora.test/api/v1/bills');
     expect(header(call!.init, 'Authorization')).toBe('Bearer access-1');
     expect(header(call!.init, 'X-Workspace-Id')).toBe('org_1');
     expect(header(call!.init, 'Content-Type')).toBe('application/json');
@@ -60,7 +60,7 @@ describe('createApiClient', () => {
 
   it('handles 204 No Content', async () => {
     const { api } = setup(() => new Response(null, { status: 204 }));
-    await expect(api.del('/subscriptions/1')).resolves.toBeUndefined();
+    await expect(api.del('/bills/1')).resolves.toBeUndefined();
   });
 
   it('refreshes once on 401 and retries with the new token', async () => {

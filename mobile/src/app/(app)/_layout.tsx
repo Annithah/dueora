@@ -64,8 +64,8 @@ export default function AppLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="setup" />
-      <Stack.Screen name="subscriptions/new" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="subscriptions/[id]" />
+      <Stack.Screen name="bills/new" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="bills/[id]" />
       <Stack.Screen name="notifications-permission" options={{ presentation: 'modal' }} />
       <Stack.Screen name="settings/notifications" />
     </Stack>

@@ -8,16 +8,16 @@
 ## 1. Product
 
 **DueOra** — "Your dues, on time." A mobile app that helps people and companies track their recurring
-subscriptions and payments (hosting, domains, software, internet, rent, insurance, utilities), get reliable
+bills and payments (hosting, domains, software, internet, rent, insurance, utilities), get reliable
 reminders before due dates, record payments, and see everything on one dashboard.
 
 ## 2. Product decisions
 
-1. **Subscriptions are the core item.** Everything the user pays is a "Subscription" (code and UI).
-2. **Choose company.** A workspace can contain several companies. Every subscription belongs to exactly one
+1. **Bills are the core item.** Everything the user pays is a "Bill" (code and UI).
+2. **Choose company.** A workspace can contain several companies. Every bill belongs to exactly one
    company, chosen from a dropdown when adding it. Users can add and rename companies; a company with
-   subscriptions is archived instead of deleted.
-3. **Choose category.** Every subscription has one category from a list (defaults + custom).
+   bills is archived instead of deleted.
+3. **Choose category.** Every bill has one category from a list (defaults + custom).
 4. **No projects or platforms** — only Company and Category.
 5. **US dollars only.** No currency selection, conversion or multi-currency. Amounts are integer cents,
    displayed like `$1,523.00`.
@@ -26,24 +26,24 @@ reminders before due dates, record payments, and see everything on one dashboard
    Date fields have quick-pick chips: Today, +1 week, +1 month, +3 months, +1 year.
 7. **No ownership details** — no "assigned to", owner, department or "created by" in the UI or model.
 8. **No attachments** — no receipts, uploads or file storage anywhere.
-9. **Sorted by due date** — every subscription list defaults to next due date, soonest first (overdue on top).
+9. **Sorted by due date** — every bill list defaults to next due date, soonest first (overdue on top).
 10. **10 per page** — server-side pagination with load more / infinite scroll.
-11. **Sort and Filter buttons next to search** on the subscriptions and history screens. Sort: due date
+11. **Sort and Filter buttons next to search** on the bills and history screens. Sort: due date
     soonest/latest, amount high/low, name A–Z, recently added. Filter (bottom sheet): status, company,
     category, frequency, due-date range. Active filters show as removable chips.
 12. **Real data only.** The app shows only database data via the API. No demo data in the app or databases;
     the only seed is the default categories. Fixtures only inside automated tests with an isolated database.
-13. **Subscription key** (optional): license key, account number, customer ID or plan ID. Encrypted at rest
-    (AES-256-GCM, secret `SUBSCRIPTION_KEY_SECRET`), never logged or put in notifications/emails, shown masked
+13. **Account reference** (optional): license key, account number, customer ID or plan ID. Encrypted at rest
+    (AES-256-GCM, secret `ACCOUNT_REF_SECRET`), never logged or put in notifications/emails, shown masked
     (`••••••4F7A`) with Show and Copy buttons; the plain value goes only to ADMIN and FINANCE (VIEWER sees the
-    masked value). Subscriptions are searchable by key.
+    masked value). Bills are searchable by key.
 
 ## 3. Roles
 
 | Role | Can |
 |---|---|
 | ADMIN | Everything |
-| FINANCE | Manage subscriptions, payments and reports; cannot manage members |
+| FINANCE | Manage bills, payments and reports; cannot manage members |
 | VIEWER | Read-only; receives reminders |
 
 One workspace can never read or modify another workspace's data.
@@ -53,7 +53,7 @@ One workspace can never read or modify another workspace's data.
 User · Workspace (type COMPANY/PERSONAL, IANA timezone default Africa/Kigali, reminderHour default 9, quiet
 hours) · Membership (role) · Company · Category (defaults: Technology & software, Hosting & domains,
 Communication & internet, Social media, Office & rent, Insurance, Marketing, Utilities, Other) ·
-Subscription (company, category, name, provider?, description?, encrypted key + last4 + search hash,
+Bill (company, category, name, provider?, description?, encrypted key + last4 + search hash,
 amountCents, frequency unit/interval, anchorDay, startDate, nextDueDate, reminderOffsets, status
 ACTIVE/ARCHIVED/COMPLETED) · PaymentRecord (cycleDueDate, amountCents, paidOn, method, reference?, notes?) ·
 DeviceToken · NotificationPreference · Notification (in-app + delivery log, unique dedupeKey) · AuditLog
@@ -65,14 +65,14 @@ Due dates are dates without time. Money is integer cents. Every query is scoped 
 
 - **Phase 0–2 — Foundation & setup:** monorepo, lint/format/strict TS, env validation, error handling,
   logging, `/health`, `/api/v1`, Prisma schema + migration, categories-only seed, Expo Router tabs (Home,
-  Subscriptions, Calendar, Alerts, More) with a floating "+", API client with token refresh, TanStack Query.
+  Bills, Calendar, Alerts, More) with a floating "+", API client with token refresh, TanStack Query.
 - **Phase 1 — Design foundation:** UI map, light/dark theme tokens, Plus Jakarta Sans, reusable components
   (incl. DateField with quick picks, SearchBar with Sort/Filter, SortSheet, FilterSheet), original
   illustrations and Lottie success animation.
 - **Phase 3 — Auth, workspace, companies, roles:** register, login, logout, refresh, forgot/reset password
   (email code), email verification, profile; create workspace (Company/Personal), settings, switch; companies;
   invites and roles; isolation tests.
-- **Phase 4 — Subscriptions & scheduling engine:** CRUD, archive/unarchive, custom categories, list endpoint
+- **Phase 4 — Bills & scheduling engine:** CRUD, archive/unarchive, custom categories, list endpoint
   with page/limit/sort/q/status/companyId/categoryId/frequency/dueFrom/dueTo; pure engine
   (`calculateNextDueDate`, `advance`, `computeStatus`, `reminderDates`) with month-end and leap-year handling,
   "today" in the workspace timezone; > 95% coverage.
@@ -83,7 +83,7 @@ Due dates are dates without time. Money is integer cents. Every query is scoped 
   deterministic dedupe keys, all members as recipients, digests above 3, Expo push (chunks, receipts, token
   deactivation, retries) + Resend email + in-app; human USD copy; mobile permission flow, Android channels,
   deep links, toasts, settings with test notification; a year-long simulation test.
-- **Phase 7 — Screens:** onboarding, auth, workspace setup, dashboard, subscriptions list, add/edit, detail
+- **Phase 7 — Screens:** onboarding, auth, workspace setup, dashboard, bills list, add/edit, detail
   (masked key with Show/Copy), record payment with success animation, calendar, alerts, history, reports (PDF
   & Excel), settings; skeletons, empty states, error/retry, offline banner, persisted query cache.
 - **Phase 8 — Hardening & deployment:** integration tests for every route, roles, isolation, pagination and

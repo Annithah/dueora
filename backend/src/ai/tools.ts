@@ -10,8 +10,8 @@ import { guessCategoryName } from '../domain/guess.js';
 import { actorOf, workspaceIdOf } from '../http/middleware/auth.js';
 import { budgetProgress } from '../modules/budgets/service.js';
 import { dashboard, report } from '../modules/insights/service.js';
-import { listSubscriptions, workspaceToday, type SubscriptionSort } from '../modules/subscriptions/service.js';
-import type { SubscriptionView } from '../modules/subscriptions/view.js';
+import { listBills, workspaceToday, type BillSort } from '../modules/bills/service.js';
+import type { BillView } from '../modules/bills/view.js';
 import { addMonthsKey, monthRange, occurrencesBetween } from '../modules/insights/projection.js';
 
 import { searchArticles } from './knowledge.js';
@@ -20,18 +20,18 @@ import { searchArticles } from './knowledge.js';
  * DueOra AI's tools. Read tools answer from the workspace's own data through the same
  * services the app uses (so roles and workspace isolation apply). Write tools are
  * *proposals*: they return a confirmation card and change nothing — the change runs only
- * when the user taps Confirm (actions.ts). Subscription keys are never part of any result.
+ * when the user taps Confirm (actions.ts). Account references are never part of any result.
  */
 
 export type Card =
-  | { type: 'subscriptions'; title: string; items: { id: string; name: string; company: string; amountCents: number; nextDueDate: string; status: string }[] }
+  | { type: 'bills'; title: string; items: { id: string; name: string; company: string; amountCents: number; nextDueDate: string; status: string }[] }
   | { type: 'total'; label: string; amountCents: number; detail?: string }
   | { type: 'action'; id: string; kind: ActionKind; summary: string; payload: Record<string, unknown>; status: 'pending' | 'confirmed' | 'cancelled' | 'failed'; result?: string };
 
 export type ActionKind =
-  | 'add_subscription'
+  | 'add_bill'
   | 'record_payment'
-  | 'update_subscription'
+  | 'update_bill'
   | 'snooze'
   | 'mute'
   | 'archive'
@@ -63,8 +63,8 @@ export const FREQUENCIES: Record<string, { unit: 'WEEK' | 'MONTH' | 'YEAR' | 'ON
   once: { unit: 'ONCE', interval: 1, label: 'one-time' },
 };
 
-/** What the model sees about a subscription — never the key, never internal ids beyond `id`. */
-function safe(v: SubscriptionView) {
+/** What the model sees about a bill — never the key, never internal ids beyond `id`. */
+function safe(v: BillView) {
   return {
     id: v.id,
     name: v.name,
@@ -88,14 +88,14 @@ const num = (description: string) => ({ type: 'number', description });
 
 const READ_TOOLS: FunctionDeclaration[] = [
   {
-    name: 'list_subscriptions',
-    description: 'List subscriptions in this workspace, soonest due first. Use for "what is due", "what is overdue", "show everything for <company>", search by name.',
+    name: 'list_bills',
+    description: 'List bills in this workspace, soonest due first. Use for "what is due", "what is overdue", "show everything for <company>", search by name.',
     parametersJsonSchema: obj({
       query: str('Text to search in name, provider, company or category'),
       status: str('Filter by status', { enum: ['OVERDUE', 'DUE_TODAY', 'DUE_SOON', 'UPCOMING', 'PARTIALLY_PAID', 'PAID', 'ARCHIVED'] }),
       company: str('Only this company (name)'),
       category: str('Only this category (name)'),
-      dueWithinDays: num('Only subscriptions due within this many days from today (0 = today)'),
+      dueWithinDays: num('Only bills due within this many days from today (0 = today)'),
       sort: str('Sort order', { enum: ['due_asc', 'amount_desc', 'name_asc', 'recent'] }),
     }),
   },
@@ -121,7 +121,7 @@ const READ_TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'get_insights',
-    description: 'Possible duplicate subscriptions, recent price increases, free trials ending soon and upcoming renewals worth planning for.',
+    description: 'Possible duplicate bills, recent price increases, free trials ending soon and upcoming renewals worth planning for.',
     parametersJsonSchema: obj({}),
   },
   { name: 'get_budgets', description: 'Monthly budgets and how much of each is used this month.', parametersJsonSchema: obj({}) },
@@ -133,11 +133,11 @@ const READ_TOOLS: FunctionDeclaration[] = [
   },
 ];
 
-const subscriptionRef = str('The subscription: its id, or its name (optionally "Company · Name")');
+const billRef = str('The bill: its id, or its name (optionally "Company · Name")');
 const WRITE_TOOLS: FunctionDeclaration[] = [
   {
-    name: 'propose_add_subscription',
-    description: 'Propose adding a subscription. Shows a confirmation card; nothing is saved until the user confirms.',
+    name: 'propose_add_bill',
+    description: 'Propose adding a bill. Shows a confirmation card; nothing is saved until the user confirms.',
     parametersJsonSchema: obj(
       {
         name: str('What it is, e.g. "Internet"'),
@@ -156,41 +156,41 @@ const WRITE_TOOLS: FunctionDeclaration[] = [
   },
   {
     name: 'propose_record_payment',
-    description: 'Propose recording a payment for the current cycle of a subscription (full by default).',
+    description: 'Propose recording a payment for the current cycle of a bill (full by default).',
     parametersJsonSchema: obj(
       {
-        subscription: subscriptionRef,
+        bill: billRef,
         amountUSD: num('Amount paid in USD (omit for the full remaining amount)'),
         paidOn: str('YYYY-MM-DD (omit for today)'),
         method: str('Payment method', { enum: ['MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CASH', 'OTHER'] }),
       },
-      ['subscription'],
+      ['bill'],
     ),
   },
   {
-    name: 'propose_update_subscription',
-    description: 'Propose changing a subscription: amount, frequency or reminders.',
+    name: 'propose_update_bill',
+    description: 'Propose changing a bill: amount, frequency or reminders.',
     parametersJsonSchema: obj(
       {
-        subscription: subscriptionRef,
+        bill: billRef,
         amountUSD: num('New amount in USD'),
         frequency: str('New frequency', { enum: Object.keys(FREQUENCIES) }),
         reminderDaysBefore: { type: 'array', items: { type: 'number' }, description: 'Reminder offsets in days (negative = after the due date)' },
       },
-      ['subscription'],
+      ['bill'],
     ),
   },
   {
     name: 'propose_snooze',
-    description: "Propose snoozing a subscription's reminders for the user (1, 3 or 7 days).",
-    parametersJsonSchema: obj({ subscription: subscriptionRef, days: num('1, 3 or 7') }, ['subscription', 'days']),
+    description: "Propose snoozing a bill's reminders for the user (1, 3 or 7 days).",
+    parametersJsonSchema: obj({ bill: billRef, days: num('1, 3 or 7') }, ['bill', 'days']),
   },
   {
     name: 'propose_mute',
-    description: "Propose muting (or unmuting) a subscription's reminders for the user.",
-    parametersJsonSchema: obj({ subscription: subscriptionRef, muted: { type: 'boolean' } }, ['subscription', 'muted']),
+    description: "Propose muting (or unmuting) a bill's reminders for the user.",
+    parametersJsonSchema: obj({ bill: billRef, muted: { type: 'boolean' } }, ['bill', 'muted']),
   },
-  { name: 'propose_archive', description: 'Propose archiving a subscription (stops reminders for everyone, keeps history).', parametersJsonSchema: obj({ subscription: subscriptionRef }, ['subscription']) },
+  { name: 'propose_archive', description: 'Propose archiving a bill (stops reminders for everyone, keeps history).', parametersJsonSchema: obj({ bill: billRef }, ['bill']) },
   { name: 'propose_create_company', description: 'Propose creating a company in this workspace.', parametersJsonSchema: obj({ name: str('Company name') }, ['name']) },
   { name: 'propose_create_category', description: 'Propose creating a custom category.', parametersJsonSchema: obj({ name: str('Category name') }, ['name']) },
   {
@@ -208,7 +208,7 @@ const WRITE_TOOLS: FunctionDeclaration[] = [
 /** Tools offered to this user: everyone reads; only roles that may change things get write tools (snooze/mute are personal). */
 export function toolsFor(role: Parameters<typeof can>[0]): FunctionDeclaration[] {
   const personal = WRITE_TOOLS.filter((t) => t.name === 'propose_snooze' || t.name === 'propose_mute');
-  return can(role, 'subscriptions:manage') ? [...READ_TOOLS, ...WRITE_TOOLS] : [...READ_TOOLS, ...personal];
+  return can(role, 'bills:manage') ? [...READ_TOOLS, ...WRITE_TOOLS] : [...READ_TOOLS, ...personal];
 }
 
 export const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name!));
@@ -216,7 +216,7 @@ export const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name!));
 // --- Helpers ----------------------------------------------------------------------------
 
 async function allViews(t: ToolContext, includeArchived = false) {
-  const page = await listSubscriptions(t.ctx, t.req, {
+  const page = await listBills(t.ctx, t.req, {
     sort: 'due_asc',
     page: 1,
     limit: 5000,
@@ -225,19 +225,19 @@ async function allViews(t: ToolContext, includeArchived = false) {
   return page.items;
 }
 
-/** Resolve "the hosting" / "Alpha · Hosting" / an id to one subscription, or explain why not. */
-async function resolveSubscription(t: ToolContext, ref: unknown): Promise<SubscriptionView | string> {
+/** Resolve "the hosting" / "Alpha · Hosting" / an id to one bill, or explain why not. */
+async function resolveBill(t: ToolContext, ref: unknown): Promise<BillView | string> {
   const q = String(ref ?? '').trim().toLowerCase();
-  if (!q) return 'Which subscription? Ask the user.';
+  if (!q) return 'Which bill? Ask the user.';
   const views = await allViews(t, true);
   const byId = views.find((v) => v.id === ref);
   if (byId) return byId;
-  const label = (v: SubscriptionView) => `${v.company.name} · ${v.name}`.toLowerCase();
+  const label = (v: BillView) => `${v.company.name} · ${v.name}`.toLowerCase();
   const exact = views.filter((v) => v.name.toLowerCase() === q || label(v) === q);
   const partial = exact.length ? exact : views.filter((v) => label(v).includes(q) || (v.provider ?? '').toLowerCase().includes(q) || q.includes(v.name.toLowerCase()));
   if (partial.length === 1) return partial[0]!;
-  if (partial.length === 0) return `No subscription matches "${String(ref)}". Ask the user which one they mean (you can call list_subscriptions).`;
-  return `Several subscriptions match: ${partial.slice(0, 6).map((v) => `${v.company.name} · ${v.name} (id ${v.id})`).join('; ')}. Ask the user which one.`;
+  if (partial.length === 0) return `No bill matches "${String(ref)}". Ask the user which one they mean (you can call list_bills).`;
+  return `Several bills match: ${partial.slice(0, 6).map((v) => `${v.company.name} · ${v.name} (id ${v.id})`).join('; ')}. Ask the user which one.`;
 }
 
 function propose(t: ToolContext, kind: ActionKind, summary: string, payload: Record<string, unknown>) {
@@ -260,13 +260,13 @@ function nextDayOfMonth(today: string, day: number): string {
 type Executor = (t: ToolContext, args: Record<string, unknown>) => Promise<unknown>;
 
 const EXECUTORS: Record<string, Executor> = {
-  async list_subscriptions(t, a) {
+  async list_bills(t, a) {
     const today = workspaceToday(t.ctx, t.req);
     const statuses = typeof a.status === 'string' ? [a.status as never] : undefined;
-    const page = await listSubscriptions(t.ctx, t.req, {
+    const page = await listBills(t.ctx, t.req, {
       q: typeof a.query === 'string' && a.query.trim() ? a.query.trim() : undefined,
       statuses,
-      sort: (['due_asc', 'amount_desc', 'name_asc', 'recent'].includes(String(a.sort)) ? a.sort : 'due_asc') as SubscriptionSort,
+      sort: (['due_asc', 'amount_desc', 'name_asc', 'recent'].includes(String(a.sort)) ? a.sort : 'due_asc') as BillSort,
       dueTo: typeof a.dueWithinDays === 'number' ? addDays(today, Math.max(0, Math.round(a.dueWithinDays))) : undefined,
       page: 1,
       limit: 5000,
@@ -280,12 +280,12 @@ const EXECUTORS: Record<string, Executor> = {
     const shown = items.slice(0, 25);
     if (shown.length) {
       t.cards.push({
-        type: 'subscriptions',
-        title: `${items.length} subscription${items.length === 1 ? '' : 's'}`,
+        type: 'bills',
+        title: `${items.length} bill${items.length === 1 ? '' : 's'}`,
         items: shown.slice(0, 8).map((v) => ({ id: v.id, name: v.name, company: v.company.name, amountCents: v.remainingCents || v.amountCents, nextDueDate: v.nextDueDate, status: v.paymentStatus })),
       });
     }
-    return { count: items.length, totalRemainingUSD: usd(items.reduce((s, v) => s + v.remainingCents, 0)), subscriptions: shown.map(safe) };
+    return { count: items.length, totalRemainingUSD: usd(items.reduce((s, v) => s + v.remainingCents, 0)), bills: shown.map(safe) };
   },
 
   async get_overview(t) {
@@ -297,7 +297,7 @@ const EXECUTORS: Record<string, Executor> = {
       dueThisMonth: { amountUSD: usd(d.summary.dueThisMonth.amountCents), count: d.summary.dueThisMonth.count },
       paidThisMonth: { amountUSD: usd(d.summary.paidThisMonth.amountCents), count: d.summary.paidThisMonth.count },
       needsAttention: d.needsAttention.map((s) => ({ id: s.id, name: s.name, company: s.company.name, remainingUSD: usd(s.remainingCents), nextDueDate: s.nextDueDate, status: s.paymentStatus })),
-      activeSubscriptions: d.counts.active,
+      activeBills: d.counts.active,
     };
   },
 
@@ -337,7 +337,7 @@ const EXECUTORS: Record<string, Executor> = {
     const today = workspaceToday(t.ctx, t.req);
     const keys = Array.from({ length: months }, (_, i) => addMonthsKey(today.slice(0, 7), i));
     const to = monthRange(`${keys.at(-1)}-01`).to;
-    const rows = await t.ctx.db.subscription.findMany({ where: { workspaceId: workspaceIdOf(t.req), status: 'ACTIVE' }, include: { company: true, category: true } });
+    const rows = await t.ctx.db.bill.findMany({ where: { workspaceId: workspaceIdOf(t.req), status: 'ACTIVE' }, include: { company: true, category: true } });
     const totals = new Map<string, number>();
     let total = 0;
     for (const s of rows) {
@@ -358,7 +358,7 @@ const EXECUTORS: Record<string, Executor> = {
     const today = workspaceToday(t.ctx, t.req);
     const views = (await allViews(t)).filter((v) => v.status === 'ACTIVE');
     const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const groups = new Map<string, SubscriptionView[]>();
+    const groups = new Map<string, BillView[]>();
     for (const v of views) {
       const key = `${norm(v.name)}|${norm(v.provider ?? '')}`;
       groups.set(key, [...(groups.get(key) ?? []), v]);
@@ -366,18 +366,18 @@ const EXECUTORS: Record<string, Executor> = {
     const duplicates = [...groups.values()].filter((g) => g.length > 1).map((g) => g.map((v) => `${v.company.name} · ${v.name} (${usd(v.amountCents)} ${v.frequencyLabel.toLowerCase()})`));
     const changes = await t.ctx.db.priceChange.findMany({
       where: { workspaceId: workspaceIdOf(t.req), changedAt: { gte: new Date(Date.now() - 90 * 86_400_000) } },
-      include: { subscription: { select: { name: true, company: { select: { name: true } } } } },
+      include: { bill: { select: { name: true, company: { select: { name: true } } } } },
       orderBy: { changedAt: 'desc' },
     });
     const increases = changes
       .filter((c) => c.newAmountCents > c.oldAmountCents)
-      .map((c) => ({ subscription: `${c.subscription.company.name} · ${c.subscription.name}`, fromUSD: usd(c.oldAmountCents), toUSD: usd(c.newAmountCents), changedOn: c.changedAt.toISOString().slice(0, 10) }));
+      .map((c) => ({ bill: `${c.bill.company.name} · ${c.bill.name}`, fromUSD: usd(c.oldAmountCents), toUSD: usd(c.newAmountCents), changedOn: c.changedAt.toISOString().slice(0, 10) }));
     const trials = views
       .filter((v) => v.isTrial && v.trialEndsOn && v.trialEndsOn >= today && v.trialEndsOn <= addDays(today, 14))
-      .map((v) => ({ subscription: `${v.company.name} · ${v.name}`, endsOn: v.trialEndsOn, thenUSD: usd(v.amountCents) }));
+      .map((v) => ({ bill: `${v.company.name} · ${v.name}`, endsOn: v.trialEndsOn, thenUSD: usd(v.amountCents) }));
     const yearly = views
       .filter((v) => v.frequencyUnit === 'YEAR' && v.daysUntilDue >= 0 && v.daysUntilDue <= 90)
-      .map((v) => ({ subscription: `${v.company.name} · ${v.name}`, dueOn: v.nextDueDate, amountUSD: usd(v.amountCents) }));
+      .map((v) => ({ bill: `${v.company.name} · ${v.name}`, dueOn: v.nextDueDate, amountUSD: usd(v.amountCents) }));
     return { possibleDuplicates: duplicates, priceIncreases: increases, trialsEndingSoon: trials, bigRenewalsNext90Days: yearly };
   },
 
@@ -401,13 +401,13 @@ const EXECUTORS: Record<string, Executor> = {
 
   // --- Proposals (no writes) ---
 
-  async propose_add_subscription(t, a) {
+  async propose_add_bill(t, a) {
     const workspaceId = workspaceIdOf(t.req);
     const today = workspaceToday(t.ctx, t.req);
     const name = String(a.name ?? '').trim().slice(0, 120);
     const amount = cents(a.amountUSD);
     const freq = FREQUENCIES[String(a.frequency)];
-    if (!name) return { needMoreInfo: 'Ask what the subscription is called.' };
+    if (!name) return { needMoreInfo: 'Ask what the bill is called.' };
     if (!amount) return { needMoreInfo: 'Ask for the amount in US dollars.' };
     if (!freq) return { needMoreInfo: 'Ask how often it renews (weekly, monthly, quarterly, yearly, one-time…).' };
     const companies = await t.ctx.db.company.findMany({ where: { workspaceId, archivedAt: null }, orderBy: { createdAt: 'asc' } });
@@ -422,7 +422,7 @@ const EXECUTORS: Record<string, Executor> = {
     const trialEndsOn = /^\d{4}-\d{2}-\d{2}$/.test(String(a.trialEndsOn ?? '')) ? String(a.trialEndsOn) : null;
     const companyName = company?.name ?? wanted;
     const summary = `Add ${companyName} · ${name} — ${usd(amount)} ${freq.label}, next due ${nextDueDate} (${category.name})${company ? '' : ` — creates the company "${wanted}"`}${trialEndsOn ? `, free trial until ${trialEndsOn}` : ''}${a.autoRenew ? ', renews automatically' : ''}.`;
-    return propose(t, 'add_subscription', summary, {
+    return propose(t, 'add_bill', summary, {
       name,
       amountCents: amount,
       frequencyUnit: freq.unit,
@@ -440,7 +440,7 @@ const EXECUTORS: Record<string, Executor> = {
   },
 
   async propose_record_payment(t, a) {
-    const s = await resolveSubscription(t, a.subscription);
+    const s = await resolveBill(t, a.bill);
     if (typeof s === 'string') return { needMoreInfo: s };
     if (s.status !== 'ACTIVE') return { error: `${s.name} is ${s.status.toLowerCase()} — no payment is due.` };
     const amount = a.amountUSD === undefined ? s.remainingCents || s.amountCents : cents(a.amountUSD);
@@ -450,15 +450,15 @@ const EXECUTORS: Record<string, Executor> = {
     const method = ['MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CASH', 'OTHER'].includes(String(a.method)) ? String(a.method) : (s.defaultPaymentMethod ?? null);
     const methodText = method ? ` by ${method.toLowerCase().replace(/_/g, ' ')}` : '';
     return propose(t, 'record_payment', `Record ${usd(amount)} paid${methodText} on ${paidOn} for ${s.company.name} · ${s.name} (due ${s.nextDueDate}).`, {
-      subscriptionId: s.id,
+      billId: s.id,
       amountCents: amount,
       paidOn,
       method,
     });
   },
 
-  async propose_update_subscription(t, a) {
-    const s = await resolveSubscription(t, a.subscription);
+  async propose_update_bill(t, a) {
+    const s = await resolveBill(t, a.bill);
     if (typeof s === 'string') return { needMoreInfo: s };
     const changes: Record<string, unknown> = {};
     const parts: string[] = [];
@@ -481,28 +481,28 @@ const EXECUTORS: Record<string, Executor> = {
       parts.push(`reminders → ${offsets.map((o) => (o === 0 ? 'on the day' : o > 0 ? `${o}d before` : `${-o}d after`)).join(', ') || 'none'}`);
     }
     if (!parts.length) return { needMoreInfo: 'Ask what should change (amount, frequency or reminders).' };
-    return propose(t, 'update_subscription', `Update ${s.company.name} · ${s.name}: ${parts.join('; ')}.`, { subscriptionId: s.id, changes });
+    return propose(t, 'update_bill', `Update ${s.company.name} · ${s.name}: ${parts.join('; ')}.`, { billId: s.id, changes });
   },
 
   async propose_snooze(t, a) {
-    const s = await resolveSubscription(t, a.subscription);
+    const s = await resolveBill(t, a.bill);
     if (typeof s === 'string') return { needMoreInfo: s };
     const days = [1, 3, 7].includes(Number(a.days)) ? Number(a.days) : 1;
     const until = addDays(workspaceToday(t.ctx, t.req), days);
-    return propose(t, 'snooze', `Snooze reminders for ${s.company.name} · ${s.name} until ${until} (just for you).`, { subscriptionId: s.id, days });
+    return propose(t, 'snooze', `Snooze reminders for ${s.company.name} · ${s.name} until ${until} (just for you).`, { billId: s.id, days });
   },
 
   async propose_mute(t, a) {
-    const s = await resolveSubscription(t, a.subscription);
+    const s = await resolveBill(t, a.bill);
     if (typeof s === 'string') return { needMoreInfo: s };
     const muted = a.muted !== false;
-    return propose(t, 'mute', `${muted ? 'Mute' : 'Unmute'} reminders for ${s.company.name} · ${s.name} (just for you).`, { subscriptionId: s.id, muted });
+    return propose(t, 'mute', `${muted ? 'Mute' : 'Unmute'} reminders for ${s.company.name} · ${s.name} (just for you).`, { billId: s.id, muted });
   },
 
   async propose_archive(t, a) {
-    const s = await resolveSubscription(t, a.subscription);
+    const s = await resolveBill(t, a.bill);
     if (typeof s === 'string') return { needMoreInfo: s };
-    return propose(t, 'archive', `Archive ${s.company.name} · ${s.name}: reminders stop for everyone, history is kept.`, { subscriptionId: s.id });
+    return propose(t, 'archive', `Archive ${s.company.name} · ${s.name}: reminders stop for everyone, history is kept.`, { billId: s.id });
   },
 
   async propose_create_company(t, a) {
@@ -545,7 +545,7 @@ export async function runTool(t: ToolContext, name: string, args: Record<string,
   if (!exec) return { error: `Unknown tool ${name}` };
   if (WRITE_TOOL_NAMES.has(name)) {
     const personal = name === 'propose_snooze' || name === 'propose_mute';
-    if (!personal && !can(actorOf(t.req).role, 'subscriptions:manage')) {
+    if (!personal && !can(actorOf(t.req).role, 'bills:manage')) {
       return { error: 'This user is a Viewer and cannot make changes. Explain kindly that an admin or finance member can.' };
     }
   }

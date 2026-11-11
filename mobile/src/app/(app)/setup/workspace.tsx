@@ -29,7 +29,7 @@ export default function WorkspaceSetup() {
   const [error, setError] = useState<string | null>(null);
 
   const firstName = me.data?.name.split(' ')[0] ?? '';
-  const workspaceName = kind === 'PERSONAL' && !name.trim() ? `${firstName || 'My'}’s subscriptions` : name.trim();
+  const workspaceName = kind === 'PERSONAL' && !name.trim() ? `${firstName || 'My'}’s bills` : name.trim();
 
   const submit = async () => {
     setError(null);
@@ -82,7 +82,7 @@ export default function WorkspaceSetup() {
 
       <Input
         label={kind === 'COMPANY' ? 'Workspace name' : 'Workspace name (optional)'}
-        placeholder={kind === 'COMPANY' ? 'e.g. your group or business' : `${firstName || 'My'}’s subscriptions`}
+        placeholder={kind === 'COMPANY' ? 'e.g. your group or business' : `${firstName || 'My'}’s bills`}
         icon={<Building2 size={18} color={colors.muted} />}
         value={name}
         onChangeText={setName}
@@ -92,7 +92,7 @@ export default function WorkspaceSetup() {
       <Input
         label="First company"
         placeholder={kind === 'PERSONAL' ? 'Personal' : workspaceName || 'Company name'}
-        hint="Every subscription belongs to a company. Add more later — e.g. one per brand or website."
+        hint="Every bill belongs to a company. Add more later — e.g. one per brand or website."
         icon={<Store size={18} color={colors.muted} />}
         value={company}
         onChangeText={setCompany}

@@ -15,8 +15,8 @@ export interface Occurrence {
 }
 
 /**
- * Due dates of a subscription's open cycle and future cycles that fall in [from, to].
- * Archived and completed subscriptions have none. Capped to avoid runaway loops.
+ * Due dates of a bill's open cycle and future cycles that fall in [from, to].
+ * Archived and completed bills have none. Capped to avoid runaway loops.
  */
 export function occurrencesBetween(o: Projectable, from: string, to: string, max = 400): Occurrence[] {
   if (o.status !== 'ACTIVE') return [];

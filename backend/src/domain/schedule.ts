@@ -9,7 +9,7 @@
 
 export type ISODate = string;
 export type FrequencyUnit = 'WEEK' | 'MONTH' | 'YEAR' | 'ONCE';
-export type SubscriptionStatus = 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
+export type BillStatus = 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
 export type PaymentStatus =
   | 'UPCOMING'
   | 'DUE_SOON'
@@ -92,7 +92,7 @@ function assertSchedule(unit: FrequencyUnit, interval: number): void {
 }
 
 /**
- * Move one cycle forward: the due date one cycle after `current`, or null for one-time subscriptions.
+ * Move one cycle forward: the due date one cycle after `current`, or null for one-time bills.
  *
  * - WEEK × n: every n weeks (weekly, fortnightly, ...)
  * - MONTH × n: monthly (1), quarterly (3), every 6 months (6), any custom n
@@ -114,7 +114,7 @@ export function advance(current: ISODate, unit: FrequencyUnit, interval: number,
 }
 
 /**
- * Due date for a NEW subscription: the first cycle date on or after `today`, counting
+ * Due date for a NEW bill: the first cycle date on or after `today`, counting
  * from `startDate` (which is itself the first due date).
  *
  * - startDate today or in the future → startDate
@@ -230,7 +230,7 @@ export function todayIn(instant: Date, timeZone: string): ISODate {
 // --- Status ------------------------------------------------------------------
 
 export interface StatusInput {
-  status: SubscriptionStatus;
+  status: BillStatus;
   nextDueDate: ISODate;
   amountCents: number;
 }
@@ -246,7 +246,7 @@ export function paidForCycle(payments: readonly PaymentInput[], cycleDueDate: IS
 }
 
 /**
- * Status of the subscription's current cycle as seen on `today` (org-local date).
+ * Status of the bill's current cycle as seen on `today` (org-local date).
  * Precedence: ARCHIVED → PAID (completed or fully paid) → OVERDUE → PARTIALLY_PAID →
  * DUE_TODAY → DUE_SOON (≤ 7 days) → UPCOMING. A part-paid cycle past its due date is
  * OVERDUE: it is the more urgent fact (the remaining balance is reported separately).

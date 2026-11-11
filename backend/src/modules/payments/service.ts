@@ -7,15 +7,15 @@ import { actorOf, workspaceIdOf } from '../../http/middleware/auth.js';
 import { pageOf } from '../../http/schemas.js';
 import { notifyPaymentRecorded } from '../../notifications/paymentRecorded.js';
 import { checkBudgetAlerts } from '../budgets/service.js';
-import { loadSubscription, viewsFor, workspaceToday } from '../subscriptions/service.js';
-import { subscriptionInclude } from '../subscriptions/view.js';
+import { loadBill, viewsFor, workspaceToday } from '../bills/service.js';
+import { billInclude } from '../bills/view.js';
 import { audit } from '../workspaces/service.js';
 
 import { reconcileCycle, type CycleChange } from './cycle.js';
 
 export interface PaymentRecordedEvent {
   workspaceId: string;
-  subscriptionId: string;
+  billId: string;
   paymentId: string;
   /** Who recorded it — used only to skip notifying that person; never stored or displayed. */
   actorUserId: string;
@@ -33,7 +33,7 @@ export interface RecordInput {
 }
 
 const paymentInclude = {
-  subscription: {
+  bill: {
     select: {
       id: true,
       name: true,
@@ -49,7 +49,7 @@ type PaymentWithRelations = Prisma.PaymentRecordGetPayload<{ include: typeof pay
 export function paymentView(p: PaymentWithRelations) {
   return {
     id: p.id,
-    subscriptionId: p.subscriptionId,
+    billId: p.billId,
     cycleDueDate: p.cycleDueDate,
     amountCents: p.amountCents,
     paidOn: p.paidOn,
@@ -58,30 +58,30 @@ export function paymentView(p: PaymentWithRelations) {
     notes: p.notes,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
-    subscription: p.subscription,
+    bill: p.bill,
   };
 }
 
-/** Record a full or partial payment against the subscription's current cycle. */
-export async function recordPayment(ctx: AppContext, req: Request, subscriptionId: string, input: RecordInput) {
+/** Record a full or partial payment against the bill's current cycle. */
+export async function recordPayment(ctx: AppContext, req: Request, billId: string, input: RecordInput) {
   const workspaceId = workspaceIdOf(req);
   const actor = actorOf(req);
-  const s = await loadSubscription(ctx, req, subscriptionId);
-  if (s.status === 'ARCHIVED') throw badRequest('Unarchive this subscription before recording a payment');
-  if (s.status === 'COMPLETED') throw new AppError(409, 'ALREADY_PAID', 'This one-time subscription is already fully paid');
+  const s = await loadBill(ctx, req, billId);
+  if (s.status === 'ARCHIVED') throw badRequest('Unarchive this bill before recording a payment');
+  if (s.status === 'COMPLETED') throw new AppError(409, 'ALREADY_PAID', 'This one-time bill is already fully paid');
   const today = workspaceToday(ctx, req);
   if (input.paidOn && input.paidOn > today) throw badRequest('The payment date cannot be in the future');
 
   const cycleDueDate = s.nextDueDate;
   const { payment, change } = await ctx.db.$transaction(async (tx) => {
-    const paid = await tx.paymentRecord.aggregate({ where: { subscriptionId, cycleDueDate }, _sum: { amountCents: true } });
+    const paid = await tx.paymentRecord.aggregate({ where: { billId, cycleDueDate }, _sum: { amountCents: true } });
     const remaining = Math.max(0, s.amountCents - (paid._sum.amountCents ?? 0));
     const amountCents = input.amountCents ?? remaining;
     if (amountCents <= 0) throw badRequest('Enter an amount greater than zero');
     const created = await tx.paymentRecord.create({
       data: {
         workspaceId,
-        subscriptionId,
+        billId,
         cycleDueDate,
         amountCents,
         paidOn: input.paidOn ?? today,
@@ -91,11 +91,11 @@ export async function recordPayment(ctx: AppContext, req: Request, subscriptionI
         createdAt: ctx.clock.now(),
       },
     });
-    return { payment: created, change: await reconcileCycle(tx, subscriptionId) };
+    return { payment: created, change: await reconcileCycle(tx, billId) };
   });
 
   await audit(ctx, workspaceId, actor.userId, 'payment.record', 'PaymentRecord', payment.id, {
-    subscriptionId,
+    billId,
     amountCents: payment.amountCents,
     cycleDueDate,
     completedCycle: change.completedCycle,
@@ -110,7 +110,7 @@ export async function recordPayment(ctx: AppContext, req: Request, subscriptionI
   try {
     await notifyPaymentRecorded(ctx, {
       workspaceId,
-      subscriptionId,
+      billId,
       paymentId: payment.id,
       actorUserId: actor.userId,
       amountCents: payment.amountCents,
@@ -122,18 +122,18 @@ export async function recordPayment(ctx: AppContext, req: Request, subscriptionI
     ctx.logger.error({ err, paymentId: payment.id }, 'Payment-recorded notification failed');
   }
 
-  return result(ctx, req, payment.id, subscriptionId, change);
+  return result(ctx, req, payment.id, billId, change);
 }
 
-async function result(ctx: AppContext, req: Request, paymentId: string, subscriptionId: string, change: CycleChange) {
-  const [payment, subscription] = await Promise.all([
+async function result(ctx: AppContext, req: Request, paymentId: string, billId: string, change: CycleChange) {
+  const [payment, bill] = await Promise.all([
     ctx.db.paymentRecord.findUniqueOrThrow({ where: { id: paymentId }, include: paymentInclude }),
-    ctx.db.subscription.findUniqueOrThrow({ where: { id: subscriptionId }, include: subscriptionInclude }),
+    ctx.db.bill.findUniqueOrThrow({ where: { id: billId }, include: billInclude }),
   ]);
-  const [view] = await viewsFor(ctx, workspaceIdOf(req), [subscription], workspaceToday(ctx, req));
+  const [view] = await viewsFor(ctx, workspaceIdOf(req), [bill], workspaceToday(ctx, req));
   return {
     payment: paymentView(payment),
-    subscription: view!,
+    bill: view!,
     cycleCompleted: change.completedCycle !== null,
     cycleReopened: change.reopenedCycle !== null,
   };
@@ -158,21 +158,21 @@ export interface EditInput {
   notes?: string | null;
 }
 
-/** ADMIN/FINANCE (route-guarded): correct a payment and recalculate the subscription's cycle. */
+/** ADMIN/FINANCE (route-guarded): correct a payment and recalculate the bill's cycle. */
 export async function editPayment(ctx: AppContext, req: Request, id: string, input: EditInput) {
   const before = await loadPayment(ctx, req, id);
   if (input.paidOn && input.paidOn > workspaceToday(ctx, req)) throw badRequest('The payment date cannot be in the future');
 
   const change = await ctx.db.$transaction(async (tx) => {
     await tx.paymentRecord.update({ where: { id }, data: input });
-    return reconcileCycle(tx, before.subscriptionId, before.cycleDueDate);
+    return reconcileCycle(tx, before.billId, before.cycleDueDate);
   });
   await audit(ctx, workspaceIdOf(req), actorOf(req).userId, 'payment.update', 'PaymentRecord', id, {
     before: { amountCents: before.amountCents, paidOn: before.paidOn, method: before.method, reference: before.reference },
     after: input,
     cycle: change,
   });
-  return result(ctx, req, id, before.subscriptionId, change);
+  return result(ctx, req, id, before.billId, change);
 }
 
 /** ADMIN/FINANCE (route-guarded): remove a payment and recalculate. */
@@ -180,21 +180,21 @@ export async function deletePayment(ctx: AppContext, req: Request, id: string) {
   const before = await loadPayment(ctx, req, id);
   const change = await ctx.db.$transaction(async (tx) => {
     await tx.paymentRecord.delete({ where: { id } });
-    return reconcileCycle(tx, before.subscriptionId, before.cycleDueDate);
+    return reconcileCycle(tx, before.billId, before.cycleDueDate);
   });
   await audit(ctx, workspaceIdOf(req), actorOf(req).userId, 'payment.delete', 'PaymentRecord', id, {
-    subscriptionId: before.subscriptionId,
+    billId: before.billId,
     amountCents: before.amountCents,
     cycleDueDate: before.cycleDueDate,
     paidOn: before.paidOn,
     cycle: change,
   });
-  const subscription = await ctx.db.subscription.findUniqueOrThrow({
-    where: { id: before.subscriptionId },
-    include: subscriptionInclude,
+  const bill = await ctx.db.bill.findUniqueOrThrow({
+    where: { id: before.billId },
+    include: billInclude,
   });
-  const [view] = await viewsFor(ctx, workspaceIdOf(req), [subscription], workspaceToday(ctx, req));
-  return { subscription: view!, cycleReopened: change.reopenedCycle !== null };
+  const [view] = await viewsFor(ctx, workspaceIdOf(req), [bill], workspaceToday(ctx, req));
+  return { bill: view!, cycleReopened: change.reopenedCycle !== null };
 }
 
 export const HISTORY_SORTS = ['paid_desc', 'paid_asc', 'amount_desc', 'amount_asc'] as const;
@@ -213,7 +213,7 @@ export interface HistoryFilters {
   to?: string;
   companyIds?: string[];
   categoryIds?: string[];
-  subscriptionId?: string;
+  billId?: string;
   method?: PaymentMethod;
   sort: HistorySort;
   page: number;
@@ -228,15 +228,15 @@ export async function history(ctx: AppContext, req: Request, f: HistoryFilters) 
   const workspaceId = workspaceIdOf(req);
 
   // Text matching runs here rather than in SQL so it's case-insensitive on SQLite and
-  // Postgres alike; a workspace has at most a few hundred subscriptions.
-  let matchingSubscriptionIds: string[] | undefined;
+  // Postgres alike; a workspace has at most a few hundred bills.
+  let matchingBillIds: string[] | undefined;
   if (f.q) {
     const q = f.q.toLowerCase();
-    const candidates = await ctx.db.subscription.findMany({
+    const candidates = await ctx.db.bill.findMany({
       where: { workspaceId },
       select: { id: true, name: true, provider: true, company: { select: { name: true } }, category: { select: { name: true } } },
     });
-    matchingSubscriptionIds = candidates
+    matchingBillIds = candidates
       .filter((s) => [s.name, s.provider ?? '', s.company.name, s.category.name].some((v) => v.toLowerCase().includes(q)))
       .map((s) => s.id);
   }
@@ -245,14 +245,14 @@ export async function history(ctx: AppContext, req: Request, f: HistoryFilters) 
     workspaceId,
     method: f.method,
     paidOn: { gte: f.from, lte: f.to },
-    subscription: {
+    bill: {
       ...(f.companyIds?.length ? { companyId: { in: f.companyIds } } : {}),
       ...(f.categoryIds?.length ? { categoryId: { in: f.categoryIds } } : {}),
     },
     AND: [
-      f.subscriptionId ? { subscriptionId: f.subscriptionId } : {},
-      matchingSubscriptionIds && f.q
-        ? { OR: [{ subscriptionId: { in: matchingSubscriptionIds } }, { reference: { contains: f.q } }] }
+      f.billId ? { billId: f.billId } : {},
+      matchingBillIds && f.q
+        ? { OR: [{ billId: { in: matchingBillIds } }, { reference: { contains: f.q } }] }
         : {},
     ],
   };

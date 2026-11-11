@@ -7,7 +7,7 @@ import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
-import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import { BillRow } from '@/components/bills/BillRow';
 import {
   ActiveFilters,
   Card,
@@ -23,14 +23,14 @@ import {
 } from '@/components/ui';
 import { useCategories, useCompanies } from '@/features/catalog/api';
 import { HISTORY_SORTS, useHistory, type HistorySort } from '@/features/insights/api';
-import { METHOD_LABELS } from '@/features/subscriptions/api';
+import { METHOD_LABELS } from '@/features/bills/api';
 import { formatUSD } from '@/lib/money';
 import { useDebounced } from '@/lib/useDebounced';
 import { useTheme } from '@/theme';
 
 export default function HistoryScreen() {
   const { colors } = useTheme();
-  const params = useLocalSearchParams<{ subscriptionId?: string; name?: string }>();
+  const params = useLocalSearchParams<{ billId?: string; name?: string }>();
   const companies = useCompanies({ includeArchived: true });
   const categories = useCategories();
   const [q, setQ] = useState('');
@@ -55,7 +55,7 @@ export default function HistoryScreen() {
     to: filters.to,
     companyIds: filters.selections.company,
     categoryIds: filters.selections.category,
-    subscriptionId: params.subscriptionId,
+    billId: params.billId,
   });
   const items = query.data?.pages.flatMap((p) => p.items) ?? [];
   const first = query.data?.pages[0];
@@ -84,7 +84,7 @@ export default function HistoryScreen() {
       <SearchBar
         value={q}
         onChangeText={setQ}
-        placeholder="Search subscription, company or reference"
+        placeholder="Search bill, company or reference"
         onSortPress={() => setSheet('sort')}
         onFilterPress={() => setSheet('filter')}
         sortActive={sort !== 'paid_desc'}
@@ -125,19 +125,19 @@ export default function HistoryScreen() {
               </Card>
               <Card padding={0} style={{ overflow: 'hidden' }}>
                 {items.map((p, i) => (
-                  <SubscriptionRow
+                  <BillRow
                     key={p.id}
                     compact
                     divider={i > 0}
-                    onPress={() => router.push(`/subscriptions/${p.subscriptionId}`)}
+                    onPress={() => router.push(`/bills/${p.billId}`)}
                     item={{
                       id: p.id,
-                      name: p.subscription.name,
-                      icon: p.subscription.category.icon,
+                      name: p.bill.name,
+                      icon: p.bill.category.icon,
                       amountCents: p.amountCents,
                       date: p.paidOn,
                       status: 'PAID',
-                      subtitle: `${p.subscription.company.name} · ${METHOD_LABELS[p.method]}${p.reference ? ` · ${p.reference}` : ''}`,
+                      subtitle: `${p.bill.company.name} · ${METHOD_LABELS[p.method]}${p.reference ? ` · ${p.reference}` : ''}`,
                     }}
                   />
                 ))}

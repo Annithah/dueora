@@ -27,10 +27,10 @@ Common codes: `VALIDATION_ERROR` (400), `BAD_REQUEST` (400), `UNAUTHORIZED` (401
 | Role | Can |
 |---|---|
 | `ADMIN` | Everything, incl. members, invites and workspace settings |
-| `FINANCE` | Manage subscriptions, payments, companies, categories and reports; reveal subscription keys. Not members. |
-| `VIEWER` | Read-only (incl. reports). Receives reminders. Sees subscription keys masked only. |
+| `FINANCE` | Manage bills, payments, companies, categories and reports; reveal account references. Not members. |
+| `VIEWER` | Read-only (incl. reports). Receives reminders. Sees account references masked only. |
 
-**Pagination** (subscriptions and payment history): `page` (from 1) and `limit` (default **10**, max 50).
+**Pagination** (bills and payment history): `page` (from 1) and `limit` (default **10**, max 50).
 Responses: `{ items, page, limit, total, hasMore }`.
 
 ## Health
@@ -71,9 +71,9 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 | GET | `/workspaces` | any | My workspaces |
 | POST | `/workspaces` | any | `{ name, type: COMPANY\|PERSONAL, timezone (IANA — the app sends the phone's; default UTC), firstCompanyName? }` → creator becomes ADMIN; a first company is created (named `firstCompanyName`, else the workspace name, or "Personal") |
 | POST | `/workspaces/accept-invite` | any | `{ token }` — the signed-in user's email must match the invite |
-| GET | `/workspaces/current` | member | `{ id, name, type, timezone, reminderHour, quietHoursStart, quietHoursEnd, defaultReminderOffsets, memberCount, companyCount, subscriptionCount, myRole }` |
+| GET | `/workspaces/current` | member | `{ id, name, type, timezone, reminderHour, quietHoursStart, quietHoursEnd, defaultReminderOffsets, memberCount, companyCount, billCount, myRole }` |
 | PATCH | `/workspaces/current` | ADMIN | `{ name?, type?, timezone?, reminderHour (0–23)?, quietHoursStart?, quietHoursEnd? (minutes after midnight, both or neither), defaultReminderOffsets? (int days, negative = after due), aiEnabled? }` |
-| GET | `/workspaces/current/export?format=json\|xlsx` | ADMIN, FINANCE | Everything in the workspace as a download. Subscription keys only masked. |
+| GET | `/workspaces/current/export?format=json\|xlsx` | ADMIN, FINANCE | Everything in the workspace as a download. Account references only masked. |
 | DELETE | `/workspaces/current` | ADMIN | `{ confirmName }` must equal the workspace name. Permanent. |
 | GET | `/workspaces/current/members` | member | `[{ id, userId, name, email, role, joinedAt }]` |
 | PATCH | `/workspaces/current/members/:membershipId` | ADMIN | `{ role }`; the last admin can't be demoted (409 `LAST_ADMIN`) |
@@ -93,40 +93,40 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/companies?includeArchived=true` | member | `[{ id, name, color, archived, subscriptionCount }]` (archived hidden unless asked) |
+| GET | `/companies?includeArchived=true` | member | `[{ id, name, color, archived, billCount }]` (archived hidden unless asked) |
 | POST | `/companies` | ADMIN, FINANCE | `{ name, color? }` — names are unique per workspace (409) |
 | PATCH | `/companies/:id` | ADMIN, FINANCE | `{ name?, color? }` |
-| DELETE | `/companies/:id` | ADMIN, FINANCE | Deleted when unused → `{ deleted: true, archived: false }`; **archived** when it has subscriptions → `{ deleted: false, archived: true }` |
+| DELETE | `/companies/:id` | ADMIN, FINANCE | Deleted when unused → `{ deleted: true, archived: false }`; **archived** when it has bills → `{ deleted: false, archived: true }` |
 | POST | `/companies/:id/unarchive` | ADMIN, FINANCE | |
-| GET | `/categories` | member | 11 built-in (`isDefault: true`) + this workspace's custom ones, with `subscriptionCount` |
+| GET | `/categories` | member | 11 built-in (`isDefault: true`) + this workspace's custom ones, with `billCount` |
 | POST · PATCH /:id · DELETE /:id | `/categories` | ADMIN, FINANCE | `{ name, icon, color }`. Built-ins can't be changed; in-use categories can't be deleted (409). |
 
-## Subscriptions — `/subscriptions` 🔒 (workspace)
+## Bills — `/bills` 🔒 (workspace)
 
-Everything you pay is a subscription. It belongs to one **company** and one **category**. Its current cycle
+Everything you pay is a bill. It belongs to one **company** and one **category**. Its current cycle
 ends on `nextDueDate`. Every response includes the computed `paymentStatus` for "today" in the workspace
 timezone: `UPCOMING` · `DUE_SOON` (≤ 7 days) · `DUE_TODAY` · `OVERDUE` · `PARTIALLY_PAID` · `PAID` · `ARCHIVED`,
 plus `daysUntilDue`, `paidCents`, `remainingCents`, `cycleLengthDays` and `frequencyLabel` ("Quarterly").
 
-The **subscription key** (license key, account number, customer ID…) is always returned masked:
-`subscriptionKey: { hasKey: true, last4: "4F7A", masked: "••••••4F7A" }` or `null`.
+The **account reference** (license key, account number, customer ID…) is always returned masked:
+`accountReference: { hasKey: true, last4: "4F7A", masked: "••••••4F7A" }` or `null`.
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/subscriptions` | member | Query: `page`, `limit` (default 10), `sort`, `q`, `status`, `companyId`, `categoryId`, `frequency`, `dueFrom`, `dueTo` (see below) → `{ items, page, limit, total, hasMore }` |
-| POST | `/subscriptions` | ADMIN, FINANCE | Body below |
-| GET | `/subscriptions/:id` | member | Adds `muted` (for you), `reminders` (current cycle plan with `sent` flags), `history` (latest 10 payments) and `historyTotal` |
-| GET | `/subscriptions/:id/key` | ADMIN, FINANCE | `{ value }` — the plain key (`Cache-Control: no-store`); every reveal is audit-logged. VIEWER → 403. |
-| PATCH | `/subscriptions/:id` | ADMIN, FINANCE | Any create field. `subscriptionKey: null` removes the key. A changed start date/frequency re-derives `nextDueDate` while no payment exists; an explicit `nextDueDate` re-anchors the schedule. |
-| POST | `/subscriptions/:id/archive` · `/unarchive` | ADMIN, FINANCE | Archived subscriptions stop reminders and leave the default list |
-| DELETE | `/subscriptions/:id` | ADMIN, FINANCE | 409 `HAS_HISTORY` if payments exist — archive instead |
+| GET | `/bills` | member | Query: `page`, `limit` (default 10), `sort`, `q`, `status`, `companyId`, `categoryId`, `frequency`, `dueFrom`, `dueTo` (see below) → `{ items, page, limit, total, hasMore }` |
+| POST | `/bills` | ADMIN, FINANCE | Body below |
+| GET | `/bills/:id` | member | Adds `muted` (for you), `reminders` (current cycle plan with `sent` flags), `history` (latest 10 payments) and `historyTotal` |
+| GET | `/bills/:id/reference` | ADMIN, FINANCE | `{ value }` — the plain key (`Cache-Control: no-store`); every reveal is audit-logged. VIEWER → 403. |
+| PATCH | `/bills/:id` | ADMIN, FINANCE | Any create field. `accountReference: null` removes the key. A changed start date/frequency re-derives `nextDueDate` while no payment exists; an explicit `nextDueDate` re-anchors the schedule. |
+| POST | `/bills/:id/archive` · `/unarchive` | ADMIN, FINANCE | Archived bills stop reminders and leave the default list |
+| DELETE | `/bills/:id` | ADMIN, FINANCE | 409 `HAS_HISTORY` if payments exist — archive instead |
 
 List query:
 
 | Param | Values |
 |---|---|
 | `sort` | `due_asc` (default — soonest first, so overdue lead) · `due_desc` · `amount_desc` · `amount_asc` · `name_asc` · `recent` |
-| `q` | Case-insensitive search over name, provider, company, category and notes, **plus exact subscription-key match** (ignoring case, spaces and dashes; never partial) |
+| `q` | Case-insensitive search over name, provider, company, category and notes, **plus exact account-reference match** (ignoring case, spaces and dashes; never partial) |
 | `status` | Comma list, e.g. `OVERDUE,DUE_SOON`; `ARCHIVED` for archived |
 | `companyId`, `categoryId` | Comma lists of ids |
 | `frequency` | Comma list of `WEEK`, `MONTH`, `YEAR`, `ONCE` |
@@ -138,7 +138,7 @@ Create body:
 {
   "name": "Hosting", "companyId": "…", "categoryId": "…",
   "provider": "Hosting provider", "description": null,
-  "subscriptionKey": "LIC-0000-0000",
+  "accountReference": "LIC-0000-0000",
   "amountCents": 152300,
   "frequencyUnit": "YEAR", "frequencyInterval": 1,
   "startDate": "2026-11-03", "nextDueDate": "2027-11-03", "anchorDay": 3,
@@ -150,8 +150,8 @@ Create body:
 
 `isTrial: true` requires `trialEndsOn`. Changing `amountCents` records a PriceChange (shown as
 `priceHistory` on the detail) and notifies the other ADMIN/FINANCE members. Recording a payment without
-`method` uses `defaultPaymentMethod` (else OTHER). `POST /subscriptions/:id/snooze { days | until }` and
-`DELETE /subscriptions/:id/snooze` pause the caller's reminders for the current cycle (any role); the detail
+`method` uses `defaultPaymentMethod` (else OTHER). `POST /bills/:id/snooze { days | until }` and
+`DELETE /bills/:id/snooze` pause the caller's reminders for the current cycle (any role); the detail
 returns `snoozedUntil`.
 
 Only `name`, `companyId`, `categoryId`, `amountCents` and `frequencyUnit` are required. `startDate` defaults
@@ -186,18 +186,18 @@ Month-end anchors are kept: anchor 31 → 31 Jan, 28/29 Feb, 31 Mar, 30 Apr …
 
 ## Payments 🔒 (workspace)
 
-A payment always belongs to the subscription's **current cycle** (`cycleDueDate`). When the cycle's total
+A payment always belongs to the bill's **current cycle** (`cycleDueDate`). When the cycle's total
 reaches the amount due, the cycle closes and `nextDueDate` moves forward one cycle automatically (one-time
-subscriptions become `COMPLETED`). Partial payments leave the cycle open (`PARTIALLY_PAID`). History is never
+bills become `COMPLETED`). Partial payments leave the cycle open (`PARTIALLY_PAID`). History is never
 lost when a new cycle begins.
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| POST | `/subscriptions/:id/payments` | ADMIN, FINANCE | `{ method: MOBILE_MONEY\|BANK_TRANSFER\|CARD\|CASH\|OTHER, amountCents? (default: remaining), paidOn? (default: today; not in the future), reference?, notes? }` → `{ payment, subscription, cycleCompleted, cycleReopened }` |
-| GET | `/payments` | member | History. Query: `page`, `limit` (default 10), `sort` (`paid_desc` default · `paid_asc` · `amount_desc` · `amount_asc`), `q` (subscription, provider, company, category or reference), `from`, `to` (date paid), `companyId`, `categoryId` (comma lists), `subscriptionId`, `method` → `{ items, page, limit, total, hasMore, totalCents }` |
+| POST | `/bills/:id/payments` | ADMIN, FINANCE | `{ method: MOBILE_MONEY\|BANK_TRANSFER\|CARD\|CASH\|OTHER, amountCents? (default: remaining), paidOn? (default: today; not in the future), reference?, notes? }` → `{ payment, bill, cycleCompleted, cycleReopened }` |
+| GET | `/payments` | member | History. Query: `page`, `limit` (default 10), `sort` (`paid_desc` default · `paid_asc` · `amount_desc` · `amount_asc`), `q` (bill, provider, company, category or reference), `from`, `to` (date paid), `companyId`, `categoryId` (comma lists), `billId`, `method` → `{ items, page, limit, total, hasMore, totalCents }` |
 | GET | `/payments/:id` | member | |
 | PATCH | `/payments/:id` | ADMIN, FINANCE | `{ amountCents?, paidOn?, method?, reference?, notes? }` — recalculates the cycle (may close or reopen it); audit-logged with before/after |
-| DELETE | `/payments/:id` | ADMIN, FINANCE | May reopen the cycle it had closed; audit-logged → `{ subscription, cycleReopened }` |
+| DELETE | `/payments/:id` | ADMIN, FINANCE | May reopen the cycle it had closed; audit-logged → `{ bill, cycleReopened }` |
 
 There are no attachments, receipts or file uploads.
 
@@ -207,18 +207,18 @@ Design: `docs/NOTIFICATIONS.md`. Everything below except `/devices` is per works
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/notifications` | The Alerts inbox (in-app channel), newest first. Query: `unreadOnly=true`, `page`, `pageSize`. → `{ items: [{ id, type, title, body, data, subscriptionId, cycleDueDate, offsetDays, readAt, createdAt }], total, unreadCount }` |
+| GET | `/notifications` | The Alerts inbox (in-app channel), newest first. Query: `unreadOnly=true`, `page`, `pageSize`. → `{ items: [{ id, type, title, body, data, billId, cycleDueDate, offsetDays, readAt, createdAt }], total, unreadCount }` |
 | POST | `/notifications/:id/read` | 204 |
 | POST | `/notifications/read-all` | `{ updated }` |
-| GET · PATCH | `/notifications/preferences` | `{ pushEnabled, emailEnabled, digestEnabled, mutedSubscriptionIds }` |
-| POST | `/subscriptions/:id/mute` · `/unmute` | Stop/resume reminders for one subscription (for you only; any role) |
+| GET · PATCH | `/notifications/preferences` | `{ pushEnabled, emailEnabled, digestEnabled, mutedBillIds }` |
+| POST | `/bills/:id/mute` · `/unmute` | Stop/resume reminders for one bill (for you only; any role) |
 | POST | `/notifications/test` | Sends "🔔 Test from DueOra" now (push if you have a device, else email). Rate-limited. → `{ queued, channel, devices }` |
 | POST | `/devices` | `{ expoPushToken, platform: ios\|android\|web }` — register/refresh this phone |
 | DELETE | `/devices` | `{ expoPushToken }` — on logout |
 
 Notification `type`s: `REMINDER` · `DUE_TODAY` · `OVERDUE` · `PAYMENT_RECORDED` · `DIGEST` · `SYSTEM`.
-Push payloads carry `data.url` (`dueora://subscriptions/:id`), `subscriptionId`, `notificationId`, `type`.
-Notifications never contain subscription keys.
+Push payloads carry `data.url` (`dueora://bills/:id`), `billId`, `notificationId`, `type`.
+Notifications never contain account references.
 
 ## Dashboard, calendar, reports 🔒 (workspace)
 
@@ -227,6 +227,6 @@ Money blocks are `{ amountCents, count }` (USD).
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | GET | `/dashboard` | member | `today`, `localHour`, `summary` (`overdue`, `dueThisWeek`, `dueThisMonth`, `paidThisMonth` + `changePercent`), `needsAttention` (top 5, most urgent first) + `needsAttentionCount`, `next30Days` (sorted by due date), `spending` (12 months), `byCategory` and `byCompany` (last 12 months, with `share` %), `counts` (`active`, `total`, `overdue`, `upcoming30`) |
-| GET | `/calendar?from=&to=` | member | ≤ 400 days. `events: [{ date, subscriptionId, name, company, categoryIcon, categoryColor, amountCents, status, kind: paid\|current\|future }]` |
+| GET | `/calendar?from=&to=` | member | ≤ 400 days. `events: [{ date, billId, name, company, categoryIcon, categoryColor, amountCents, status, kind: paid\|current\|future }]` |
 | GET | `/reports?period=month\|year&year=&month=` | member | `totals` (`committed`, `paid`, `outstanding`, `overdue`), `byCategory`, `byCompany`, `months`, `forecast` (next 12 months), `overdue`, `outstanding`, `payments` |
 | GET | `/reports/export?format=pdf\|xlsx&period=…` | member | File download. PDF: branded summary + tables. Excel: Summary, Payments, Outstanding, Forecast sheets with numeric USD amounts |

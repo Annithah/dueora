@@ -27,7 +27,7 @@ describe('SearchBar', () => {
     const onFilter = jest.fn();
     const onChange = jest.fn();
     await renderWithTheme(
-      <SearchBar value="host" onChangeText={onChange} placeholder="Search subscriptions" onSortPress={onSort} onFilterPress={onFilter} filterCount={2} />,
+      <SearchBar value="host" onChangeText={onChange} placeholder="Search bills" onSortPress={onSort} onFilterPress={onFilter} filterCount={2} />,
     );
     await fireEvent.press(screen.getByRole('button', { name: 'Sort' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Filter, 2 active' }));

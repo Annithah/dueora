@@ -9,7 +9,7 @@ import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
-import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
+import { BillRow } from '@/components/bills/BillRow';
 import {
   ActiveFilters,
   Card,
@@ -27,21 +27,21 @@ import { useCategories, useCompanies } from '@/features/catalog/api';
 import {
   FREQUENCY_FILTERS,
   STATUS_FILTERS,
-  SUBSCRIPTION_SORTS,
-  useSubscriptionList,
-  type SubscriptionSort,
-} from '@/features/subscriptions/api';
+  BILL_SORTS,
+  useBillList,
+  type BillSort,
+} from '@/features/bills/api';
 import { usePermissions } from '@/features/workspaces/api';
 import { useDebounced } from '@/lib/useDebounced';
 import { useTheme } from '@/theme';
 
-export default function SubscriptionsTab() {
+export default function BillsTab() {
   const { colors } = useTheme();
   const can = usePermissions();
   const companies = useCompanies();
   const categories = useCategories();
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState<SubscriptionSort>('due_asc');
+  const [sort, setSort] = useState<BillSort>('due_asc');
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [sheet, setSheet] = useState<'sort' | 'filter' | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,7 +57,7 @@ export default function SubscriptionsTab() {
     [companies.data, categories.data],
   );
 
-  const query = useSubscriptionList({
+  const query = useBillList({
     q: search,
     sort,
     statuses: filters.selections.status,
@@ -92,11 +92,11 @@ export default function SubscriptionsTab() {
       }
     >
       <PageHeader
-        eyebrow={total ? `${total} ${total === 1 ? 'subscription' : 'subscriptions'}` : 'Your dues'}
-        title="Subscriptions"
+        eyebrow={total ? `${total} ${total === 1 ? 'bill' : 'bills'}` : 'Your dues'}
+        title="Bills"
         right={
-          can.manageSubscriptions ? (
-            <IconButton accessibilityLabel="Add subscription" tone="soft" onPress={() => router.push('/subscriptions/new')}>
+          can.manageBills ? (
+            <IconButton accessibilityLabel="Add bill" tone="soft" onPress={() => router.push('/bills/new')}>
               <Plus size={20} color={colors.primaryStrong} />
             </IconButton>
           ) : undefined
@@ -105,7 +105,7 @@ export default function SubscriptionsTab() {
       <SearchBar
         value={q}
         onChangeText={setQ}
-        placeholder="Search name, company, provider or key"
+        placeholder="Search name, company, provider or reference"
         onSortPress={() => setSheet('sort')}
         onFilterPress={() => setSheet('filter')}
         sortActive={sort !== 'due_asc'}
@@ -119,15 +119,15 @@ export default function SubscriptionsTab() {
           items.length === 0 ? (
             !filtered ? (
               <EmptyState
-                illustration="empty-subscriptions"
-                title="No subscriptions yet"
+                illustration="empty-bills"
+                title="No bills yet"
                 message={
-                  can.manageSubscriptions
+                  can.manageBills
                     ? 'Add your first one — hosting, domains, internet, rent… DueOra will remind you before it’s due.'
                     : 'Nothing has been added to this workspace yet.'
                 }
-                actionLabel={can.manageSubscriptions ? 'Add your first subscription' : undefined}
-                onAction={can.manageSubscriptions ? () => router.push('/subscriptions/new') : undefined}
+                actionLabel={can.manageBills ? 'Add your first bill' : undefined}
+                onAction={can.manageBills ? () => router.push('/bills/new') : undefined}
               />
             ) : (
               <EmptyState
@@ -147,9 +147,9 @@ export default function SubscriptionsTab() {
               <Card padding={0} style={{ overflow: 'hidden' }}>
                 {items.map((s, i) => (
                   <Animated.View key={s.id} entering={FadeIn} layout={LinearTransition}>
-                    <SubscriptionRow
+                    <BillRow
                       divider={i > 0}
-                      onPress={() => router.push(`/subscriptions/${s.id}`)}
+                      onPress={() => router.push(`/bills/${s.id}`)}
                       item={{
                         id: s.id,
                         name: s.name,
@@ -175,7 +175,7 @@ export default function SubscriptionsTab() {
         }
       </QueryState>
 
-      <SortSheet visible={sheet === 'sort'} onClose={() => setSheet(null)} options={SUBSCRIPTION_SORTS} value={sort} onChange={setSort} />
+      <SortSheet visible={sheet === 'sort'} onClose={() => setSheet(null)} options={BILL_SORTS} value={sort} onChange={setSort} />
       <FilterSheet
         visible={sheet === 'filter'}
         onClose={() => setSheet(null)}

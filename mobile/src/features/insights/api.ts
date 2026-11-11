@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing';
 
 import { api } from '@/api';
 import { API_URL } from '@/api/config';
-import { PAGE_SIZE, type Page, type PaymentMethod, type Subscription } from '@/features/subscriptions/api';
+import { PAGE_SIZE, type Page, type PaymentMethod, type Bill } from '@/features/bills/api';
 import { useSession } from '@/state/session';
 import type { PaymentStatus } from '@/theme';
 
@@ -14,8 +14,8 @@ export interface MoneyBlock {
   count: number;
 }
 
-export type SubscriptionLite = Pick<
-  Subscription,
+export type BillLite = Pick<
+  Bill,
   | 'id'
   | 'name'
   | 'provider'
@@ -47,9 +47,9 @@ export interface Dashboard {
     dueThisMonth: MoneyBlock;
     paidThisMonth: MoneyBlock & { changePercent: number | null };
   };
-  needsAttention: SubscriptionLite[];
+  needsAttention: BillLite[];
   needsAttentionCount: number;
-  next30Days: { date: string; subscription: SubscriptionLite; amountCents: number; status: PaymentStatus }[];
+  next30Days: { date: string; bill: BillLite; amountCents: number; status: PaymentStatus }[];
   spending: { months: { month: string; amountCents: number }[]; paidLast12Months: number; changePercent: number | null };
   byCategory: Breakdown[];
   byCompany: Breakdown[];
@@ -58,7 +58,7 @@ export interface Dashboard {
 
 export interface CalendarEvent {
   date: string;
-  subscriptionId: string;
+  billId: string;
   name: string;
   company: string;
   categoryIcon: string;
@@ -79,19 +79,19 @@ export interface Report {
   byCompany: Breakdown[];
   months: { month: string; paidCents: number; outstandingCents: number }[];
   forecast: { month: string; amountCents: number }[];
-  overdue: SubscriptionLite[];
+  overdue: BillLite[];
 }
 
 export interface HistoryItem {
   id: string;
-  subscriptionId: string;
+  billId: string;
   cycleDueDate: string;
   amountCents: number;
   paidOn: string;
   method: PaymentMethod;
   reference: string | null;
   notes: string | null;
-  subscription: {
+  bill: {
     id: string;
     name: string;
     provider: string | null;
@@ -115,7 +115,7 @@ export interface HistoryQuery {
   to?: string;
   companyIds?: string[];
   categoryIds?: string[];
-  subscriptionId?: string;
+  billId?: string;
 }
 
 const useWorkspaceId = () => useSession((s) => s.activeWorkspaceId);
@@ -164,7 +164,7 @@ export function useHistory(query: HistoryQuery) {
         to: query.to,
         companyId: csv(query.companyIds),
         categoryId: csv(query.categoryIds),
-        subscriptionId: query.subscriptionId,
+        billId: query.billId,
       }),
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
@@ -180,7 +180,7 @@ export function useDeletePayment() {
     mutationFn: (id: string) => api.del(`/payments/${id}`),
     onSuccess: () =>
       Promise.all(
-        ['subscriptions', 'dashboard', 'calendar', 'reports', 'payments'].map((k) =>
+        ['bills', 'dashboard', 'calendar', 'reports', 'payments'].map((k) =>
           queryClient.invalidateQueries({ queryKey: [k, workspaceId] }),
         ),
       ),

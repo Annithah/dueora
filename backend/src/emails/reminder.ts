@@ -27,9 +27,9 @@ function badgeHtml(b: Badge): string {
   return `<span style="display:inline-block;padding:4px 10px;border-radius:999px;background:${s.bg};color:${s.fg};font-size:12px;font-weight:800">${s.icon} ${s.label}</span>`;
 }
 
-/** One subscription in a reminder or digest email. Never contains the subscription key. */
+/** One bill in a reminder or digest email. Never contains the account reference. */
 export interface ReminderEmailItem {
-  /** "{Company} · {Subscription}" */
+  /** "{Company} · {Bill}" */
   label: string;
   company: string;
   provider: string | null;
@@ -91,20 +91,20 @@ export function digestEmail(opts: {
   return {
     to: opts.to,
     tag: 'digest',
-    subject: `🔔 ${n} subscriptions need attention this week`,
+    subject: `🔔 ${n} bills need attention this week`,
     html: renderLayout({
       preheader: opts.items
         .map((i) => i.label)
         .slice(0, 4)
         .join(', '),
-      heading: `${n} subscriptions need attention`,
+      heading: `${n} bills need attention`,
       bodyHtml: `<p style="margin:0 0 12px">Hi ${esc(first)}, here's what's coming up for ${esc(opts.orgName)}:</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${opts.items.map(itemRow).join('')}</table>`,
       button: { label: 'Open in DueOra', url: opts.appUrl },
       footerNote: 'We group reminders like this so your inbox stays calm.',
       links: opts.links,
     }),
-    text: [`Hi ${first}, ${n} subscriptions need attention at ${opts.orgName}:`, '', ...list, '', `Open DueOra: ${opts.appUrl}`, ...linkLines(opts.links)].join('\n'),
+    text: [`Hi ${first}, ${n} bills need attention at ${opts.orgName}:`, '', ...list, '', `Open DueOra: ${opts.appUrl}`, ...linkLines(opts.links)].join('\n'),
   };
 }
 

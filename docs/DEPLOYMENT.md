@@ -85,7 +85,7 @@ Without `RESEND_API_KEY` the API writes emails to the log instead of sending the
 | `NODE_ENV` | ✅ | `production` |
 | `DATABASE_URL` | ✅ | `file:/data/dueora.db` (the image default) |
 | `JWT_ACCESS_SECRET` | ✅ | 48+ random chars: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
-| `SUBSCRIPTION_KEY_SECRET` | ✅ | 48+ random chars (same command). Encrypts subscription keys (AES-256-GCM). **Never change it once real data exists** — stored keys could no longer be decrypted. Keep a copy in your password manager. |
+| `ACCOUNT_REF_SECRET` | ✅ | 48+ random chars (same command). Encrypts account references (AES-256-GCM). **Never change it once real data exists** — stored keys could no longer be decrypted. Keep a copy in your password manager. |
 | `API_BASE_URL` | ✅ | `https://api.your-domain` — **must be https** (the API refuses to start otherwise) |
 | `APP_URL` | ✅ | `dueora://` (deep-link scheme used in emails) |
 | `RUN_WORKER_IN_API` | ✅ | `true` (image default) |
@@ -111,8 +111,8 @@ The production image is `backend/Dockerfile` (Node 22, multi-stage). On every st
 ### Option A — Render (recommended)
 
 1. render.com → **New → Blueprint** → connect the `dueora` repo. Render reads `render.yaml`
-   (Starter web service + 1 GB disk at `/data`). `JWT_ACCESS_SECRET` and `SUBSCRIPTION_KEY_SECRET`
-   are generated for you — copy `SUBSCRIPTION_KEY_SECRET` into your password manager.
+   (Starter web service + 1 GB disk at `/data`). `JWT_ACCESS_SECRET` and `ACCOUNT_REF_SECRET`
+   are generated for you — copy `ACCOUNT_REF_SECRET` into your password manager.
 2. Fill the variables marked `sync: false`: `API_BASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM`
    (and `EXPO_ACCESS_TOKEN` if you use it).
 3. Deploy, then open `https://dueora-api.onrender.com/health` → `{"status":"ok","database":"ok",…}`.
@@ -208,8 +208,8 @@ The app creates two channels on start (users can adjust them in Android settings
 
 | Channel | Importance | Used for |
 |---|---|---|
-| `reminders` — Subscription reminders | Default | before-due, due-today, digests, payment recorded |
-| `overdue` — Overdue subscriptions | High (distinct vibration) | overdue reminders |
+| `reminders` — Bill reminders | Default | before-due, due-today, digests, payment recorded |
+| `overdue` — Overdue bills | High (distinct vibration) | overdue reminders |
 
 ---
 
@@ -238,20 +238,20 @@ App identity (already configured): name **DueOra**, Android package **`com.dueor
 
 1. `GET https://api…/health` → ok.
 2. Install the preview APK, sign up, then use **Forgot password** with a real email → the reset code arrives (Resend works).
-3. Create the workspace and first company; add a subscription due tomorrow with a subscription key.
+3. Create the workspace and first company; add a bill due tomorrow with an account reference.
 4. Accept the notification prompt → More → Notifications → **Send test notification** (push works).
-5. Next morning at 09:00 (workspace timezone) you should get "⏰ <Company> · <Subscription> is due tomorrow — $…".
+5. Next morning at 09:00 (workspace timezone) you should get "⏰ <Company> · <Bill> is due tomorrow — $…".
 6. Work through `docs/QA_CHECKLIST.md`.
 
 ## 10. Operations
 
 * **Logs:** JSON (pino) on stdout — Render/Railway dashboard. Each request has an `x-request-id`.
-  Request bodies and subscription keys are redacted from logs.
+  Request bodies and account references are redacted from logs.
 * **Health:** `/health` (Docker `HEALTHCHECK` and the host).
 * **Backups:** Render snapshots disks daily; on Railway enable volume backups. For an extra copy, download
   `/data/dueora.db` from a shell occasionally (`sqlite3 /data/dueora.db ".backup /tmp/copy.db"`).
 * **Secrets:** changing `JWT_ACCESS_SECRET` signs everyone out (they log in again). **Never change
-  `SUBSCRIPTION_KEY_SECRET`** after real keys are stored. Resend/Expo keys can be rotated any time.
+  `ACCOUNT_REF_SECRET`** after real keys are stored. Resend/Expo keys can be rotated any time.
 * **Scaling:** SQLite means one instance. If you outgrow it, switch to the Postgres build (section 0) and then
   split the worker into its own service (`node dist/worker.js`, `RUN_WORKER_IN_API=false` on the API);
   several workers can run safely at the same time.

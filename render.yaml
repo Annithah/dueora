@@ -28,7 +28,7 @@ services:
         value: file:/data/dueora.db
       - key: JWT_ACCESS_SECRET
         generateValue: true
-      - key: SUBSCRIPTION_KEY_SECRET
+      - key: ACCOUNT_REF_SECRET
         generateValue: true # never change it after real data exists
       - key: API_BASE_URL
         sync: false # e.g. https://dueora-api.onrender.com

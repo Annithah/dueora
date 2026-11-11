@@ -1,12 +1,12 @@
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
 
 /**
- * Encryption for subscription keys (license keys, account numbers, customer ids).
+ * Encryption for account references (license keys, account numbers, customer ids).
  *
  * - AES-256-GCM with a random 96-bit IV per value; stored as "v1.<iv>.<tag>.<ciphertext>" (base64url).
- * - The AES key and the HMAC key are derived separately from SUBSCRIPTION_KEY_SECRET with HKDF,
+ * - The AES key and the HMAC key are derived separately from ACCOUNT_REF_SECRET with HKDF,
  *   so the search hash can never be used to recover the encryption key.
- * - `hash` is a keyed HMAC of the normalised value, so subscriptions can be found by an exact
+ * - `hash` is a keyed HMAC of the normalised value, so bills can be found by an exact
  *   key without decrypting every row (and without a plain SHA-256 that could be brute-forced
  *   offline from a database dump).
  *
@@ -21,6 +21,8 @@ export interface SecretBox {
 const VERSION = 'v1';
 
 function derive(secret: string, purpose: string): Buffer {
+  // The HKDF label is part of the key derivation: it must never change, or every stored
+  // reference becomes unreadable. It predates the rename to "bills" (DECISIONS.md D34).
   return Buffer.from(hkdfSync('sha256', secret, 'dueora.subscription-key', purpose, 32));
 }
 
@@ -30,7 +32,7 @@ export function normaliseKey(plain: string): string {
 }
 
 export function createSecretBox(secret: string): SecretBox {
-  if (secret.length < 32) throw new Error('SUBSCRIPTION_KEY_SECRET must be at least 32 characters');
+  if (secret.length < 32) throw new Error('ACCOUNT_REF_SECRET must be at least 32 characters');
   const encKey = derive(secret, 'aes-256-gcm');
   const macKey = derive(secret, 'hmac-search');
 

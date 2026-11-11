@@ -7,7 +7,7 @@ import { workspaceIdOf, requireAuth, requireWorkspace, userIdOf } from '../http/
 import { authLimiter } from '../http/rateLimits.js';
 import { id } from '../http/schemas.js';
 import { parseBody, parseParams, parseQuery } from '../http/validate.js';
-import { loadSubscription } from '../modules/subscriptions/service.js';
+import { loadBill } from '../modules/bills/service.js';
 
 import { backupSchedule } from './backup.js';
 import { createNotification, dedupeKey, prefsFor } from './store.js';
@@ -31,7 +31,7 @@ const PrefsBody = z
     monthlySummary: z.boolean(),
     budgetAlerts: z.boolean(),
     teamActivity: z.boolean(),
-    mutedSubscriptionIds: z.array(id).max(1000),
+    mutedBillIds: z.array(id).max(1000),
   })
   .partial()
   .strict();
@@ -60,7 +60,7 @@ export function notificationsRouter(ctx: AppContext): Router {
         orderBy: { createdAt: 'desc' },
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
-        select: { id: true, type: true, title: true, body: true, data: true, subscriptionId: true, cycleDueDate: true, offsetDays: true, readAt: true, createdAt: true },
+        select: { id: true, type: true, title: true, body: true, data: true, billId: true, cycleDueDate: true, offsetDays: true, readAt: true, createdAt: true },
       }),
       ctx.db.notification.count({ where }),
       ctx.db.notification.count({ where: { userId: userIdOf(req), workspaceId: workspaceIdOf(req), channel: 'IN_APP', readAt: null } }),
@@ -95,7 +95,7 @@ export function notificationsRouter(ctx: AppContext): Router {
   // --- Preferences (per user, per workspace) ---
   async function prefsView(userId: string, workspaceId: string) {
     const { muted, ...flags } = await prefsFor(ctx, userId, workspaceId);
-    return { ...flags, mutedSubscriptionIds: [...muted] };
+    return { ...flags, mutedBillIds: [...muted] };
   }
 
   router.get('/notifications/preferences', ...org, async (req, res) => {
@@ -109,13 +109,13 @@ export function notificationsRouter(ctx: AppContext): Router {
     await ctx.db.notificationPreference.upsert({
       where: { userId_workspaceId: { userId, workspaceId } },
       update: body,
-      create: { userId, workspaceId, mutedSubscriptionIds: body.mutedSubscriptionIds ?? [], ...body },
+      create: { userId, workspaceId, mutedBillIds: body.mutedBillIds ?? [], ...body },
     });
     res.json(await prefsView(userId, workspaceId));
   });
 
   async function setMuted(req: Parameters<typeof workspaceIdOf>[0], muted: boolean) {
-    const o = await loadSubscription(ctx, req, parseParams(req, z.object({ id })).id);
+    const o = await loadBill(ctx, req, parseParams(req, z.object({ id })).id);
     const userId = userIdOf(req);
     const workspaceId = workspaceIdOf(req);
     const current = await prefsFor(ctx, userId, workspaceId);
@@ -123,16 +123,16 @@ export function notificationsRouter(ctx: AppContext): Router {
     else current.muted.delete(o.id);
     await ctx.db.notificationPreference.upsert({
       where: { userId_workspaceId: { userId, workspaceId } },
-      update: { mutedSubscriptionIds: [...current.muted] },
-      create: { userId, workspaceId, mutedSubscriptionIds: [...current.muted] },
+      update: { mutedBillIds: [...current.muted] },
+      create: { userId, workspaceId, mutedBillIds: [...current.muted] },
     });
     return prefsView(userId, workspaceId);
   }
 
-  router.post('/subscriptions/:id/mute', ...org, async (req, res) => {
+  router.post('/bills/:id/mute', ...org, async (req, res) => {
     res.json(await setMuted(req, true));
   });
-  router.post('/subscriptions/:id/unmute', ...org, async (req, res) => {
+  router.post('/bills/:id/unmute', ...org, async (req, res) => {
     res.json(await setMuted(req, false));
   });
 

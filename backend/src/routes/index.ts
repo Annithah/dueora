@@ -8,7 +8,7 @@ import { budgetsRouter } from '../modules/budgets/routes.js';
 import { importRouter } from '../modules/import/routes.js';
 import { catalogRouter } from '../modules/catalog/routes.js';
 import { insightsRouter } from '../modules/insights/routes.js';
-import { subscriptionsRouter } from '../modules/subscriptions/routes.js';
+import { billsRouter } from '../modules/bills/routes.js';
 import { paymentsRouter } from '../modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../modules/workspaces/routes.js';
 import { notificationsRouter } from '../notifications/routes.js';
@@ -26,7 +26,7 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/auth', authRouter(ctx));
   router.use('/me', meRouter(ctx));
   router.use('/workspaces', workspacesRouter(ctx));
-  router.use('/subscriptions', subscriptionsRouter(ctx));
+  router.use('/bills', billsRouter(ctx));
   router.use('/budgets', budgetsRouter(ctx));
   router.use('/import', importRouter(ctx));
   router.use('/feedback', feedbackRouter(ctx));

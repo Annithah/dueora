@@ -15,7 +15,7 @@ describe('client schedule mirror', () => {
     expect(advance('2026-11-05', 'ONCE', 1, 5)).toBeNull();
   });
 
-  it('matches the backend for new subscriptions', () => {
+  it('matches the backend for new bills', () => {
     const today = '2026-11-03';
     expect(calculateNextDueDate('2026-11-03', 'MONTH', 1, 3, today)).toBe('2026-11-03');
     expect(calculateNextDueDate('2026-01-15', 'MONTH', 1, 15, today)).toBe('2026-11-15');

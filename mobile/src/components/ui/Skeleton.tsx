@@ -44,7 +44,7 @@ export function Skeleton({ width = '100%', height = 14, radius = 8, style }: Ske
   );
 }
 
-/** Placeholder matching a SubscriptionRow (icon tile, two lines, amount). */
+/** Placeholder matching a BillRow (icon tile, two lines, amount). */
 export function SkeletonRow() {
   return (
     <View

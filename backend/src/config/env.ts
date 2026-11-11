@@ -34,8 +34,8 @@ const EnvSchema = z
     /** Error reporting (Sentry). Unset = off. */
     SENTRY_DSN: z.string().optional(),
 
-    /** Key material for encrypting subscription keys at rest (AES-256-GCM). */
-    SUBSCRIPTION_KEY_SECRET: z.string().min(32, 'SUBSCRIPTION_KEY_SECRET must be at least 32 characters'),
+    /** Key material for encrypting account references at rest (AES-256-GCM). */
+    ACCOUNT_REF_SECRET: z.string().min(32, 'ACCOUNT_REF_SECRET must be at least 32 characters'),
 
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     /** Run the job worker inside the API process (handy for single-instance hosting). */

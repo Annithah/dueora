@@ -9,10 +9,10 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{ headerShown: false }}
-      tabBar={(props) => <TabBar {...props} canAdd={can.manageSubscriptions} />}
+      tabBar={(props) => <TabBar {...props} canAdd={can.manageBills} />}
     >
       <Tabs.Screen name="index" />
-      <Tabs.Screen name="subscriptions" />
+      <Tabs.Screen name="bills" />
       <Tabs.Screen name="calendar" />
       <Tabs.Screen name="more" />
     </Tabs>

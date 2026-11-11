@@ -39,8 +39,8 @@ describe('reminder choices', () => {
 
 describe('routeForNotification', () => {
   it('opens the payment for reminders and recorded payments', () => {
-    expect(routeForNotification({ subscriptionId: 'abc', type: 'OVERDUE' })).toBe(
-      '/subscriptions/abc',
+    expect(routeForNotification({ billId: 'abc', type: 'OVERDUE' })).toBe(
+      '/bills/abc',
     );
   });
   it('opens alerts for digests and system messages', () => {
@@ -54,13 +54,13 @@ describe('routeForNotification', () => {
 });
 
 describe('notification buttons and deep links', () => {
-  const data = { subscriptionId: 'sub_1', type: 'OVERDUE' };
+  const data = { billId: 'sub_1', type: 'OVERDUE' };
 
-  it('opens the subscription, the payment sheet or the snooze choices', () => {
-    expect(routeForNotification(data)).toBe('/subscriptions/sub_1');
-    expect(routeForNotification(data, 'mark-paid')).toBe('/subscriptions/sub_1?record=1');
-    expect(routeForNotification(data, 'snooze')).toBe('/subscriptions/sub_1?snooze=1');
-    expect(routeForNotification(data, 'open')).toBe('/subscriptions/sub_1');
+  it('opens the bill, the payment sheet or the snooze choices', () => {
+    expect(routeForNotification(data)).toBe('/bills/sub_1');
+    expect(routeForNotification(data, 'mark-paid')).toBe('/bills/sub_1?record=1');
+    expect(routeForNotification(data, 'snooze')).toBe('/bills/sub_1?snooze=1');
+    expect(routeForNotification(data, 'open')).toBe('/bills/sub_1');
   });
 
   it('routes summaries, budgets and team notices to their screens', () => {

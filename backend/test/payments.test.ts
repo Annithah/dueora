@@ -19,8 +19,8 @@ afterAll(async () => {
   await ctx.db.$disconnect();
 });
 
-const pay = (who: 'admin' | 'finance' | 'viewer', key: keyof Fixture['subscriptionIds'], body: object) =>
-  fx.as(who).post(`/api/v1/subscriptions/${fx.subscriptionIds[key]}/payments`).send(body);
+const pay = (who: 'admin' | 'finance' | 'viewer', key: keyof Fixture['billIds'], body: object) =>
+  fx.as(who).post(`/api/v1/bills/${fx.billIds[key]}/payments`).send(body);
 
 describe('recording payments', () => {
   it('a full payment closes the cycle and moves the next due date forward one year', async () => {
@@ -32,16 +32,16 @@ describe('recording payments', () => {
       paidOn: '2026-11-01',
       method: 'BANK_TRANSFER',
       reference: 'TXN-482913',
-      subscription: { name: 'Hosting', company: { name: 'Alpha News' } },
+      bill: { name: 'Hosting', company: { name: 'Alpha News' } },
     });
     expect(res.body.payment).not.toHaveProperty('currency');
     expect(res.body.payment).not.toHaveProperty('recordedBy');
     expect(res.body.cycleCompleted).toBe(true);
-    expect(res.body.subscription).toMatchObject({ nextDueDate: '2027-10-20', paymentStatus: 'UPCOMING', paidCents: 0 });
+    expect(res.body.bill).toMatchObject({ nextDueDate: '2027-10-20', paymentStatus: 'UPCOMING', paidCents: 0 });
   });
 
   it('keeps history when the new cycle begins', async () => {
-    const detail = await fx.as('viewer').get(`/api/v1/subscriptions/${fx.subscriptionIds['alpha-hosting']}`);
+    const detail = await fx.as('viewer').get(`/api/v1/bills/${fx.billIds['alpha-hosting']}`);
     expect(detail.body.history.map((h: { cycleDueDate: string }) => h.cycleDueDate)).toEqual(['2026-10-20']);
     expect(detail.body.historyTotal).toBe(1);
   });
@@ -50,27 +50,27 @@ describe('recording payments', () => {
     const first = await pay('finance', 'alpha-cdn', { amountCents: 12_000, method: 'CARD' });
     expect(first.body.cycleCompleted).toBe(false);
     expect(first.body.payment.paidOn).toBe('2026-11-02');
-    expect(first.body.subscription).toMatchObject({ nextDueDate: '2026-01-30', paidCents: 12_000, remainingCents: 12_000, paymentStatus: 'OVERDUE' });
+    expect(first.body.bill).toMatchObject({ nextDueDate: '2026-01-30', paidCents: 12_000, remainingCents: 12_000, paymentStatus: 'OVERDUE' });
     const second = await pay('finance', 'alpha-cdn', { method: 'CARD' });
     expect(second.body.payment.amountCents).toBe(12_000); // the rest
     expect(second.body.cycleCompleted).toBe(true);
-    expect(second.body.subscription.nextDueDate).toBe('2027-01-30');
+    expect(second.body.bill.nextDueDate).toBe('2027-01-30');
   });
 
   it('a partial payment on an upcoming cycle shows PARTIALLY_PAID', async () => {
     const res = await pay('admin', 'beta-x', { amountCents: 300, method: 'MOBILE_MONEY' });
-    expect(res.body.subscription).toMatchObject({ paymentStatus: 'PARTIALLY_PAID', remainingCents: 500 });
+    expect(res.body.bill).toMatchObject({ paymentStatus: 'PARTIALLY_PAID', remainingCents: 500 });
   });
 
   it('month-end anchors advance correctly (31 → Dec 31 → Jan 31 → Feb 28)', async () => {
-    expect((await pay('finance', 'rent', { method: 'BANK_TRANSFER' })).body.subscription.nextDueDate).toBe('2026-12-31');
-    expect((await pay('finance', 'rent', { method: 'BANK_TRANSFER' })).body.subscription.nextDueDate).toBe('2027-01-31');
-    expect((await pay('finance', 'rent', { method: 'BANK_TRANSFER' })).body.subscription.nextDueDate).toBe('2027-02-28');
+    expect((await pay('finance', 'rent', { method: 'BANK_TRANSFER' })).body.bill.nextDueDate).toBe('2026-12-31');
+    expect((await pay('finance', 'rent', { method: 'BANK_TRANSFER' })).body.bill.nextDueDate).toBe('2027-01-31');
+    expect((await pay('finance', 'rent', { method: 'BANK_TRANSFER' })).body.bill.nextDueDate).toBe('2027-02-28');
   });
 
-  it('one-time subscriptions become COMPLETED', async () => {
+  it('one-time bills become COMPLETED', async () => {
     const res = await pay('admin', 'redesign', { method: 'BANK_TRANSFER' });
-    expect(res.body.subscription).toMatchObject({ status: 'COMPLETED', paymentStatus: 'PAID', nextDueDate: '2027-01-20' });
+    expect(res.body.bill).toMatchObject({ status: 'COMPLETED', paymentStatus: 'PAID', nextDueDate: '2027-01-20' });
     expect((await pay('admin', 'redesign', { method: 'CARD' })).status).toBe(409);
   });
 
@@ -82,23 +82,23 @@ describe('recording payments', () => {
   });
 
   it('two simultaneous full payments advance the schedule only once per paid cycle', async () => {
-    const id = fx.subscriptionIds.cleaning; // weekly $40 due 2026-11-06
+    const id = fx.billIds.cleaning; // weekly $40 due 2026-11-06
     const [a, b] = await Promise.all([
-      fx.as('finance').post(`/api/v1/subscriptions/${id}/payments`).send({ method: 'CASH', amountCents: 4_000 }),
-      fx.as('finance').post(`/api/v1/subscriptions/${id}/payments`).send({ method: 'CASH', amountCents: 4_000 }),
+      fx.as('finance').post(`/api/v1/bills/${id}/payments`).send({ method: 'CASH', amountCents: 4_000 }),
+      fx.as('finance').post(`/api/v1/bills/${id}/payments`).send({ method: 'CASH', amountCents: 4_000 }),
     ]);
     expect([a.status, b.status]).toEqual([201, 201]);
-    const s = await ctx.db.subscription.findUniqueOrThrow({ where: { id } });
-    const rows = await ctx.db.paymentRecord.findMany({ where: { subscriptionId: id } });
+    const s = await ctx.db.bill.findUniqueOrThrow({ where: { id } });
+    const rows = await ctx.db.paymentRecord.findMany({ where: { billId: id } });
     const cyclesPaid = new Set(rows.map((p) => p.cycleDueDate)).size;
     expect(s.nextDueDate).toBe(cyclesPaid === 2 ? '2026-11-20' : '2026-11-13');
   });
 
-  it('archived subscriptions cannot take payments', async () => {
-    const id = fx.subscriptionIds.insurance;
-    await fx.as('admin').post(`/api/v1/subscriptions/${id}/archive`);
+  it('archived bills cannot take payments', async () => {
+    const id = fx.billIds.insurance;
+    await fx.as('admin').post(`/api/v1/bills/${id}/archive`);
     expect((await pay('admin', 'insurance', { method: 'CARD' })).status).toBe(400);
-    await fx.as('admin').post(`/api/v1/subscriptions/${id}/unarchive`);
+    await fx.as('admin').post(`/api/v1/bills/${id}/unarchive`);
   });
 
   it('viewers cannot record payments', async () => {
@@ -108,56 +108,56 @@ describe('recording payments', () => {
 
 describe('editing and deleting payments', () => {
   it('only admins and finance may edit or delete', async () => {
-    const hist = await fx.as('viewer').get('/api/v1/payments').query({ subscriptionId: fx.subscriptionIds['alpha-hosting'] });
+    const hist = await fx.as('viewer').get('/api/v1/payments').query({ billId: fx.billIds['alpha-hosting'] });
     const pid = hist.body.items[0].id;
     expect((await fx.as('viewer').patch(`/api/v1/payments/${pid}`).send({ reference: 'X' })).status).toBe(403);
     expect((await fx.as('viewer').delete(`/api/v1/payments/${pid}`)).status).toBe(403);
   });
 
   it('lowering a payment reopens the cycle it closed, and logs the change', async () => {
-    const id = fx.subscriptionIds['beta-domain']; // $13 due 2027-02-26
+    const id = fx.billIds['beta-domain']; // $13 due 2027-02-26
     await pay('finance', 'beta-domain', { method: 'MOBILE_MONEY' });
-    expect((await ctx.db.subscription.findUniqueOrThrow({ where: { id } })).nextDueDate).toBe('2028-02-26');
-    const p = await ctx.db.paymentRecord.findFirstOrThrow({ where: { subscriptionId: id, cycleDueDate: '2027-02-26' } });
+    expect((await ctx.db.bill.findUniqueOrThrow({ where: { id } })).nextDueDate).toBe('2028-02-26');
+    const p = await ctx.db.paymentRecord.findFirstOrThrow({ where: { billId: id, cycleDueDate: '2027-02-26' } });
 
     const edited = await fx.as('finance').patch(`/api/v1/payments/${p.id}`).send({ amountCents: 1_000, reference: 'MOMO-1' });
     expect(edited.status).toBe(200);
     expect(edited.body.cycleReopened).toBe(true);
-    expect(edited.body.subscription).toMatchObject({ nextDueDate: '2027-02-26', paidCents: 1_000, remainingCents: 300, paymentStatus: 'PARTIALLY_PAID' });
+    expect(edited.body.bill).toMatchObject({ nextDueDate: '2027-02-26', paidCents: 1_000, remainingCents: 300, paymentStatus: 'PARTIALLY_PAID' });
     const log = await ctx.db.auditLog.findFirstOrThrow({ where: { action: 'payment.update', entityId: p.id } });
     expect(log.meta).toMatchObject({ before: { amountCents: 1_300 }, after: { amountCents: 1_000, reference: 'MOMO-1' } });
 
     const fixed = await fx.as('finance').patch(`/api/v1/payments/${p.id}`).send({ amountCents: 1_300 });
     expect(fixed.body.cycleCompleted).toBe(true);
-    expect(fixed.body.subscription.nextDueDate).toBe('2028-02-26');
+    expect(fixed.body.bill.nextDueDate).toBe('2028-02-26');
   });
 
   it('deleting the payment that closed a cycle reopens it', async () => {
-    const id = fx.subscriptionIds['alpha-hosting'];
-    const p = await ctx.db.paymentRecord.findFirstOrThrow({ where: { subscriptionId: id, cycleDueDate: '2026-10-20' } });
+    const id = fx.billIds['alpha-hosting'];
+    const p = await ctx.db.paymentRecord.findFirstOrThrow({ where: { billId: id, cycleDueDate: '2026-10-20' } });
     const res = await fx.as('admin').delete(`/api/v1/payments/${p.id}`);
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ cycleReopened: true, subscription: { nextDueDate: '2026-10-20', paymentStatus: 'OVERDUE' } });
+    expect(res.body).toMatchObject({ cycleReopened: true, bill: { nextDueDate: '2026-10-20', paymentStatus: 'OVERDUE' } });
     expect(await ctx.db.auditLog.count({ where: { action: 'payment.delete', entityId: p.id } })).toBe(1);
   });
 
   it('deleting a payment from an older, non-adjacent cycle never rewinds the schedule', async () => {
-    const id = fx.subscriptionIds.rent; // paid three cycles above → open 2027-02-28
-    const oldest = await ctx.db.paymentRecord.findFirstOrThrow({ where: { subscriptionId: id, cycleDueDate: '2026-11-30' } });
+    const id = fx.billIds.rent; // paid three cycles above → open 2027-02-28
+    const oldest = await ctx.db.paymentRecord.findFirstOrThrow({ where: { billId: id, cycleDueDate: '2026-11-30' } });
     const res = await fx.as('admin').delete(`/api/v1/payments/${oldest.id}`);
     expect(res.body.cycleReopened).toBe(false);
-    expect((await ctx.db.subscription.findUniqueOrThrow({ where: { id } })).nextDueDate).toBe('2027-02-28');
+    expect((await ctx.db.bill.findUniqueOrThrow({ where: { id } })).nextDueDate).toBe('2027-02-28');
   });
 
-  it('un-completes a one-time subscription when its payment is removed', async () => {
-    const p = await ctx.db.paymentRecord.findFirstOrThrow({ where: { subscriptionId: fx.subscriptionIds.redesign } });
+  it('un-completes a one-time bill when its payment is removed', async () => {
+    const p = await ctx.db.paymentRecord.findFirstOrThrow({ where: { billId: fx.billIds.redesign } });
     const res = await fx.as('admin').delete(`/api/v1/payments/${p.id}`);
-    expect(res.body.subscription).toMatchObject({ status: 'ACTIVE', paymentStatus: 'UPCOMING' });
+    expect(res.body.bill).toMatchObject({ status: 'ACTIVE', paymentStatus: 'UPCOMING' });
   });
 });
 
 describe('history', () => {
-  type Item = { id: string; paidOn: string; amountCents: number; subscription: { name: string; company: { name: string } } };
+  type Item = { id: string; paidOn: string; amountCents: number; bill: { name: string; company: { name: string } } };
 
   it('lists 10 per page, newest first, with the USD total for the filter', async () => {
     // Add enough payments for two pages.
@@ -193,14 +193,14 @@ describe('history', () => {
     expect(oct.body.total).toBe(7); // 6 internet + the fixture's Google Workspace partial
 
     const beta = await fx.as('admin').get('/api/v1/payments').query({ companyId: fx.companies.beta, limit: 50 });
-    expect((beta.body.items as Item[]).every((i) => i.subscription.company.name === 'Beta Radio')).toBe(true);
+    expect((beta.body.items as Item[]).every((i) => i.bill.company.name === 'Beta Radio')).toBe(true);
     expect(beta.body.total).toBe(2);
 
     const comms = await fx.as('admin').get('/api/v1/payments').query({ categoryId: fx.categories['Communication & internet'] });
     expect(comms.body.total).toBe(6);
 
     const search = await fx.as('admin').get('/api/v1/payments').query({ q: 'GOOGLE' });
-    expect((search.body.items as Item[]).map((i) => i.subscription.name)).toEqual(['Google Workspace']);
+    expect((search.body.items as Item[]).map((i) => i.bill.name)).toEqual(['Google Workspace']);
     const byRef = await fx.as('admin').get('/api/v1/payments').query({ q: 'MOMO-1' });
     expect(byRef.body.total).toBe(1);
   });
@@ -220,7 +220,7 @@ describe('isolation', () => {
     expect((await them.get(`/api/v1/payments/${p.id}`)).status).toBe(404);
     expect((await them.patch(`/api/v1/payments/${p.id}`).send({ reference: 'pwned' })).status).toBe(404);
     expect((await them.delete(`/api/v1/payments/${p.id}`)).status).toBe(404);
-    expect((await them.post(`/api/v1/subscriptions/${fx.subscriptionIds.internet}/payments`).send({ method: 'CASH' })).status).toBe(404);
+    expect((await them.post(`/api/v1/bills/${fx.billIds.internet}/payments`).send({ method: 'CASH' })).status).toBe(404);
     // Using their own token against our workspace id is a 404 too.
     expect((await client(app, outsider, fx.workspaceId).get('/api/v1/payments')).status).toBe(404);
     expect((await ctx.db.paymentRecord.findUniqueOrThrow({ where: { id: p.id } })).reference).not.toBe('pwned');

@@ -4,7 +4,7 @@ import { AmountText, CategoryIcon, StatusBadge, Text } from '@/components/ui';
 import { formatDate } from '@/lib/dates';
 import { useTheme, type PaymentStatus } from '@/theme';
 
-export interface SubscriptionRowData {
+export interface BillRowData {
   id: string;
   name: string;
   /** Category icon key. */
@@ -16,8 +16,8 @@ export interface SubscriptionRowData {
   subtitle: string;
 }
 
-export interface SubscriptionRowProps {
-  item: SubscriptionRowData;
+export interface BillRowProps {
+  item: BillRowData;
   onPress?: () => void;
   /** Compact rows put the badge under the amount (dashboard lists). */
   compact?: boolean;
@@ -26,14 +26,14 @@ export interface SubscriptionRowProps {
   bordered?: boolean;
 }
 
-/** Subscription row: category badge, name + "company · frequency", USD amount, due date and status. */
-export function SubscriptionRow({
+/** Bill row: category badge, name + "company · frequency", USD amount, due date and status. */
+export function BillRow({
   item,
   onPress,
   compact = false,
   divider = false,
   bordered = false,
-}: SubscriptionRowProps) {
+}: BillRowProps) {
   const { colors } = useTheme();
   const overdue = item.status === 'OVERDUE';
   const label = `${item.name}, ${item.subtitle}`;

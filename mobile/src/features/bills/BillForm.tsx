@@ -39,7 +39,7 @@ import { suggestCategory, useAiStatus } from '@/features/ai/api';
 import { guessCategoryName } from '@/lib/guess';
 import { radius, typography, useTheme } from '@/theme';
 
-import { METHOD_LABELS, useSaveSubscription, type PaymentMethod, type Subscription } from './api';
+import { METHOD_LABELS, useSaveBill, type PaymentMethod, type Bill } from './api';
 import {
   FREQUENCIES,
   autoNextDueDate,
@@ -101,20 +101,20 @@ function Section({
   );
 }
 
-export interface SubscriptionFormProps {
-  existing?: Subscription;
+export interface BillFormProps {
+  existing?: Bill;
   /** Today in the workspace timezone. */
   today: string;
-  /** Called with the saved subscription; `isFirst` is true for the workspace's very first one. */
-  onSaved: (saved: Subscription, isFirst: boolean) => void;
+  /** Called with the saved bill; `isFirst` is true for the workspace's very first one. */
+  onSaved: (saved: Bill, isFirst: boolean) => void;
 }
 
-export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormProps) {
+export function BillForm({ existing, today, onSaved }: BillFormProps) {
   const { colors } = useTheme();
   const workspace = useWorkspace();
   const companies = useCompanies();
   const categories = useCategories();
-  const save = useSaveSubscription(existing?.id);
+  const save = useSaveBill(existing?.id);
   const addCompany = useListMutation('companies', createCompany);
   const [formError, setFormError] = useState<string | null>(null);
   const [newCompany, setNewCompany] = useState<string | null>(null);
@@ -206,11 +206,11 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
     try {
-      const isFirst = !existing && (workspace.data?.subscriptionCount ?? 0) === 0;
+      const isFirst = !existing && (workspace.data?.billCount ?? 0) === 0;
       const saved = await save.mutateAsync(toInput(values, existing));
       onSaved(saved, isFirst);
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not save this subscription');
+      setFormError(err instanceof ApiError ? err.message : 'Could not save this bill');
     }
   });
 
@@ -232,10 +232,10 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
 
   return (
     <Screen
-      header={<TopBar title={existing ? 'Edit subscription' : 'Add subscription'} />}
+      header={<TopBar title={existing ? 'Edit bill' : 'Add bill'} />}
       footer={
         <Button full size="lg" loading={formState.isSubmitting} onPress={() => void onSubmit()}>
-          {existing ? 'Save changes' : 'Save subscription'}
+          {existing ? 'Save changes' : 'Save bill'}
         </Button>
       }
       contentStyle={{ gap: 24, paddingBottom: 32 }}
@@ -248,7 +248,7 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
           name="name"
           render={({ field, fieldState }) => (
             <Input
-              label="Subscription name"
+              label="Bill name"
               placeholder="e.g. Website hosting"
               value={field.value}
               onChangeText={field.onChange}
@@ -555,15 +555,15 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
       <Section n={6} title="Details" hint="Optional">
         <Controller
           control={control}
-          name="subscriptionKey"
+          name="accountReference"
           render={({ field }) => (
             <View style={{ gap: 8 }}>
               <Input
-                label="Subscription key (optional)"
+                label="Reference / account number (optional)"
                 placeholder={
-                  existing?.subscriptionKey
-                    ? `Leave blank to keep ${existing.subscriptionKey.masked}`
-                    : 'License key, account number, customer ID…'
+                  existing?.accountReference
+                    ? `Leave blank to keep ${existing.accountReference.masked}`
+                    : 'License key, account number, customer ID, tax ID, meter number…'
                 }
                 hint="Stored encrypted. Only admins and finance can reveal it."
                 value={field.value}
@@ -579,7 +579,7 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                 trailing={
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={showKey ? 'Hide subscription key' : 'Show subscription key'}
+                    accessibilityLabel={showKey ? 'Hide account reference' : 'Show account reference'}
                     hitSlop={12}
                     onPress={() => setShowKey((v) => !v)}
                   >
@@ -591,7 +591,7 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                   </Pressable>
                 }
               />
-              {existing?.subscriptionKey ? (
+              {existing?.accountReference ? (
                 <Controller
                   control={control}
                   name="removeKey"
@@ -600,14 +600,14 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }}
                     >
                       <Text variant="small" tone="muted" style={{ flex: 1 }}>
-                        Remove the saved key ({existing.subscriptionKey!.masked})
+                        Remove the saved reference ({existing.accountReference!.masked})
                       </Text>
                       <Switch
-                        accessibilityLabel="Remove the saved subscription key"
+                        accessibilityLabel="Remove the saved account reference"
                         value={remove.value}
                         onValueChange={(on) => {
                           remove.onChange(on);
-                          if (on) setValue('subscriptionKey', '');
+                          if (on) setValue('accountReference', '');
                         }}
                       />
                     </View>
@@ -698,12 +698,12 @@ function ToggleRow({
   );
 }
 
-/** Navigate after saving: first subscription → ask for notifications, otherwise open it. */
+/** Navigate after saving: first bill → ask for notifications, otherwise open it. */
 export function afterSave(
-  saved: Subscription,
+  saved: Bill,
   isFirst: boolean,
   permission: 'granted' | 'denied' | 'undetermined',
 ) {
-  router.replace(`/subscriptions/${saved.id}`);
+  router.replace(`/bills/${saved.id}`);
   if (isFirst && permission === 'undetermined') router.push('/notifications-permission');
 }

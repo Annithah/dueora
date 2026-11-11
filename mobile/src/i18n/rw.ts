@@ -18,8 +18,8 @@ export const rw: PartialResources = {
   },
   tabs: {
     home: 'Ahabanza',
-    subscriptions: 'Ifatabuguzi',
-    add: 'Ongeraho ifatabuguzi',
+    bills: 'Fagitire',
+    add: 'Ongeraho fagitire',
     calendar: 'Kalendari',
     more: 'Ibindi',
   },

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { centsToInput, parseUSDInput } from '@/lib/money';
 import { calculateNextDueDate } from '@/lib/schedule';
 
-import type { FrequencyUnit, PaymentMethod, Subscription, SubscriptionInput } from './api';
+import type { FrequencyUnit, PaymentMethod, Bill, BillInput } from './api';
 
 /** Frequency presets shown as chips. "Custom" exposes unit + interval. */
 export const FREQUENCIES = [
@@ -26,12 +26,12 @@ export function frequencyKeyFor(unit: FrequencyUnit, interval: number): Frequenc
 
 export const formSchema = z
   .object({
-    name: z.string().trim().min(1, 'What is this subscription for?').max(120),
+    name: z.string().trim().min(1, 'What is this bill for?').max(120),
     companyId: z.string().min(1, 'Choose a company'),
     categoryId: z.string().min(1, 'Choose a category'),
     provider: z.string().trim().max(120),
     /** Typed key. When editing, blank means "keep the stored key". */
-    subscriptionKey: z.string().trim().max(500),
+    accountReference: z.string().trim().max(500),
     removeKey: z.boolean(),
     amount: z.string().trim().min(1, 'Enter the amount'),
     frequency: z.enum(FREQUENCIES.map((f) => f.key) as [FrequencyKey, ...FrequencyKey[]]),
@@ -72,7 +72,7 @@ export function autoNextDueDate(v: Pick<FormValues, 'frequency' | 'customUnit' |
 }
 
 export function defaultsFrom(
-  s: Subscription | undefined,
+  s: Bill | undefined,
   fallback: { offsets: number[]; today: string; companyId?: string },
 ): FormValues {
   if (!s) {
@@ -81,7 +81,7 @@ export function defaultsFrom(
       companyId: fallback.companyId ?? '',
       categoryId: '',
       provider: '',
-      subscriptionKey: '',
+      accountReference: '',
       removeKey: false,
       amount: '',
       frequency: 'monthly',
@@ -103,7 +103,7 @@ export function defaultsFrom(
     companyId: s.company.id,
     categoryId: s.category.id,
     provider: s.provider ?? '',
-    subscriptionKey: '',
+    accountReference: '',
     removeKey: false,
     amount: centsToInput(s.amountCents),
     frequency: frequencyKeyFor(s.frequencyUnit, s.frequencyInterval),
@@ -111,7 +111,7 @@ export function defaultsFrom(
     customInterval: s.frequencyInterval,
     startDate: s.startDate,
     nextDueDate: s.nextDueDate,
-    // An existing subscription's due date reflects recorded payments: keep it unless the user changes it.
+    // An existing bill's due date reflects recorded payments: keep it unless the user changes it.
     nextDueManual: true,
     reminderOffsets: s.reminderOffsets,
     description: s.description ?? '',
@@ -122,10 +122,10 @@ export function defaultsFrom(
   };
 }
 
-export function toInput(v: FormValues, existing?: Subscription): SubscriptionInput {
+export function toInput(v: FormValues, existing?: Bill): BillInput {
   const { unit, interval } = scheduleOf(v);
-  const key = v.subscriptionKey.trim();
-  const input: SubscriptionInput = {
+  const key = v.accountReference.trim();
+  const input: BillInput = {
     name: v.name.trim(),
     companyId: v.companyId,
     categoryId: v.categoryId,
@@ -143,7 +143,7 @@ export function toInput(v: FormValues, existing?: Subscription): SubscriptionInp
   };
   // New: always send the date shown. Edit: only when changed, so the server can re-derive it.
   if (!existing || v.nextDueDate !== existing.nextDueDate) input.nextDueDate = v.nextDueDate;
-  if (key) input.subscriptionKey = key;
-  else if (existing && v.removeKey) input.subscriptionKey = null;
+  if (key) input.accountReference = key;
+  else if (existing && v.removeKey) input.accountReference = null;
   return input;
 }

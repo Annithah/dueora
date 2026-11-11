@@ -73,7 +73,7 @@ function SquareButton({
   );
 }
 
-/** Search input with Sort and Filter buttons beside it (subscriptions and history lists). */
+/** Search input with Sort and Filter buttons beside it (bills and history lists). */
 export function SearchBar({
   value,
   onChangeText,

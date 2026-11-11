@@ -5,7 +5,7 @@ import { DEFAULT_CATEGORIES, ensureDefaultCategories } from '../src/db/defaults.
 
 /**
  * `npm run db:seed` — inserts the default categories and nothing else.
- * DueOra never seeds demo users, workspaces, subscriptions or payments: all data is entered in the app.
+ * DueOra never seeds demo users, workspaces, bills or payments: all data is entered in the app.
  */
 async function main() {
   const url = process.env.DATABASE_URL;

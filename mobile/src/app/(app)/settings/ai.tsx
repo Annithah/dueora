@@ -50,7 +50,7 @@ export default function AiSettings() {
           ) : null}
         </View>
         <Text variant="small" tone="muted">
-          It answers from this workspace’s data only, never sees subscription keys, and always asks
+          It answers from this workspace’s data only, never sees account references, and always asks
           you to confirm before changing anything.{' '}
           {status.data && !status.data.available ? 'It isn’t connected on the server yet.' : ''}
         </Text>
@@ -78,7 +78,7 @@ export default function AiSettings() {
               icon={<Brain size={18} color={colors.primaryStrong} />}
               title={m.text}
               trailing={
-                can.manageSubscriptions ? (
+                can.manageBills ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Forget this"
@@ -94,7 +94,7 @@ export default function AiSettings() {
         </Card>
       </View>
 
-      {can.manageSubscriptions ? (
+      {can.manageBills ? (
         <View style={{ gap: 10 }}>
           <Input
             label="Teach it something"

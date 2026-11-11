@@ -11,14 +11,14 @@ export interface DataCheck {
 
 /**
  * Proves a freshly set-up database holds only the default categories — no demo users,
- * workspaces, companies, subscriptions or payments (DueOra never seeds sample data).
+ * workspaces, companies, bills or payments (DueOra never seeds sample data).
  */
 export async function checkOnlyDefaults(db: Db): Promise<DataCheck> {
   const counts = {
     users: await db.user.count(),
     workspaces: await db.workspace.count(),
     companies: await db.company.count(),
-    subscriptions: await db.subscription.count(),
+    bills: await db.bill.count(),
     payments: await db.paymentRecord.count(),
     notifications: await db.notification.count(),
   };

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { formatLongDate, formatShortDay, formatUSD } from '../lib/format.js';
 
-import { digestCopy, paymentRecordedCopy, reminderCopy, subscriptionLabel } from './messages.js';
+import { digestCopy, paymentRecordedCopy, reminderCopy, billLabel } from './messages.js';
 
 describe('formatting', () => {
   it('formats USD cents with two decimals', () => {
@@ -22,8 +22,8 @@ describe('formatting', () => {
 describe('notification copy (brief examples)', () => {
   const base = { name: 'Hosting', company: 'Harbor Clinic', amountCents: 152_300, dueDate: '2026-10-20' };
 
-  it('labels subscriptions with their company', () => {
-    expect(subscriptionLabel('Hosting', 'Harbor Clinic')).toBe('Harbor Clinic · Hosting');
+  it('labels bills with their company', () => {
+    expect(billLabel('Hosting', 'Harbor Clinic')).toBe('Harbor Clinic · Hosting');
   });
 
   it('reminder before the due date', () => {
@@ -55,7 +55,7 @@ describe('notification copy (brief examples)', () => {
 
   it('digest', () => {
     const c = digestCopy(4, ['A · 1', 'B · 2', 'C · 3', 'D · 4']);
-    expect(c.title).toBe('🔔 4 subscriptions need attention this week');
+    expect(c.title).toBe('🔔 4 bills need attention this week');
     expect(c.body).toBe('A · 1, B · 2, C · 3 and 1 more.');
   });
 });

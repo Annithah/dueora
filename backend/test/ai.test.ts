@@ -51,12 +51,12 @@ describe('DueOra AI chat', () => {
     expect((await as('finance').get('/api/v1/ai/conversations')).body).toHaveLength(1);
   });
 
-  it('never sends a pasted subscription key to the model', async () => {
+  it('never sends a pasted account reference to the model', async () => {
     scripted.requests.length = 0;
     await as('admin').post('/api/v1/ai/chat').send({ message: `Is ${SCHOOL_KEY} the right licence?` });
     const sent = JSON.stringify(scripted.requests);
     expect(sent).not.toContain(SCHOOL_KEY);
-    expect(sent).toContain('[subscription key hidden]');
+    expect(sent).toContain('[account reference hidden]');
   });
 
   it('shows the friendly message when Gemini fails', async () => {
@@ -86,7 +86,7 @@ describe('DueOra AI chat', () => {
     const off = await as('viewer').post('/api/v1/ai/chat').send({ message: 'Hello' });
     expect(off.status).toBe(403);
     expect(off.body.error.code).toBe('AI_DISABLED');
-    expect((await as('viewer').get('/api/v1/subscriptions')).status).toBe(200);
+    expect((await as('viewer').get('/api/v1/bills')).status).toBe(200);
     await as('admin').patch('/api/v1/workspaces/current').send({ aiEnabled: true });
   });
 
@@ -137,7 +137,7 @@ describe('insights and smart forms', () => {
     ctx.clock.set('2026-11-03T07:00:00Z');
     const res = await as('viewer').get('/api/v1/ai/insight');
     expect(res.body.source).toBe('plain');
-    expect(res.body.text).toBe('1 subscription is overdue — recording it keeps reminders quiet. ⚠️');
+    expect(res.body.text).toBe('1 bill is overdue — recording it keeps reminders quiet. ⚠️');
     await as('admin').patch('/api/v1/workspaces/current').send({ aiEnabled: true });
   });
 
@@ -155,7 +155,7 @@ describe('insights and smart forms', () => {
 describe('tools', () => {
   it('only offers write tools to roles that may change things', () => {
     const names = (role: 'ADMIN' | 'FINANCE' | 'VIEWER') => toolsFor(role).map((t) => t.name);
-    expect(names('VIEWER')).toEqual(expect.arrayContaining(['list_subscriptions', 'propose_snooze', 'propose_mute']));
+    expect(names('VIEWER')).toEqual(expect.arrayContaining(['list_bills', 'propose_snooze', 'propose_mute']));
     expect(names('VIEWER')).not.toContain('propose_record_payment');
     expect(names('FINANCE')).toContain('propose_record_payment');
   });

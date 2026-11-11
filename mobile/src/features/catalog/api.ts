@@ -9,7 +9,7 @@ export interface Company {
   name: string;
   color: string;
   archived: boolean;
-  subscriptionCount: number;
+  billCount: number;
 }
 
 export interface Category {
@@ -18,7 +18,7 @@ export interface Category {
   icon: string;
   color: string;
   isDefault: boolean;
-  subscriptionCount?: number;
+  billCount?: number;
 }
 
 export interface Member {
@@ -88,7 +88,7 @@ export function useListMutation<TVars, TResult = unknown>(listKey: string, fn: (
       Promise.all([
         queryClient.invalidateQueries({ queryKey: [listKey, workspaceId] }),
         queryClient.invalidateQueries({ queryKey: ['workspace', workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ['subscriptions', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['bills', workspaceId] }),
       ]),
   });
 }
@@ -96,7 +96,7 @@ export function useListMutation<TVars, TResult = unknown>(listKey: string, fn: (
 export const createCompany = (body: { name: string; color?: string }) => api.post<Company>('/companies', body);
 export const updateCompany = ({ id, ...body }: { id: string; name?: string; color?: string }) =>
   api.patch<Company>(`/companies/${id}`, body);
-/** Deletes an unused company; one with subscriptions is archived instead (history kept). */
+/** Deletes an unused company; one with bills is archived instead (history kept). */
 export const deleteCompany = (id: string) => api.del<{ deleted: boolean; archived: boolean }>(`/companies/${id}`);
 export const unarchiveCompany = (id: string) => api.post<Company>(`/companies/${id}/unarchive`);
 

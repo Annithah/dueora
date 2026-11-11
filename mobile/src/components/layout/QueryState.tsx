@@ -27,7 +27,7 @@ export function QueryState<T>({
         title={offline ? "You're offline" : 'Something went wrong'}
         message={
           offline
-            ? "We'll show your subscriptions as soon as you're back online."
+            ? "We'll show your bills as soon as you're back online."
             : 'We couldn’t load this. Please try again.'
         }
         actionLabel="Try again"

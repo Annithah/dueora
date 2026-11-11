@@ -24,7 +24,7 @@ const scripted = new ScriptedModel((req) => {
   const last = req.turns.at(-1)!;
   if (last.role === 'tool') return { text: 'Here you go ✅' };
   const c = last.role === 'user' ? byMessage.get(last.text) : undefined;
-  if (!c || c.script.length === 0) return { text: 'I can only help with DueOra, and I never show subscription keys. 🙂' };
+  if (!c || c.script.length === 0) return { text: 'I can only help with DueOra, and I never show account references. 🙂' };
   return { calls: c.script };
 });
 
@@ -63,15 +63,15 @@ afterAll(async () => {
 
 const snapshot = async () =>
   Promise.all([
-    ctx.db.subscription.count(),
+    ctx.db.bill.count(),
     ctx.db.paymentRecord.count(),
     ctx.db.company.count(),
     ctx.db.category.count(),
     ctx.db.budget.count(),
     ctx.db.aiMemory.count(),
     ctx.db.reminderSnooze.count(),
-    ctx.db.subscription.count({ where: { status: 'ARCHIVED' } }),
-    ctx.db.notificationPreference.findMany().then((p) => JSON.stringify(p.map((x) => x.mutedSubscriptionIds))),
+    ctx.db.bill.count({ where: { status: 'ARCHIVED' } }),
+    ctx.db.notificationPreference.findMany().then((p) => JSON.stringify(p.map((x) => x.mutedBillIds))),
   ]);
 
 const results: { id: string; ok: boolean; called: string[] }[] = [];
@@ -102,11 +102,11 @@ describe.each(EVAL_CASES.map((c) => [c.id, c] as const))('eval: %s', (_id, c) =>
     // Viewers are never offered tools that change shared data.
     const offered = requests[0]!.tools.map((t) => t.name);
     if (c.as === 'viewer') {
-      expect(offered).not.toContain('propose_add_subscription');
+      expect(offered).not.toContain('propose_add_bill');
       expect(offered).toContain('propose_snooze');
     }
 
-    // Nothing sent to the model ever contains a subscription key or another workspace's data.
+    // Nothing sent to the model ever contains an account reference or another workspace's data.
     const sent = JSON.stringify(requests);
     expect(sent).not.toContain(SCHOOL_KEY);
     expect(sent).not.toContain(CLINIC_KEY);
@@ -132,14 +132,14 @@ describe('eval summary', () => {
 describe('confirming proposals', () => {
   const pendingOf = (done: { cards: { type: string; id?: string }[] }) => done.cards.find((k) => k.type === 'action') as { id: string };
 
-  it('adds the subscription only after Confirm (with the right date and company)', async () => {
+  it('adds the bill only after Confirm (with the right date and company)', async () => {
     const { done } = await ask(EVAL_CASES.find((c) => c.id === 'add-internet')!);
     const action = pendingOf(done);
     const as = client(app, fx.school.sessions.admin, fx.school.workspaceId);
     const res = await as.post(`/api/v1/ai/messages/${done.messageId}/actions/${action.id}/confirm`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ status: 'confirmed' });
-    const list = await as.get('/api/v1/subscriptions?q=Internet');
+    const list = await as.get('/api/v1/bills?q=Internet');
     const created = list.body.items.find((s: { company: { name: string } }) => s.company.name === 'Riverside Canteen');
     expect(created).toMatchObject({ name: 'Internet', amountCents: 5_000, frequencyUnit: 'MONTH', nextDueDate: '2026-11-05' });
     // Confirming twice does nothing.
@@ -151,12 +151,12 @@ describe('confirming proposals', () => {
     const as = client(app, fx.school.sessions.finance, fx.school.workspaceId);
     const cancel = await as.post(`/api/v1/ai/messages/${first.done.messageId}/actions/${pendingOf(first.done).id}/cancel`);
     expect(cancel.body.status).toBe('cancelled');
-    expect(await ctx.db.paymentRecord.count({ where: { subscriptionId: fx.school.subs.hosting } })).toBe(0);
+    expect(await ctx.db.paymentRecord.count({ where: { billId: fx.school.subs.hosting } })).toBe(0);
 
     const second = await ask(EVAL_CASES.find((c) => c.id === 'paid-hosting')!);
     const ok = await as.post(`/api/v1/ai/messages/${second.done.messageId}/actions/${pendingOf(second.done).id}/confirm`);
     expect(ok.body).toMatchObject({ status: 'confirmed' });
-    const pay = await ctx.db.paymentRecord.findFirstOrThrow({ where: { subscriptionId: fx.school.subs.hosting } });
+    const pay = await ctx.db.paymentRecord.findFirstOrThrow({ where: { billId: fx.school.subs.hosting } });
     expect(pay).toMatchObject({ amountCents: 24_000, method: 'MOBILE_MONEY', paidOn: '2026-11-02' });
   });
 

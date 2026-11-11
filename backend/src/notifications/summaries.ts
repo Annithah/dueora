@@ -4,8 +4,8 @@ import { formatUSD } from '../lib/format.js';
 import { weeklyAiLine } from '../ai/insights.js';
 import { addMonthsKey, monthRange, occurrencesBetween } from '../modules/insights/projection.js';
 
-import { monthlySummaryCopy, subscriptionLabel, weeklyDigestCopy, type Copy } from './messages.js';
-import { createNotification, dedupeKey, prefsFor, subscriptionUrl } from './store.js';
+import { monthlySummaryCopy, billLabel, weeklyDigestCopy, type Copy } from './messages.js';
+import { createNotification, dedupeKey, prefsFor, billUrl } from './store.js';
 
 /**
  * WEEKLY_DIGEST (Mondays at the reminder hour): the week ahead — count, total, list — plus
@@ -31,30 +31,30 @@ interface Org {
 }
 
 async function upcoming(ctx: AppContext, workspaceId: string, from: string, to: string) {
-  const subs = await ctx.db.subscription.findMany({ where: { workspaceId, status: 'ACTIVE' }, include: { company: { select: { name: true } } } });
+  const subs = await ctx.db.bill.findMany({ where: { workspaceId, status: 'ACTIVE' }, include: { company: { select: { name: true } } } });
   const open = subs.length
     ? await ctx.db.paymentRecord.findMany({
-        where: { workspaceId, OR: subs.map((s) => ({ subscriptionId: s.id, cycleDueDate: s.nextDueDate })) },
-        select: { subscriptionId: true, cycleDueDate: true, amountCents: true },
+        where: { workspaceId, OR: subs.map((s) => ({ billId: s.id, cycleDueDate: s.nextDueDate })) },
+        select: { billId: true, cycleDueDate: true, amountCents: true },
       })
     : [];
-  const items: { subscriptionId: string; cycleDueDate: string; label: string; company: string; provider: string | null; amountCents: number; dueDate: string; daysUntilDue: number; partiallyPaid: boolean; url: string }[] = [];
+  const items: { billId: string; cycleDueDate: string; label: string; company: string; provider: string | null; amountCents: number; dueDate: string; daysUntilDue: number; partiallyPaid: boolean; url: string }[] = [];
   for (const s of subs) {
-    const paid = paidForCycle(open.filter((p) => p.subscriptionId === s.id), s.nextDueDate);
+    const paid = paidForCycle(open.filter((p) => p.billId === s.id), s.nextDueDate);
     for (const occ of occurrencesBetween(s, from, to)) {
       const amount = occ.kind === 'current' ? s.amountCents - paid : s.amountCents;
       if (amount <= 0) continue;
       items.push({
-        subscriptionId: s.id,
+        billId: s.id,
         cycleDueDate: occ.date,
-        label: subscriptionLabel(s.name, s.company.name),
+        label: billLabel(s.name, s.company.name),
         company: s.company.name,
         provider: s.provider,
         amountCents: amount,
         dueDate: occ.date,
         daysUntilDue: daysBetween(from, occ.date),
         partiallyPaid: occ.kind === 'current' && paid > 0,
-        url: subscriptionUrl(ctx, s.id),
+        url: billUrl(ctx, s.id),
       });
     }
   }
@@ -116,14 +116,14 @@ export async function runSummaries(
       ctx.db.paymentRecord.aggregate({ where: { workspaceId: org.id, paidOn: { gte: prev.from, lte: prev.to } }, _sum: { amountCents: true } }),
       ctx.db.priceChange.findMany({
         where: { workspaceId: org.id, changedAt: { gte: new Date(`${prev.from}T00:00:00Z`), lt: new Date(`${first}T00:00:00Z`) } },
-        include: { subscription: { select: { name: true, company: { select: { name: true } } } } },
+        include: { bill: { select: { name: true, company: { select: { name: true } } } } },
       }),
     ]);
     const coming = await upcoming(ctx, org.id, today, monthRange(today).to);
     const comingCents = coming.reduce((s, i) => s + i.amountCents, 0);
     const biggest = changes
       .map((c) => ({
-        label: subscriptionLabel(c.subscription.name, c.subscription.company.name),
+        label: billLabel(c.bill.name, c.bill.company.name),
         from: c.oldAmountCents,
         to: c.newAmountCents,
         delta: c.newAmountCents - c.oldAmountCents,

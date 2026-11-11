@@ -15,8 +15,8 @@ export const fr: PartialResources = {
   },
   tabs: {
     home: 'Accueil',
-    subscriptions: 'Abonnements',
-    add: 'Ajouter un abonnement',
+    bills: 'Factures',
+    add: 'Ajouter une facture',
     calendar: 'Calendrier',
     more: 'Plus',
   },

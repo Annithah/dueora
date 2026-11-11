@@ -20,7 +20,7 @@ import { budgetsRouter } from '../src/modules/budgets/routes.js';
 import { importRouter } from '../src/modules/import/routes.js';
 import { catalogRouter } from '../src/modules/catalog/routes.js';
 import { insightsRouter } from '../src/modules/insights/routes.js';
-import { subscriptionsRouter } from '../src/modules/subscriptions/routes.js';
+import { billsRouter } from '../src/modules/bills/routes.js';
 import { paymentsRouter } from '../src/modules/payments/routes.js';
 import { publicRouter, workspacesRouter } from '../src/modules/workspaces/routes.js';
 import { notificationsRouter } from '../src/notifications/routes.js';
@@ -53,7 +53,7 @@ const ALL: RouteInfo[] = [
   ...routesOf('/api/v1/auth', authRouter(ctx)),
   ...routesOf('/api/v1/me', meRouter(ctx)),
   ...routesOf('/api/v1/workspaces', workspacesRouter(ctx)),
-  ...routesOf('/api/v1/subscriptions', subscriptionsRouter(ctx)),
+  ...routesOf('/api/v1/bills', billsRouter(ctx)),
   ...routesOf('/api/v1/budgets', budgetsRouter(ctx)),
   ...routesOf('/api/v1/import', importRouter(ctx)),
   ...routesOf('/api/v1/feedback', feedbackRouter(ctx)),
@@ -107,7 +107,7 @@ let ids: Record<string, string>;
 /** Fill :params with real ids from the fixture workspace (the victim). */
 function concrete(path: string): string {
   return path
-    .replace(/\/subscriptions\/:id/, `/subscriptions/${ids.subscription}`)
+    .replace(/\/bills\/:id/, `/bills/${ids.bill}`)
     .replace(/\/payments\/:id/, `/payments/${ids.payment}`)
     .replace(/\/companies\/:id/, `/companies/${ids.company}`)
     .replace(/\/categories\/:id/, `/categories/${ids.category}`)
@@ -120,14 +120,14 @@ beforeAll(async () => {
   ctx.clock.set('2026-11-02T07:00:00Z');
   fx = await buildFixture(app, ctx);
   const a = fx.as('admin');
-  const pay = await a.post(`/api/v1/subscriptions/${fx.subscriptionIds.internet}/payments`).send({ method: 'CASH' });
+  const pay = await a.post(`/api/v1/bills/${fx.billIds.internet}/payments`).send({ method: 'CASH' });
   const cat = await a.post('/api/v1/categories').send({ name: 'Victim cat', icon: 'tag', color: '#111111' });
   const inv = await a.post('/api/v1/workspaces/current/invites').send({ email: 'someone@fixture.test', role: 'VIEWER' });
   const members = await a.get('/api/v1/workspaces/current/members');
   await a.post('/api/v1/notifications/test');
   const note = await ctx.db.notification.findFirstOrThrow({ where: { workspaceId: fx.workspaceId } });
   ids = {
-    subscription: fx.subscriptionIds.internet,
+    bill: fx.billIds.internet,
     payment: pay.body.payment.id,
     company: fx.companies.beta,
     category: cat.body.id,
@@ -179,7 +179,7 @@ describe("another workspace's data is never reachable", () => {
   });
 
   it('left every victim record untouched', async () => {
-    expect(await ctx.db.subscription.findUnique({ where: { id: ids.subscription } })).not.toBeNull();
+    expect(await ctx.db.bill.findUnique({ where: { id: ids.bill } })).not.toBeNull();
     expect(await ctx.db.paymentRecord.findUnique({ where: { id: ids.payment } })).not.toBeNull();
     expect(await ctx.db.company.findUnique({ where: { id: ids.company } })).not.toBeNull();
     expect(await ctx.db.category.findUnique({ where: { id: ids.category } })).not.toBeNull();
@@ -210,7 +210,7 @@ describe('hardening', () => {
   });
 
   it('never leaks stack traces or internals', async () => {
-    const res = await request(app).get('/api/v1/subscriptions/x').set('Authorization', 'Bearer nope');
+    const res = await request(app).get('/api/v1/bills/x').set('Authorization', 'Bearer nope');
     expect(JSON.stringify(res.body)).not.toMatch(/at \w+ \(|node_modules|prisma/i);
   });
 

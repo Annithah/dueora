@@ -29,17 +29,17 @@ export async function monthSpending(ctx: AppContext, workspaceId: string, today:
   const [payments, subs] = await Promise.all([
     ctx.db.paymentRecord.findMany({
       where: { workspaceId, paidOn: { gte: from, lte: to } },
-      select: { amountCents: true, subscription: { select: { categoryId: true } } },
+      select: { amountCents: true, bill: { select: { categoryId: true } } },
     }),
-    ctx.db.subscription.findMany({
+    ctx.db.bill.findMany({
       where: { workspaceId, status: 'ACTIVE' },
       select: { id: true, categoryId: true, status: true, nextDueDate: true, frequencyUnit: true, frequencyInterval: true, anchorDay: true, amountCents: true },
     }),
   ]);
   const open = subs.length
     ? await ctx.db.paymentRecord.findMany({
-        where: { workspaceId, OR: subs.map((s) => ({ subscriptionId: s.id, cycleDueDate: s.nextDueDate })) },
-        select: { subscriptionId: true, cycleDueDate: true, amountCents: true },
+        where: { workspaceId, OR: subs.map((s) => ({ billId: s.id, cycleDueDate: s.nextDueDate })) },
+        select: { billId: true, cycleDueDate: true, amountCents: true },
       })
     : [];
 
@@ -48,13 +48,13 @@ export async function monthSpending(ctx: AppContext, workspaceId: string, today:
   const add = (m: Map<string, number>, key: string, v: number) => m.set(key, (m.get(key) ?? 0) + v);
   for (const p of payments) {
     add(paid, 'all', p.amountCents);
-    add(paid, p.subscription.categoryId, p.amountCents);
+    add(paid, p.bill.categoryId, p.amountCents);
   }
   for (const s of subs) {
     for (const occ of occurrencesBetween(s, from, to)) {
       const amount =
         occ.kind === 'current'
-          ? Math.max(0, s.amountCents - paidForCycle(open.filter((p) => p.subscriptionId === s.id), s.nextDueDate))
+          ? Math.max(0, s.amountCents - paidForCycle(open.filter((p) => p.billId === s.id), s.nextDueDate))
           : s.amountCents;
       add(due, 'all', amount);
       add(due, s.categoryId, amount);
