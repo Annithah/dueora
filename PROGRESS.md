@@ -161,3 +161,89 @@ Audit of the code against `DUEORA_MASTER_PROMPT` (the new single source of truth
 
 ## Part 8 — Play Store prep
 - [ ] `docs/PLAY_STORE.md`
+
+---
+
+# Finalize — remaining work (audit 11 Nov 2026)
+
+Audit against the **Finalize** brief (company-based bills, tracking, reports and notifications; it wins over the
+master prompt where they differ) and the master prompt. `[x]` exists and works · `[ ]` missing · `[!]` broken or
+contradicts the brief. `DUEORA_MASTER_PROMPT.md` is not in the repo; the master-prompt audit above (10 Nov) is
+used as its summary.
+
+## State at the start
+- Backend 616 tests, mobile 153, lint and type-check clean. The uncommitted DueOra AI work (master prompt Part 4)
+  was complete and passing; committed on its own (`feat(ai): …`) before this work started.
+- [!] `npm run check:no-sample-data` fails: the AI system prompt's formatting example uses a design amount ($1,523.00).
+
+## Part 1 — "Subscription" → "Bill"
+- [ ] Model `Subscription`, enum `SubscriptionStatus`, columns `subscriptionId`, `mutedSubscriptionIds`, the
+      `subscriptionKey*` columns, routes `/subscriptions`, services, mobile types/hooks/screens, tab label,
+      notification/email copy, report labels, AI prompt/tools/knowledge base, en/fr/rw strings all say "subscription".
+- [ ] Subscription key → bill's optional "Reference / account number" (named `accountReference` in code because
+      payments already have a `reference` field), same encryption, masking, reveal rules.
+
+## Part 2 — Companies
+- [x] Company: name, colour, archivedAt; create/rename/colour/archive/unarchive; delete only when unused.
+- [!] DELETE on a used company silently archives it; the brief wants delete refused and archive explicit.
+- [ ] Short name/initials, description, per-company reminder offsets and hour, monthly budget.
+- [ ] Company detail screen (Overview, Bills, Categories, Members, Settings); category start options at creation.
+- [ ] Global company switcher on Home, Bills, Calendar, Reports (remembered on the device); "All companies" breakdowns.
+- [ ] `CompanyAccess` (FINANCE | VIEWER per company); admin picks companies when inviting/editing a member;
+      enforced in lists, details, reports, exports, notifications, AI, search, calendar; isolation tests.
+      Today every member sees every company.
+
+## Part 3 — Categories per company, custom fields
+- [!] Categories are global defaults (11 seeded at start and on every workspace creation) plus workspace custom
+      ones — hardcoded, which the brief forbids. Defaults can't be edited.
+- [ ] `Category.companyId`, icon/colour pickers, one level of sub-categories, description, bill defaults
+      (frequency, amount type, offsets, payment method), sort order/reorder, archive, merge, move-then-delete.
+- [ ] Suggestions list in a config file; "start empty / pick from suggestions / copy from another company".
+- [ ] Bill form: only the selected company's categories, "+ New category" inline (today "+ New company" only).
+- [ ] Data migration: per-company copies of used categories, re-point bills and category budgets, drop globals.
+- [ ] Custom fields (≤ 10 per company; text/number/date/dropdown; all bills or chosen categories) on form,
+      detail, filters and exports.
+
+## Part 4 — Variable amounts, bill cycles, occurrences
+- [ ] `amountType` FIXED | VARIABLE, estimated amount, "set this cycle's actual amount", "Paid in full".
+- [ ] `BillCycle` table (stored per-cycle amount/status/paid/closed); history stays exact when the amount changes
+      (today history totals are fine, but "expected" amounts of past cycles are lost).
+- [~] `occurrencesBetween` exists (insights/projection.ts), not in the scheduling engine, no per-cycle amounts.
+- [!] A recurring bill unpaid for several cycles counts only one cycle as overdue: missed cycles between
+      `nextDueDate` and today are projected as "future" and then skipped. Outstanding must include them.
+
+## Part 5 — Tracking views
+- [x] Dashboard: overdue, due this week, due this month, paid this month, needs attention, 30-day timeline, trend,
+      by category, by company, budget bar, AI insight card, quick actions.
+- [ ] Defined views computed by the backend: Upcoming (7/30/60/90), Due this month (total/paid/remaining),
+      Due next month, Outstanding, Overdue (days overdue), Paid, Upcoming obligations with next reminder.
+- [ ] Dashboard order and cards per the brief; "Last month at a glance"; 6 past + 3 projected months chart.
+- [ ] Bills tab segments (Upcoming · This month · Next month · Overdue · Outstanding · Paid · All); filters for
+      amount type, sub-categories; rows with estimated tag and next reminder.
+- [ ] Calendar follows the company switcher; day totals.
+
+## Part 6 — Reports
+- [x] Month/year report (paid, outstanding, overdue, by category, by company, forecast) + PDF/Excel export.
+- [ ] Company selector; previous-month payment report (on time vs late, still unpaid, estimated vs actual,
+      by method, vs the month before, table per company); this month; next-month forecast; outstanding & overdue
+      ageing (0–30/31–60/61–90/90+); upcoming 30/60/90; annual; category report.
+- [ ] Exports per company or all (one sheet per company), with company, period, generated date, custom fields.
+
+## Part 7 — Notifications
+- [x] Reminders, due today, overdue follow-ups, snooze, mark-as-paid action, dedupe, digest, quiet hours, local
+      backups, push/email/in-app, weekly digest, monthly summary, budget alerts, team, price change.
+- [!] Recipients are every workspace member; must follow company access.
+- [ ] Copy names the company everywhere ("⏰ {Company} · {Bill} …" — reminders already do; summaries don't).
+- [ ] Per-company reminder offsets/hour; monthly report ready; this month's obligations; next-month preview (25th);
+      variable amount needed (5 days before); outstanding per company in the weekly digest.
+- [ ] Per-company notification preferences (mute a company, choose its per-company notifications).
+- [ ] Year-long simulation with several companies, restricted members, variable bills, the new notifications.
+
+## Part 8 — AI, verification, release
+- [x] DueOra AI (tools, proposals, insights, offline evals).
+- [ ] AI follows company access; understands companies, sub-categories, variable bills, the new views; new
+      tools (period views, last-month report, create category with sub-categories, set cycle amount); eval cases.
+- [ ] `docs/FEATURE_STATUS.md`; Maestro flows in `mobile/e2e/`.
+- [ ] Version 1.1.0, production deploy + migration, APK, GitHub Release v1.1.0, `docs/INSTALL.md` + QR, EAS Update.
+      Blockers found: no production backend is deployed yet (no hosting account connected), `gh` CLI and Maestro
+      are not installed, and there is no Android emulator on this machine.
