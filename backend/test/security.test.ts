@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/app.js';
 import { authLimiter } from '../src/http/rateLimits.js';
+import { aiRouter } from '../src/ai/routes.js';
 import { feedbackRouter } from '../src/modules/account/routes.js';
 import { authRouter, meRouter } from '../src/modules/auth/routes.js';
 import { budgetsRouter } from '../src/modules/budgets/routes.js';
@@ -62,6 +63,7 @@ const ALL: RouteInfo[] = [
   ...routesOf('/api/v1', insightsRouter(ctx)),
   ...routesOf('/api/v1/public', publicRouter(ctx)),
   ...routesOf('/api/v1/help', helpRouter(ctx)),
+  ...routesOf('/api/v1/ai', aiRouter(ctx)),
 ];
 
 /** Routes that work without a token, on purpose. */

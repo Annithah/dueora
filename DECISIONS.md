@@ -264,3 +264,19 @@ kept their ids, so no data moves.
 - **Weekly digest / monthly summary** are on by default (opt-out in Settings) and use the "digest" channel.
   The weekly AI line comes from a provider the AI module plugs in; without AI the digest is sent without it.
 - **Test notification** sends push (if a phone is registered), email and in-app at once, ignoring quiet hours.
+
+## D33 — DueOra AI (Part 4)
+- **Proposals, not writes.** Every change the model wants is a `propose_…` tool that only returns a
+  confirmation card stored on the assistant message. Confirm runs it through the normal services and
+  permission checks as the signed-in user; a card works once. So "never writes without confirmation" holds
+  even if the model misbehaves — a test calls a write tool for a Viewer and nothing happens.
+- **Viewers** get read tools plus the personal snooze/mute proposals only.
+- **Key safety in both directions:** tool results are built from a safe view without key fields, and keys
+  pasted into the chat are redacted by keyed-hash match before anything reaches the model.
+- **Streaming** uses server-sent events; the phone reads them with `expo/fetch` and a small UTF-8/SSE parser
+  (no Hermes `TextDecoder` dependency).
+- **Model choice:** `GEMINI_MODEL` defaults to `gemini-2.5-flash`, overridable without a code change.
+- **Insight card** facts are computed from data; the model only phrases them. Without AI (or if it fails) a
+  plain sentence from the same facts is shown. Cached per workspace per local day.
+- **Evals** run offline with a scripted model in CI (pipeline and safety) and live with `npm run ai:eval`
+  (tool-choice quality ≥ 80%) once the owner adds `GEMINI_API_KEY`.

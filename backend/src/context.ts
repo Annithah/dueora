@@ -1,3 +1,4 @@
+import type { AiModel } from './ai/model.js';
 import type { Env } from './config/env.js';
 import type { Db } from './db/client.js';
 import type { Logger } from './lib/logger.js';
@@ -22,4 +23,6 @@ export interface AppContext {
   push: PushProvider;
   /** Encrypts/decrypts subscription keys (SUBSCRIPTION_KEY_SECRET). */
   keys: SecretBox;
+  /** DueOra AI's model; null when GEMINI_API_KEY isn't set. */
+  ai?: AiModel | null;
 }

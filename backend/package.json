@@ -30,7 +30,9 @@
     "db:pg:generate": "cross-env PRISMA_SCHEMA=prisma/postgres/schema.prisma prisma generate",
     "db:pg:deploy": "cross-env PRISMA_SCHEMA=prisma/postgres/schema.prisma PRISMA_MIGRATIONS=prisma/postgres/migrations prisma migrate deploy",
     "start:prod": "prisma migrate deploy && node dist/server.js",
-    "db:check-empty": "tsx scripts/check-only-defaults.ts"
+    "db:check-empty": "tsx scripts/check-only-defaults.ts",
+    "ai:review": "tsx scripts/ai-review.ts",
+    "ai:eval": "cross-env AI_EVAL_LIVE=1 vitest run test/ai.eval.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

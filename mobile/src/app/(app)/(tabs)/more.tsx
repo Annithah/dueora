@@ -8,6 +8,7 @@ import {
   Database,
   Info,
   Languages,
+  Sparkles,
   FileUp,
   PiggyBank,
   LogOut,
@@ -77,6 +78,7 @@ export default function MoreTab() {
     { icon: ShieldCheck, title: t('more.security'), subtitle: t('more.securitySub'), href: '/settings/security' },
     { icon: Palette, title: t('more.appearance'), subtitle: t(`theme.${theme}`), href: '/settings/appearance' },
     { icon: Languages, title: t('more.language'), subtitle: t(`language.${locale}`), href: '/settings/language' },
+    { icon: Sparkles, title: t('more.ai'), subtitle: t('more.aiSub'), href: '/settings/ai' },
     { icon: Database, title: t('more.privacy'), subtitle: t('more.privacySub'), href: '/settings/privacy' },
   ];
   const items = allItems.filter((i) => !i.roles || (role && i.roles.includes(role)));

@@ -1,6 +1,7 @@
 import type { AppContext } from '../context.js';
 import { addDays, daysBetween, paidForCycle } from '../domain/schedule.js';
 import { formatUSD } from '../lib/format.js';
+import { weeklyAiLine } from '../ai/insights.js';
 import { addMonthsKey, monthRange, occurrencesBetween } from '../modules/insights/projection.js';
 
 import { monthlySummaryCopy, subscriptionLabel, weeklyDigestCopy, type Copy } from './messages.js';
@@ -23,12 +24,6 @@ function latestIn(since: string, today: string, pred: (d: string) => boolean): s
   return null;
 }
 
-/** Hook for DueOra AI's one-line weekly comment (set by the AI module; null when AI is off). */
-export type WeeklyLineProvider = (ctx: AppContext, workspaceId: string, items: { label: string; amountCents: number; dueDate: string }[]) => Promise<string | null>;
-let weeklyLine: WeeklyLineProvider = async () => null;
-export function setWeeklyLineProvider(p: WeeklyLineProvider): void {
-  weeklyLine = p;
-}
 
 interface Org {
   id: string;
@@ -100,7 +95,7 @@ export async function runSummaries(
     const total = items.reduce((s, i) => s + i.amountCents, 0);
     let aiLine: string | null = null;
     try {
-      aiLine = await weeklyLine(ctx, org.id, items.map((i) => ({ label: i.label, amountCents: i.amountCents, dueDate: i.dueDate })));
+      aiLine = await weeklyAiLine(ctx, org.id, items.map((i) => ({ label: i.label, amountCents: i.amountCents, dueDate: i.dueDate })));
     } catch (err) {
       ctx.logger.warn({ err, workspaceId: org.id }, 'Weekly AI line failed; sending the digest without it');
     }

@@ -21,22 +21,57 @@ import {
   Text,
   toast,
 } from '@/components/ui';
-import { createCompany, useCategories, useCompanies, useListMutation, type Company } from '@/features/catalog/api';
-import { REMINDER_CHOICES, isChoiceSelected, toggleChoice } from '@/features/notifications/reminderOptions';
+import {
+  createCompany,
+  useCategories,
+  useCompanies,
+  useListMutation,
+  type Company,
+} from '@/features/catalog/api';
+import {
+  REMINDER_CHOICES,
+  isChoiceSelected,
+  toggleChoice,
+} from '@/features/notifications/reminderOptions';
 import { useWorkspace } from '@/features/workspaces/api';
 import { formatDate } from '@/lib/dates';
+import { suggestCategory, useAiStatus } from '@/features/ai/api';
 import { guessCategoryName } from '@/lib/guess';
 import { radius, typography, useTheme } from '@/theme';
 
 import { METHOD_LABELS, useSaveSubscription, type PaymentMethod, type Subscription } from './api';
-import { FREQUENCIES, autoNextDueDate, defaultsFrom, formSchema, toInput, type FormValues } from './form';
+import {
+  FREQUENCIES,
+  autoNextDueDate,
+  defaultsFrom,
+  formSchema,
+  toInput,
+  type FormValues,
+} from './form';
 
 const NEW_COMPANY = '__new__';
 
-function Section({ n, title, hint, children }: { n: number; title: string; hint: string; children: ReactNode }) {
+function Section({
+  n,
+  title,
+  hint,
+  children,
+}: {
+  n: number;
+  title: string;
+  hint: string;
+  children: ReactNode;
+}) {
   const { colors } = useTheme();
   return (
-    <View style={{ gap: 15, paddingTop: n > 1 ? 22 : 0, borderTopWidth: n > 1 ? 1 : 0, borderTopColor: colors.line }}>
+    <View
+      style={{
+        gap: 15,
+        paddingTop: n > 1 ? 22 : 0,
+        borderTopWidth: n > 1 ? 1 : 0,
+        borderTopColor: colors.line,
+      }}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
         <View
           style={{
@@ -92,27 +127,81 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
       today,
     }),
   });
-  const [frequency, customUnit, customInterval, startDate, nextDueManual, removeKey, name, provider, categoryId, isTrial] = useWatch({
+  const [
+    frequency,
+    customUnit,
+    customInterval,
+    startDate,
+    nextDueManual,
+    removeKey,
+    name,
+    provider,
+    categoryId,
+    isTrial,
+  ] = useWatch({
     control,
-    name: ['frequency', 'customUnit', 'customInterval', 'startDate', 'nextDueManual', 'removeKey', 'name', 'provider', 'categoryId', 'isTrial'],
+    name: [
+      'frequency',
+      'customUnit',
+      'customInterval',
+      'startDate',
+      'nextDueManual',
+      'removeKey',
+      'name',
+      'provider',
+      'categoryId',
+      'isTrial',
+    ],
   });
-  // "Hosting" → suggest Hosting & domains (only while no category is chosen).
-  const suggestedName = !categoryId ? guessCategoryName(`${name ?? ''} ${provider ?? ''}`) : null;
-  const suggested = suggestedName ? categories.data?.find((c) => c.name === suggestedName) : undefined;
+  // "Hosting" → suggest Hosting & domains (only while no category is chosen). Keywords answer
+  // instantly; when they don't know, DueOra AI is asked (debounced) if it's switched on.
+  const ai = useAiStatus();
+  const [aiSuggestion, setAiSuggestion] = useState<{ for: string; name: string } | null>(null);
+  const text = `${name ?? ''} ${provider ?? ''}`.trim();
+  const keywordName = !categoryId ? guessCategoryName(text) : null;
+  useEffect(() => {
+    if (categoryId || keywordName || !ai.data?.enabled || text.length < 4) return;
+    const handle = setTimeout(() => {
+      suggestCategory(name ?? '', provider || undefined)
+        .then((s) => (s ? setAiSuggestion({ for: text, name: s.categoryName }) : undefined))
+        .catch(() => undefined);
+    }, 700);
+    return () => clearTimeout(handle);
+  }, [text, categoryId, keywordName, ai.data?.enabled, name, provider]);
+  const suggestedName = categoryId
+    ? null
+    : (keywordName ?? (aiSuggestion?.for === text ? aiSuggestion.name : null));
+  const suggested = suggestedName
+    ? categories.data?.find((c) => c.name === suggestedName)
+    : undefined;
 
   // Preselect the only company, so a one-company workspace never has to choose.
   useEffect(() => {
     const list = companies.data ?? [];
-    if (!existing && !getValues('companyId') && list.length === 1) setValue('companyId', list[0]!.id);
+    if (!existing && !getValues('companyId') && list.length === 1)
+      setValue('companyId', list[0]!.id);
   }, [companies.data, existing, getValues, setValue]);
 
   // The next due date follows the start date and frequency until the user overrides it.
   useEffect(() => {
     if (nextDueManual || !startDate) return;
-    setValue('nextDueDate', autoNextDueDate({ frequency, customUnit, customInterval, startDate }, today), {
-      shouldValidate: formState.isSubmitted,
-    });
-  }, [frequency, customUnit, customInterval, startDate, nextDueManual, today, setValue, formState.isSubmitted]);
+    setValue(
+      'nextDueDate',
+      autoNextDueDate({ frequency, customUnit, customInterval, startDate }, today),
+      {
+        shouldValidate: formState.isSubmitted,
+      },
+    );
+  }, [
+    frequency,
+    customUnit,
+    customInterval,
+    startDate,
+    nextDueManual,
+    today,
+    setValue,
+    formState.isSubmitted,
+  ]);
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
@@ -129,7 +218,9 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
     ...(companies.data ?? []).map((c: Company) => ({
       value: c.id,
       label: c.name,
-      leading: <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: c.color }} />,
+      leading: (
+        <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: c.color }} />
+      ),
     })),
     { value: NEW_COMPANY, label: '+ New company…' },
   ];
@@ -202,7 +293,9 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
             <Chip
               label={suggested.name}
               accessibilityHint="Use this category"
-              onPress={() => setValue('categoryId', suggested.id, { shouldValidate: formState.isSubmitted })}
+              onPress={() =>
+                setValue('categoryId', suggested.id, { shouldValidate: formState.isSubmitted })
+              }
             />
           </View>
         ) : null}
@@ -272,9 +365,17 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
           control={control}
           name="frequency"
           render={({ field }) => (
-            <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <View
+              accessibilityRole="radiogroup"
+              style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
+            >
               {FREQUENCIES.map((f) => (
-                <Chip key={f.key} label={f.label} selected={field.value === f.key} onPress={() => field.onChange(f.key)} />
+                <Chip
+                  key={f.key}
+                  label={f.label}
+                  selected={field.value === f.key}
+                  onPress={() => field.onChange(f.key)}
+                />
               ))}
             </View>
           )}
@@ -319,7 +420,13 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
           control={control}
           name="startDate"
           render={({ field, fieldState }) => (
-            <DateField label="Start date" today={today} value={field.value} onChange={field.onChange} error={fieldState.error?.message} />
+            <DateField
+              label="Start date"
+              today={today}
+              value={field.value}
+              onChange={field.onChange}
+              error={fieldState.error?.message}
+            />
           )}
         />
         <Controller
@@ -332,7 +439,11 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                 today={today}
                 value={field.value}
                 minimumDate={startDate}
-                hint={nextDueManual ? 'Set by you' : 'Calculated from the start date and frequency — tap to change'}
+                hint={
+                  nextDueManual
+                    ? 'Set by you'
+                    : 'Calculated from the start date and frequency — tap to change'
+                }
                 onChange={(d) => {
                   setValue('nextDueManual', true);
                   field.onChange(d);
@@ -347,7 +458,11 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                 >
                   <RotateCcw size={16} color={colors.primaryStrong} />
                   <Text variant="smallStrong" tone="primary">
-                    Calculate automatically ({formatDate(autoNextDueDate({ frequency, customUnit, customInterval, startDate }, today))})
+                    Calculate automatically (
+                    {formatDate(
+                      autoNextDueDate({ frequency, customUnit, customInterval, startDate }, today),
+                    )}
+                    )
                   </Text>
                 </Pressable>
               ) : null}
@@ -393,7 +508,12 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
           control={control}
           name="isTrial"
           render={({ field }) => (
-            <ToggleRow label="Free trial" hint="Get a reminder before the trial ends" value={field.value} onChange={field.onChange} />
+            <ToggleRow
+              label="Free trial"
+              hint="Get a reminder before the trial ends"
+              value={field.value}
+              onChange={field.onChange}
+            />
           )}
         />
         {isTrial ? (
@@ -401,7 +521,13 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
             control={control}
             name="trialEndsOn"
             render={({ field, fieldState }) => (
-              <DateField label="Trial ends on" today={today} value={field.value || today} onChange={field.onChange} error={fieldState.error?.message} />
+              <DateField
+                label="Trial ends on"
+                today={today}
+                value={field.value || today}
+                onChange={field.onChange}
+                error={fieldState.error?.message}
+              />
             )}
           />
         ) : null}
@@ -416,7 +542,10 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
               onChange={field.onChange}
               options={[
                 { value: '', label: 'No default' },
-                ...(Object.keys(METHOD_LABELS) as PaymentMethod[]).map((m) => ({ value: m, label: METHOD_LABELS[m] })),
+                ...(Object.keys(METHOD_LABELS) as PaymentMethod[]).map((m) => ({
+                  value: m,
+                  label: METHOD_LABELS[m],
+                })),
               ]}
             />
           )}
@@ -431,7 +560,11 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
             <View style={{ gap: 8 }}>
               <Input
                 label="Subscription key (optional)"
-                placeholder={existing?.subscriptionKey ? `Leave blank to keep ${existing.subscriptionKey.masked}` : 'License key, account number, customer ID…'}
+                placeholder={
+                  existing?.subscriptionKey
+                    ? `Leave blank to keep ${existing.subscriptionKey.masked}`
+                    : 'License key, account number, customer ID…'
+                }
                 hint="Stored encrypted. Only admins and finance can reveal it."
                 value={field.value}
                 onChangeText={(t) => {
@@ -450,7 +583,11 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                     hitSlop={12}
                     onPress={() => setShowKey((v) => !v)}
                   >
-                    {showKey ? <EyeOff size={18} color={colors.muted} /> : <Eye size={18} color={colors.muted} />}
+                    {showKey ? (
+                      <EyeOff size={18} color={colors.muted} />
+                    ) : (
+                      <Eye size={18} color={colors.muted} />
+                    )}
                   </Pressable>
                 }
               />
@@ -459,7 +596,9 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                   control={control}
                   name="removeKey"
                   render={({ field: remove }) => (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }}>
+                    <View
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }}
+                    >
                       <Text variant="small" tone="muted" style={{ flex: 1 }}>
                         Remove the saved key ({existing.subscriptionKey!.masked})
                       </Text>
@@ -482,14 +621,30 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
           control={control}
           name="description"
           render={({ field }) => (
-            <Input label="Notes" placeholder="Anything your team should know…" multiline value={field.value} onChangeText={field.onChange} />
+            <Input
+              label="Notes"
+              placeholder="Anything your team should know…"
+              multiline
+              value={field.value}
+              onChangeText={field.onChange}
+            />
           )}
         />
       </Section>
 
-      <BottomSheet visible={newCompany !== null} onClose={() => setNewCompany(null)} title="New company">
+      <BottomSheet
+        visible={newCompany !== null}
+        onClose={() => setNewCompany(null)}
+        title="New company"
+      >
         <View style={{ gap: 16 }}>
-          <Input label="Company name" placeholder="Company name" value={newCompany ?? ''} onChangeText={setNewCompany} autoFocus />
+          <Input
+            label="Company name"
+            placeholder="Company name"
+            value={newCompany ?? ''}
+            onChangeText={setNewCompany}
+            autoFocus
+          />
           <Button
             full
             loading={addCompany.isPending}
@@ -502,7 +657,11 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
                     setValue('companyId', c.id, { shouldValidate: true });
                     setNewCompany(null);
                   },
-                  onError: (err) => toast.error('Could not add the company', err instanceof ApiError ? err.message : undefined),
+                  onError: (err) =>
+                    toast.error(
+                      'Could not add the company',
+                      err instanceof ApiError ? err.message : undefined,
+                    ),
                 },
               )
             }
@@ -515,7 +674,17 @@ export function SubscriptionForm({ existing, today, onSaved }: SubscriptionFormP
   );
 }
 
-function ToggleRow({ label, hint, value, onChange }: { label: string; hint: string; value: boolean; onChange: (v: boolean) => void }) {
+function ToggleRow({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }}>
       <View style={{ flex: 1 }}>
@@ -530,7 +699,11 @@ function ToggleRow({ label, hint, value, onChange }: { label: string; hint: stri
 }
 
 /** Navigate after saving: first subscription → ask for notifications, otherwise open it. */
-export function afterSave(saved: Subscription, isFirst: boolean, permission: 'granted' | 'denied' | 'undetermined') {
+export function afterSave(
+  saved: Subscription,
+  isFirst: boolean,
+  permission: 'granted' | 'denied' | 'undetermined',
+) {
   router.replace(`/subscriptions/${saved.id}`);
   if (isFirst && permission === 'undetermined') router.push('/notifications-permission');
 }

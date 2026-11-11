@@ -1,3 +1,4 @@
+import { createModel } from './ai/model.js';
 import type { Env } from './config/env.js';
 import { systemClock, type AppContext } from './context.js';
 import { createDb } from './db/client.js';
@@ -18,5 +19,6 @@ export function createContext(env: Env): AppContext {
     mailer: env.RESEND_API_KEY ? new ResendMailer(env.RESEND_API_KEY, env.EMAIL_FROM) : new LogMailer(logger),
     push: new ExpoPushProvider(env.EXPO_ACCESS_TOKEN),
     keys: createSecretBox(env.SUBSCRIPTION_KEY_SECRET),
+    ai: createModel(env),
   };
 }

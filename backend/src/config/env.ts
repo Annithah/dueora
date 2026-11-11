@@ -26,6 +26,14 @@ const EnvSchema = z
 
     EXPO_ACCESS_TOKEN: z.string().optional(),
 
+    /** DueOra AI (Google Gemini). Unset = the assistant is off; the rest of the app works the same. */
+    GEMINI_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
+    AI_MESSAGES_PER_HOUR: z.coerce.number().int().positive().default(30),
+
+    /** Error reporting (Sentry). Unset = off. */
+    SENTRY_DSN: z.string().optional(),
+
     /** Key material for encrypting subscription keys at rest (AES-256-GCM). */
     SUBSCRIPTION_KEY_SECRET: z.string().min(32, 'SUBSCRIPTION_KEY_SECRET must be at least 32 characters'),
 

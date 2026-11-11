@@ -1,5 +1,6 @@
 import { Router } from 'express';
 
+import { aiRouter } from '../ai/routes.js';
 import type { AppContext } from '../context.js';
 import { feedbackRouter } from '../modules/account/routes.js';
 import { authRouter, meRouter } from '../modules/auth/routes.js';
@@ -35,6 +36,7 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/', insightsRouter(ctx));
   router.use('/public', publicRouter(ctx));
   router.use('/help', helpRouter(ctx));
+  router.use('/ai', aiRouter(ctx));
 
   return router;
 }
