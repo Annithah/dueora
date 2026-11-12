@@ -1,3 +1,4 @@
+import type { Access } from '../domain/access.js';
 import type { Role } from '../domain/permissions.js';
 
 declare global {
@@ -10,6 +11,8 @@ declare global {
         id: string;
         role: Role;
         timezone: string;
+        /** Which companies the caller can see, and their role in each. */
+        access: Access;
       };
     }
   }

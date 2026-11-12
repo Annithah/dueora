@@ -8,7 +8,19 @@ import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
 import { Avatar, BottomSheet, Button, Card, IconButton, Input, ListItem, SectionHeader, Select, Text, toast } from '@/components/ui';
 import { useMe, type Role } from '@/features/auth/api';
-import { removeMember, revokeInvite, updateMember, useInvites, useListMutation, useMembers, type Member } from '@/features/catalog/api';
+import {
+  removeMember,
+  revokeInvite,
+  updateMember,
+  useCompanies,
+  useInvites,
+  useListMutation,
+  useMembers,
+  type CompanyAccessInput,
+  type CompanyGrant,
+  type Member,
+} from '@/features/catalog/api';
+import { AccessPicker, accessIsValid } from '@/features/workspaces/AccessPicker';
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, usePermissions, useSendInvite } from '@/features/workspaces/api';
 import { useTheme } from '@/theme';
 
@@ -16,6 +28,14 @@ const ROLE_ICONS: Record<Role, LucideIcon> = { ADMIN: ShieldCheck, FINANCE: Wall
 const ROLES: Role[] = ['ADMIN', 'FINANCE', 'VIEWER'];
 const roleOptions = ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r], description: ROLE_DESCRIPTIONS[r] }));
 const errorText = (e: unknown) => (e instanceof ApiError ? e.message : undefined);
+const ALL: CompanyAccessInput = { allCompanies: true, companies: [] };
+
+/** "Admin", "Finance · all companies" or "Viewer in Alpha, Finance in Beta". */
+function accessLabel(role: Role, allCompanies: boolean, grants: CompanyGrant[], nameOf: (id: string) => string): string {
+  if (role === 'ADMIN') return ROLE_LABELS.ADMIN;
+  if (allCompanies) return `${ROLE_LABELS[role]} · all companies`;
+  return grants.map((g) => `${ROLE_LABELS[g.role]} in ${nameOf(g.companyId)}`).join(', ');
+}
 
 export default function Team() {
   const { colors } = useTheme();
@@ -32,15 +52,27 @@ export default function Team() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('VIEWER');
+  const [access, setAccess] = useState<CompanyAccessInput>(ALL);
+  // The member being edited: their role and companies, saved together.
+  const [editRole, setEditRole] = useState<Role>('VIEWER');
+  const [editAccess, setEditAccess] = useState<CompanyAccessInput>(ALL);
+  const companies = useCompanies();
+  const nameOf = (id: string) => companies.data?.find((c) => c.id === id)?.name ?? 'a company';
+  const openEditor = (m: Member) => {
+    setEditing(m);
+    setEditRole(m.role);
+    setEditAccess({ allCompanies: m.allCompanies, companies: m.companies });
+  };
 
   const invite = () =>
     sendInvite.mutate(
-      { email: email.trim(), role },
+      { email: email.trim(), role, ...(role === 'ADMIN' ? ALL : access) },
       {
         onSuccess: () => {
           toast.success('Invitation sent ✉️', `${email.trim()} will get an email to join.`);
           setInviteOpen(false);
           setEmail('');
+          setAccess(ALL);
           void invites.refetch();
         },
         onError: (e) => toast.error('Could not invite', errorText(e)),
@@ -96,9 +128,9 @@ export default function Team() {
                     divider={i > 0}
                     leading={<Avatar name={m.name} size={40} />}
                     title={m.name}
-                    subtitle={`${m.userId === me.data?.id ? 'You · ' : ''}${ROLE_LABELS[m.role]}`}
+                    subtitle={`${m.userId === me.data?.id ? 'You · ' : ''}${accessLabel(m.role, m.allCompanies, m.companies, nameOf)}`}
                     trailing={isAdmin || m.userId === me.data?.id ? <Ellipsis size={18} color={colors.muted} /> : undefined}
-                    onPress={isAdmin || m.userId === me.data?.id ? () => setEditing(m) : undefined}
+                    onPress={isAdmin || m.userId === me.data?.id ? () => openEditor(m) : undefined}
                   />
                 ))}
               </Card>
@@ -114,7 +146,7 @@ export default function Team() {
                       divider={i > 0}
                       icon={<Mail size={18} color={colors.primaryStrong} />}
                       title={inv.email}
-                      subtitle={ROLE_LABELS[inv.role]}
+                      subtitle={accessLabel(inv.role, inv.allCompanies, inv.companies, nameOf)}
                       trailing={
                         <Button variant="ghost" onPress={() => revoke.mutate(inv.id, { onSuccess: () => toast.info('Invitation cancelled') })}>
                           Cancel
@@ -141,10 +173,10 @@ export default function Team() {
             <Card tone="accent" style={{ flexDirection: 'row', gap: 11, alignItems: 'center' }}>
               <LockKeyhole size={21} color={colors.amberText} />
               <View style={{ flex: 1 }}>
-                <Text variant="smallStrong">Everyone gets the reminders</Text>
+                <Text variant="smallStrong">Everyone gets the reminders for their companies</Text>
                 <Text variant="small" tone="muted">
-                  Admins, finance and viewers are all reminded before due dates. Viewers can’t change anything and see account references
-                  masked.
+                  Admins, finance and viewers are reminded before due dates of the companies they can see. Viewers can’t change anything
+                  and see account references masked.
                 </Text>
               </View>
             </Card>
@@ -163,7 +195,8 @@ export default function Team() {
             onChangeText={setEmail}
           />
           <Select label="Role" value={role} options={roleOptions} onChange={setRole} />
-          <Button full loading={sendInvite.isPending} disabled={!email.includes('@')} onPress={invite}>
+          <AccessPicker role={role} value={access} onChange={setAccess} />
+          <Button full loading={sendInvite.isPending} disabled={!email.includes('@') || !accessIsValid(role, access)} onPress={invite}>
             Send invitation
           </Button>
         </View>
@@ -173,17 +206,29 @@ export default function Team() {
         {editing ? (
           <View style={{ gap: 14 }}>
             {isAdmin ? (
-              <Select
-                label="Role"
-                value={editing.role}
-                options={roleOptions}
-                onChange={(r) =>
-                  update.mutate(
-                    { id: editing.id, role: r },
-                    { onSuccess: () => setEditing(null), onError: (e) => toast.error('Could not change the role', errorText(e)) },
-                  )
-                }
-              />
+              <>
+                <Select label="Role" value={editRole} options={roleOptions} onChange={setEditRole} />
+                <AccessPicker role={editRole} value={editAccess} onChange={setEditAccess} />
+                <Button
+                  full
+                  loading={update.isPending}
+                  disabled={!accessIsValid(editRole, editAccess)}
+                  onPress={() =>
+                    update.mutate(
+                      { id: editing.id, role: editRole, ...(editRole === 'ADMIN' ? ALL : editAccess) },
+                      {
+                        onSuccess: () => {
+                          toast.success('Access updated');
+                          setEditing(null);
+                        },
+                        onError: (e) => toast.error('Could not change the access', errorText(e)),
+                      },
+                    )
+                  }
+                >
+                  Save access
+                </Button>
+              </>
             ) : null}
             <Button
               full

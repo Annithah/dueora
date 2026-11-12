@@ -17,6 +17,7 @@ import { BarChart, DonutChart, monthShort } from '@/components/charts/Charts';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
+import { CompanySwitcher } from '@/components/layout/CompanySwitcher';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { BillRow } from '@/components/bills/BillRow';
 import {
@@ -501,7 +502,10 @@ export default function HomeTab() {
           </IconButton>
         </View>
       </View>
-      <WorkspaceSwitcher />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <WorkspaceSwitcher />
+        <CompanySwitcher />
+      </View>
       <OfflineBanner />
       <QueryState
         query={dashboard}

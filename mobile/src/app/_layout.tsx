@@ -13,6 +13,7 @@ import { createQueryClient } from '@/api/queryClient';
 import { ToastHost } from '@/components/ui';
 import { AppLock } from '@/components/layout/AppLock';
 import { useLocale } from '@/i18n';
+import { useCompanyFilter } from '@/state/companyFilter';
 import { usePreferences } from '@/state/preferences';
 import { useSession } from '@/state/session';
 import { ThemeProvider, useNativeAppearance, useTheme } from '@/theme';
@@ -67,11 +68,13 @@ export default function RootLayout() {
   const prefsReady = usePreferences((s) => s.hydrated);
 
   const hydrateLocale = useLocale((s) => s.hydrate);
+  const hydrateCompanyFilter = useCompanyFilter((s) => s.hydrate);
   useEffect(() => {
     void hydrate();
     void hydratePrefs();
     void hydrateLocale();
-  }, [hydrate, hydratePrefs, hydrateLocale]);
+    void hydrateCompanyFilter();
+  }, [hydrate, hydratePrefs, hydrateLocale, hydrateCompanyFilter]);
 
   // Never leave the user staring at the splash: if fonts or storage stall on a device,
   // continue after a few seconds (system font / signed-out state are safe fallbacks).

@@ -19,6 +19,7 @@ import { authRouter, meRouter } from '../src/modules/auth/routes.js';
 import { budgetsRouter } from '../src/modules/budgets/routes.js';
 import { importRouter } from '../src/modules/import/routes.js';
 import { catalogRouter } from '../src/modules/catalog/routes.js';
+import { companiesRouter } from '../src/modules/companies/routes.js';
 import { insightsRouter } from '../src/modules/insights/routes.js';
 import { billsRouter } from '../src/modules/bills/routes.js';
 import { paymentsRouter } from '../src/modules/payments/routes.js';
@@ -54,6 +55,7 @@ const ALL: RouteInfo[] = [
   ...routesOf('/api/v1/me', meRouter(ctx)),
   ...routesOf('/api/v1/workspaces', workspacesRouter(ctx)),
   ...routesOf('/api/v1/bills', billsRouter(ctx)),
+  ...routesOf('/api/v1/companies', companiesRouter(ctx)),
   ...routesOf('/api/v1/budgets', budgetsRouter(ctx)),
   ...routesOf('/api/v1/import', importRouter(ctx)),
   ...routesOf('/api/v1/feedback', feedbackRouter(ctx)),

@@ -2,7 +2,8 @@ import type { AppContext } from '../../context.js';
 import { DEFAULT_REMINDER_OFFSETS, ensureDefaultCategories } from '../../db/defaults.js';
 import { inviteMessage, ROLE_LABELS } from '../../emails/account.js';
 import type { Prisma, Role, WorkspaceType } from '../../generated/prisma/client.js';
-import { AppError, conflict, forbidden, notFound } from '../../http/errors.js';
+import { strongestRole } from '../../domain/access.js';
+import { AppError, badRequest, conflict, forbidden, notFound } from '../../http/errors.js';
 import { randomToken, sha256 } from '../../lib/crypto.js';
 import { normalizeEmail } from '../auth/service.js';
 import { notifyTeam } from '../../notifications/events.js';
@@ -68,22 +69,71 @@ export async function audit(
   });
 }
 
+// --- Company access ------------------------------------------------------
+
+export interface CompanyGrant {
+  companyId: string;
+  role: 'FINANCE' | 'VIEWER';
+}
+
+export interface AccessInput {
+  role: Role;
+  /** Defaults to true. Always true for admins. */
+  allCompanies?: boolean;
+  /** Required (at least one) when allCompanies is false. */
+  companies?: CompanyGrant[];
+}
+
+/**
+ * Normalise what an admin picked: admins and "all companies" carry no list; a restricted
+ * member needs at least one company of this workspace, and their membership role becomes
+ * the strongest of their company roles.
+ */
+async function resolveAccess(ctx: AppContext, workspaceId: string, input: AccessInput) {
+  const all = input.role === 'ADMIN' || input.allCompanies !== false;
+  if (all) return { role: input.role, allCompanies: true, companies: [] as CompanyGrant[] };
+  const companies = [...new Map((input.companies ?? []).map((g) => [g.companyId, g])).values()];
+  if (companies.length === 0) throw badRequest('Pick at least one company, or give access to all companies');
+  const found = await ctx.db.company.count({ where: { workspaceId, id: { in: companies.map((g) => g.companyId) } } });
+  if (found !== companies.length) throw notFound('Company');
+  return { role: strongestRole(companies.map((g) => g.role)), allCompanies: false, companies };
+}
+
+async function grantsOf(ctx: AppContext, workspaceId: string): Promise<Map<string, CompanyGrant[]>> {
+  const rows = await ctx.db.companyAccess.findMany({ where: { workspaceId }, select: { userId: true, companyId: true, role: true } });
+  const out = new Map<string, CompanyGrant[]>();
+  for (const r of rows) {
+    const list = out.get(r.userId) ?? [];
+    list.push({ companyId: r.companyId, role: r.role as CompanyGrant['role'] });
+    out.set(r.userId, list);
+  }
+  return out;
+}
+
 // --- Members -------------------------------------------------------------
 
 export async function listMembers(ctx: AppContext, workspaceId: string) {
-  const rows = await ctx.db.membership.findMany({
-    where: { workspaceId: workspaceId },
-    include: { user: { select: { id: true, name: true, email: true } } },
-    orderBy: { createdAt: 'asc' },
+  const [rows, grants] = await Promise.all([
+    ctx.db.membership.findMany({
+      where: { workspaceId: workspaceId },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'asc' },
+    }),
+    grantsOf(ctx, workspaceId),
+  ]);
+  return rows.map((m) => {
+    const all = m.role === 'ADMIN' || m.allCompanies;
+    return {
+      id: m.id,
+      userId: m.userId,
+      name: m.user.name,
+      email: m.user.email,
+      role: m.role,
+      allCompanies: all,
+      companies: all ? [] : (grants.get(m.userId) ?? []),
+      joinedAt: m.createdAt,
+    };
   });
-  return rows.map((m) => ({
-    id: m.id,
-    userId: m.userId,
-    name: m.user.name,
-    email: m.user.email,
-    role: m.role,
-    joinedAt: m.createdAt,
-  }));
 }
 
 async function adminCount(ctx: AppContext, workspaceId: string): Promise<number> {
@@ -95,19 +145,26 @@ export async function updateMember(
   workspaceId: string,
   actorId: string,
   membershipId: string,
-  input: { role: Role },
+  input: AccessInput,
 ) {
   const member = await ctx.db.membership.findFirst({ where: { id: membershipId, workspaceId: workspaceId } });
   if (!member) throw notFound('Member');
-  const nextRole = input.role;
+  const access = await resolveAccess(ctx, workspaceId, input);
+  const nextRole = access.role;
   if (member.role === 'ADMIN' && nextRole !== 'ADMIN' && (await adminCount(ctx, workspaceId)) <= 1) {
     throw new AppError(409, 'LAST_ADMIN', 'A workspace needs at least one admin');
   }
 
-  await ctx.db.membership.update({ where: { id: member.id }, data: { role: nextRole } });
+  await ctx.db.$transaction([
+    ctx.db.membership.update({ where: { id: member.id }, data: { role: nextRole, allCompanies: access.allCompanies } }),
+    ctx.db.companyAccess.deleteMany({ where: { workspaceId, userId: member.userId } }),
+    ctx.db.companyAccess.createMany({ data: access.companies.map((g) => ({ workspaceId, userId: member.userId, ...g })) }),
+  ]);
   await audit(ctx, workspaceId, actorId, 'member.update', 'Membership', member.id, {
     from: member.role,
     to: nextRole,
+    allCompanies: access.allCompanies,
+    companies: access.companies,
   });
   if (member.role !== nextRole) {
     const u = await ctx.db.user.findUniqueOrThrow({ where: { id: member.userId }, select: { name: true } });
@@ -126,6 +183,7 @@ export async function removeMember(ctx: AppContext, workspaceId: string, actorId
   }
   await ctx.db.$transaction([
     ctx.db.membership.delete({ where: { id: member.id } }),
+    ctx.db.companyAccess.deleteMany({ where: { userId: member.userId, workspaceId: workspaceId } }),
     ctx.db.notificationPreference.deleteMany({ where: { userId: member.userId, workspaceId: workspaceId } }),
   ]);
   await audit(ctx, workspaceId, actorId, 'member.remove', 'Membership', member.id, { userId: member.userId });
@@ -137,9 +195,10 @@ export async function createInvite(
   ctx: AppContext,
   workspaceId: string,
   inviterId: string,
-  input: { email: string; role: Role },
+  input: { email: string } & AccessInput,
 ) {
   const email = normalizeEmail(input.email);
+  const access = await resolveAccess(ctx, workspaceId, input);
 
   const existingMember = await ctx.db.membership.findFirst({ where: { workspaceId: workspaceId, user: { email } } });
   if (existingMember) throw conflict('That person is already in this workspace');
@@ -156,7 +215,9 @@ export async function createInvite(
     data: {
       workspaceId: workspaceId,
       email,
-      role: input.role,
+      role: access.role,
+      allCompanies: access.allCompanies,
+      companyAccess: access.allCompanies ? undefined : (access.companies as unknown as Prisma.InputJsonValue),
       tokenHash: sha256(token),
       invitedById: inviterId,
       expiresAt: new Date(now.getTime() + INVITE_TTL_MS),
@@ -169,12 +230,12 @@ export async function createInvite(
       to: email,
       inviterName: invite.invitedBy.name,
       orgName: invite.workspace.name,
-      roleLabel: ROLE_LABELS[input.role],
+      roleLabel: ROLE_LABELS[access.role],
       acceptUrl: `${ctx.env.APP_URL}invite?token=${encodeURIComponent(token)}`,
     }),
   );
-  await audit(ctx, workspaceId, inviterId, 'invite.create', 'Invite', invite.id, { email, role: input.role });
-  return { id: invite.id, email, role: invite.role, expiresAt: invite.expiresAt };
+  await audit(ctx, workspaceId, inviterId, 'invite.create', 'Invite', invite.id, { email, role: access.role, allCompanies: access.allCompanies });
+  return inviteView(invite);
 }
 
 export async function listInvites(ctx: AppContext, workspaceId: string) {
@@ -182,7 +243,18 @@ export async function listInvites(ctx: AppContext, workspaceId: string) {
     where: { workspaceId: workspaceId, acceptedAt: null, revokedAt: null, expiresAt: { gt: ctx.clock.now() } },
     orderBy: { createdAt: 'desc' },
   });
-  return rows.map((i) => ({ id: i.id, email: i.email, role: i.role, expiresAt: i.expiresAt }));
+  return rows.map(inviteView);
+}
+
+function inviteView(i: { id: string; email: string; role: Role; allCompanies: boolean; companyAccess: Prisma.JsonValue | null; expiresAt: Date }) {
+  return {
+    id: i.id,
+    email: i.email,
+    role: i.role,
+    allCompanies: i.allCompanies,
+    companies: i.allCompanies ? [] : ((i.companyAccess as unknown as CompanyGrant[] | null) ?? []),
+    expiresAt: i.expiresAt,
+  };
 }
 
 export async function revokeInvite(ctx: AppContext, workspaceId: string, actorId: string, inviteId: string) {
@@ -229,11 +301,24 @@ export async function acceptInvite(ctx: AppContext, userId: string, token: strin
   });
   if (claimed.count === 0) throw new AppError(410, 'INVITE_INVALID', 'This invitation is no longer valid.');
 
-  await ctx.db.membership.upsert({
-    where: { userId_workspaceId: { userId, workspaceId: invite.workspaceId } },
-    update: {},
-    create: { userId, workspaceId: invite.workspaceId, role: invite.role },
-  });
+  const existing = await ctx.db.membership.findUnique({ where: { userId_workspaceId: { userId, workspaceId: invite.workspaceId } } });
+  if (!existing) {
+    // Companies deleted since the invite was sent are skipped.
+    const wanted = invite.allCompanies ? [] : ((invite.companyAccess as unknown as CompanyGrant[] | null) ?? []);
+    const live = new Set(
+      (
+        await ctx.db.company.findMany({ where: { workspaceId: invite.workspaceId, id: { in: wanted.map((g) => g.companyId) } }, select: { id: true } })
+      ).map((c) => c.id),
+    );
+    await ctx.db.$transaction([
+      ctx.db.membership.create({ data: { userId, workspaceId: invite.workspaceId, role: invite.role, allCompanies: invite.allCompanies } }),
+      ctx.db.companyAccess.createMany({
+        data: wanted
+          .filter((g) => live.has(g.companyId))
+          .map((g) => ({ workspaceId: invite.workspaceId, userId, companyId: g.companyId, role: g.role })),
+      }),
+    ]);
+  }
   await ctx.db.notificationPreference.upsert({
     where: { userId_workspaceId: { userId, workspaceId: invite.workspaceId } },
     update: {},

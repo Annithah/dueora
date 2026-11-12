@@ -2,6 +2,7 @@ import type { AppContext } from '../context.js';
 import { addDays, daysBetween, paidForCycle } from '../domain/schedule.js';
 import { formatUSD } from '../lib/format.js';
 import { weeklyAiLine } from '../ai/insights.js';
+import { visibleCompanyIds, type Access } from '../domain/access.js';
 import { addMonthsKey, monthRange, occurrencesBetween } from '../modules/insights/projection.js';
 
 import { monthlySummaryCopy, billLabel, weeklyDigestCopy, type Copy } from './messages.js';
@@ -30,8 +31,29 @@ interface Org {
   timezone: string;
 }
 
-async function upcoming(ctx: AppContext, workspaceId: string, from: string, to: string) {
-  const subs = await ctx.db.bill.findMany({ where: { workspaceId, status: 'ACTIVE' }, include: { company: { select: { name: true } } } });
+/** Prisma `companyId` filter for one audience ({} = every company). */
+type CompanyWhere = { companyId?: { in: string[] } };
+
+/**
+ * Members grouped by what they can see, so each group's summary only covers its companies
+ * (admins and "all companies" members share one group).
+ */
+export function audiences(access: Map<string, Access>, members: string[]): { where: CompanyWhere; userIds: string[] }[] {
+  const groups = new Map<string, { where: CompanyWhere; userIds: string[] }>();
+  for (const userId of members) {
+    const a = access.get(userId);
+    if (!a) continue;
+    const ids = visibleCompanyIds(a);
+    const key = ids ? [...ids].sort().join(',') : '*';
+    const g = groups.get(key) ?? { where: ids ? { companyId: { in: ids } } : {}, userIds: [] };
+    g.userIds.push(userId);
+    groups.set(key, g);
+  }
+  return [...groups.values()];
+}
+
+async function upcoming(ctx: AppContext, workspaceId: string, from: string, to: string, where: CompanyWhere = {}) {
+  const subs = await ctx.db.bill.findMany({ where: { workspaceId, status: 'ACTIVE', ...where }, include: { company: { select: { name: true } } } });
   const open = subs.length
     ? await ctx.db.paymentRecord.findMany({
         where: { workspaceId, OR: subs.map((s) => ({ billId: s.id, cycleDueDate: s.nextDueDate })) },
@@ -84,14 +106,28 @@ async function send(
 export async function runSummaries(
   ctx: AppContext,
   org: Org,
-  run: { since: string; today: string; sendAfter: Date | null; members: string[] },
+  run: { since: string; today: string; sendAfter: Date | null; members: string[]; access: Map<string, Access> },
+): Promise<number> {
+  let created = 0;
+  for (const group of audiences(run.access, run.members)) {
+    created += await summariesFor(ctx, org, run, group.where, group.userIds);
+  }
+  return created;
+}
+
+async function summariesFor(
+  ctx: AppContext,
+  org: Org,
+  run: { since: string; today: string; sendAfter: Date | null },
+  where: CompanyWhere,
+  members: string[],
 ): Promise<number> {
   let created = 0;
   const { since, today } = run;
 
   const monday = latestIn(since, today, (d) => weekday(d) === 1);
   if (monday) {
-    const items = await upcoming(ctx, org.id, today, addDays(today, 6));
+    const items = await upcoming(ctx, org.id, today, addDays(today, 6), where);
     const total = items.reduce((s, i) => s + i.amountCents, 0);
     let aiLine: string | null = null;
     try {
@@ -99,7 +135,7 @@ export async function runSummaries(
     } catch (err) {
       ctx.logger.warn({ err, workspaceId: org.id }, 'Weekly AI line failed; sending the digest without it');
     }
-    created += await send(ctx, org, run.members, {
+    created += await send(ctx, org, members, {
       type: 'WEEKLY_DIGEST',
       period: monday,
       copy: weeklyDigestCopy({ count: items.length, totalCents: total, aiLine }),
@@ -113,13 +149,13 @@ export async function runSummaries(
     const lastMonth = addMonthsKey(first.slice(0, 7), -1);
     const prev = monthRange(`${lastMonth}-01`);
     const [paid, changes] = await Promise.all([
-      ctx.db.paymentRecord.aggregate({ where: { workspaceId: org.id, paidOn: { gte: prev.from, lte: prev.to } }, _sum: { amountCents: true } }),
+      ctx.db.paymentRecord.aggregate({ where: { workspaceId: org.id, paidOn: { gte: prev.from, lte: prev.to }, bill: where }, _sum: { amountCents: true } }),
       ctx.db.priceChange.findMany({
-        where: { workspaceId: org.id, changedAt: { gte: new Date(`${prev.from}T00:00:00Z`), lt: new Date(`${first}T00:00:00Z`) } },
+        where: { workspaceId: org.id, changedAt: { gte: new Date(`${prev.from}T00:00:00Z`), lt: new Date(`${first}T00:00:00Z`) }, bill: where },
         include: { bill: { select: { name: true, company: { select: { name: true } } } } },
       }),
     ]);
-    const coming = await upcoming(ctx, org.id, today, monthRange(today).to);
+    const coming = await upcoming(ctx, org.id, today, monthRange(today).to, where);
     const comingCents = coming.reduce((s, i) => s + i.amountCents, 0);
     const biggest = changes
       .map((c) => ({
@@ -135,7 +171,7 @@ export async function runSummaries(
     const changeLine = biggest.length
       ? ` Biggest changes: ${biggest.map((b) => `${b.label} ${formatUSD(b.from)} → ${formatUSD(b.to)}`).join('; ')}.`
       : '';
-    created += await send(ctx, org, run.members, {
+    created += await send(ctx, org, members, {
       type: 'MONTHLY_SUMMARY',
       period: first.slice(0, 7),
       copy: { title: copy.title, body: `${copy.body}${changeLine}` },

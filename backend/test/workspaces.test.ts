@@ -107,17 +107,20 @@ describe('companies', () => {
     expect((await asAdmin().get('/api/v1/companies')).body.map((c: { name: string }) => c.name)).toEqual(['Acme Ltd', 'Radio 2']);
   });
 
-  it('deletes a company without bills, and archives one that has them', async () => {
+  it('deletes a company without bills; one with bills must be archived explicitly', async () => {
     const unused = await asAdmin().post('/api/v1/companies').send({ name: 'Unused' });
-    const del = await asAdmin().delete(`/api/v1/companies/${unused.body.id}`);
-    expect(del.body).toEqual({ deleted: true, archived: false });
+    expect((await asAdmin().delete(`/api/v1/companies/${unused.body.id}`)).status).toBe(204);
 
     const cats = await asAdmin().get('/api/v1/categories');
     await asAdmin()
       .post('/api/v1/bills')
       .send({ name: 'Streaming', companyId, categoryId: cats.body[0].id, amountCents: 999, frequencyUnit: 'MONTH' });
-    const archive = await asAdmin().delete(`/api/v1/companies/${companyId}`);
-    expect(archive.body).toEqual({ deleted: false, archived: true });
+    const refused = await asAdmin().delete(`/api/v1/companies/${companyId}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('HAS_BILLS');
+
+    const archived = await asAdmin().post(`/api/v1/companies/${companyId}/archive`);
+    expect(archived.body.archived).toBe(true);
     expect((await asAdmin().get('/api/v1/companies')).body.map((c: { name: string }) => c.name)).toEqual(['Acme Ltd']);
     const all = await asAdmin().get('/api/v1/companies').query({ includeArchived: 'true' });
     expect(all.body.find((c: { id: string }) => c.id === companyId)).toMatchObject({ archived: true, billCount: 1 });
@@ -128,6 +131,16 @@ describe('companies', () => {
       .send({ name: 'Another', companyId, categoryId: cats.body[0].id, amountCents: 100, frequencyUnit: 'MONTH' });
     expect(blocked.status).toBe(400);
     expect((await asAdmin().post(`/api/v1/companies/${companyId}/unarchive`)).body.archived).toBe(false);
+  });
+
+  it('derives initials and stores the optional company settings', async () => {
+    const res = await asAdmin()
+      .post('/api/v1/companies')
+      .send({ name: 'Kivu Radio Ltd', description: 'FM station', reminderOffsets: [1, 7, 3], reminderHour: 8, monthlyBudgetCents: 50000 });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ shortName: 'KR', description: 'FM station', reminderOffsets: [7, 3, 1], reminderHour: 8, monthlyBudgetCents: 50000 });
+    const patched = await asAdmin().patch(`/api/v1/companies/${res.body.id}`).send({ shortName: 'kv', reminderHour: null });
+    expect(patched.body).toMatchObject({ shortName: 'KV', reminderHour: null });
   });
 });
 
@@ -216,7 +229,7 @@ describe('invites and members', () => {
     const members = await asAdmin().get('/api/v1/workspaces/current/members');
     const me = members.body.find((m: { email: string }) => m.email === 'amina@acme.test');
     const felix = members.body.find((m: { email: string }) => m.email === 'felix@acme.test');
-    expect(Object.keys(me).sort()).toEqual(['email', 'id', 'joinedAt', 'name', 'role', 'userId']);
+    expect(Object.keys(me).sort()).toEqual(['allCompanies', 'companies', 'email', 'id', 'joinedAt', 'name', 'role', 'userId']);
 
     const demoteSelf = await asAdmin().patch(`/api/v1/workspaces/current/members/${me.id}`).send({ role: 'FINANCE' });
     expect(demoteSelf.status).toBe(409);
@@ -255,8 +268,9 @@ describe('role permissions on workspace routes', () => {
     }
   });
 
-  it('finance manages companies and categories; viewers are read-only', async () => {
-    expect((await client(app, finance, workspaceId).post('/api/v1/companies').send({ name: 'Finance Co' })).status).toBe(201);
+  it('only admins manage companies; finance manages categories; viewers are read-only', async () => {
+    expect((await client(app, finance, workspaceId).post('/api/v1/companies').send({ name: 'Finance Co' })).status).toBe(403);
+    expect((await client(app, finance, workspaceId).post('/api/v1/categories').send({ name: 'F', icon: 'tag', color: '#000000' })).status).toBe(201);
     expect((await client(app, viewer, workspaceId).post('/api/v1/companies').send({ name: 'Viewer Co' })).status).toBe(403);
     expect((await client(app, viewer, workspaceId).post('/api/v1/categories').send({ name: 'V', icon: 'tag', color: '#000000' })).status).toBe(
       403,

@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import { z } from 'zod';
 
 import type { AppContext } from '../../context.js';
-import { requireAuth, requirePermission, requireWorkspace, userIdOf, workspaceIdOf } from '../../http/middleware/auth.js';
+import { accessOf, requireAuth, requirePermission, requireWorkspace, userIdOf, workspaceIdOf } from '../../http/middleware/auth.js';
 import { parseBody, parseQuery } from '../../http/validate.js';
 import { workspaceToday } from '../bills/service.js';
 
@@ -39,14 +39,14 @@ export function importRouter(ctx: AppContext): Router {
   router.post('/preview', async (req, res) => {
     const body = parseBody(req, FileBody);
     const rows = await svc.readSheet(body.fileName, body.contentBase64);
-    res.json(await svc.buildPreview(ctx, workspaceIdOf(req), rows, body.mapping));
+    res.json(await svc.buildPreview(ctx, workspaceIdOf(req), rows, body.mapping, accessOf(req)));
   });
 
   /** Import the valid rows of the same file with the same mapping. */
   router.post('/commit', async (req, res) => {
     const body = parseBody(req, FileBody);
     const rows = await svc.readSheet(body.fileName, body.contentBase64);
-    res.status(201).json(await svc.commitImport(ctx, workspaceIdOf(req), userIdOf(req), workspaceToday(ctx, req), rows, body.mapping));
+    res.status(201).json(await svc.commitImport(ctx, workspaceIdOf(req), userIdOf(req), workspaceToday(ctx, req), rows, body.mapping, accessOf(req)));
   });
 
   return router;

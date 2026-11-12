@@ -7,6 +7,7 @@ import { BreakdownBars } from '@/components/charts/BreakdownBars';
 import { DonutChart, LineChart, monthShort } from '@/components/charts/Charts';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
+import { CompanySwitcher } from '@/components/layout/CompanySwitcher';
 import { TopBar } from '@/components/layout/TopBar';
 import { BillRow } from '@/components/bills/BillRow';
 import {
@@ -19,8 +20,10 @@ import {
   Text,
   toast,
 } from '@/components/ui';
+import { useCompanies } from '@/features/catalog/api';
 import { downloadAndShare, useReport, type Report } from '@/features/insights/api';
 import { formatUSD } from '@/lib/money';
+import { useSelectedCompanyId } from '@/state/companyFilter';
 import { palette, spacing, useTheme } from '@/theme';
 
 const MONTHS = [
@@ -204,6 +207,10 @@ export default function Reports() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const query = useReport(period, year, period === 'month' ? month : undefined);
   const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
+  // Exports follow the company switcher too.
+  const companyId = useSelectedCompanyId();
+  const companies = useCompanies();
+  const companySlug = (companies.data?.find((c) => c.id === companyId)?.name ?? 'company').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
   const step = (dir: number) => {
     if (period === 'year') return setYear((y) => y + dir);
@@ -215,8 +222,8 @@ export default function Reports() {
   const exportAs = async (format: 'pdf' | 'xlsx') => {
     setExporting(format);
     try {
-      const qs = `format=${format}&period=${period}&year=${year}${period === 'month' ? `&month=${month}` : ''}`;
-      const name = `dueora-report-${year}${period === 'month' ? `-${String(month).padStart(2, '0')}` : ''}.${format}`;
+      const qs = `format=${format}&period=${period}&year=${year}${period === 'month' ? `&month=${month}` : ''}${companyId ? `&companyId=${companyId}` : ''}`;
+      const name = `dueora-report-${companyId ? `${companySlug}-` : ''}${year}${period === 'month' ? `-${String(month).padStart(2, '0')}` : ''}.${format}`;
       await downloadAndShare(
         `/reports/export?${qs}`,
         name,
@@ -233,6 +240,7 @@ export default function Reports() {
 
   return (
     <Screen header={<TopBar title="Reports" />} contentStyle={{ gap: 20, paddingBottom: 32 }}>
+      <CompanySwitcher />
       <Segmented
         accessibilityLabel="Report period"
         value={period}

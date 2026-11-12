@@ -12,7 +12,8 @@ import {
 } from '../../domain/schedule.js';
 import type { FrequencyUnit, PaymentMethod, Prisma } from '../../generated/prisma/client.js';
 import { AppError, badRequest, notFound } from '../../http/errors.js';
-import { actorOf, workspaceIdOf } from '../../http/middleware/auth.js';
+import { accessOf, actorOf, assertCan, companyScope, workspaceIdOf } from '../../http/middleware/auth.js';
+import { visibleCompanyIds } from '../../domain/access.js';
 import { slicePage } from '../../http/schemas.js';
 import { keyLast4, normaliseKey } from '../../lib/secretBox.js';
 import { notifyPriceChanged } from '../../notifications/events.js';
@@ -29,7 +30,7 @@ export function workspaceToday(ctx: AppContext, req: Request): string {
 /** Load a bill in the caller's workspace. Anything outside it is a 404, so ids can't be probed. */
 export async function loadBill(ctx: AppContext, req: Request, id: string) {
   const s = await ctx.db.bill.findFirst({
-    where: { id, workspaceId: workspaceIdOf(req) },
+    where: { id, workspaceId: workspaceIdOf(req), ...companyScope(req) },
     include: billInclude,
   });
   if (!s) throw notFound('Bill');
@@ -56,6 +57,16 @@ export async function viewsFor(
 ): Promise<BillView[]> {
   const payments = await currentCyclePayments(ctx, workspaceId, rows);
   return rows.map((s) => billView(s, payments.get(s.id) ?? [], today));
+}
+
+/**
+ * `companyId` filter combining what the caller asked for with what they may see:
+ * an id outside their access simply matches nothing.
+ */
+export function scopedCompanies(req: Request, requested?: string[]): { companyId?: { in: string[] } } {
+  const visible = visibleCompanyIds(accessOf(req));
+  if (!requested?.length) return visible ? { companyId: { in: visible } } : {};
+  return { companyId: { in: visible ? requested.filter((id) => visible.includes(id)) : requested } };
 }
 
 // --- Listing -------------------------------------------------------------------
@@ -104,7 +115,7 @@ export async function listBills(ctx: AppContext, req: Request, f: ListFilters) {
   const where: Prisma.BillWhereInput = {
     workspaceId,
     status: onlyArchived ? 'ARCHIVED' : wantsArchived ? undefined : { in: ['ACTIVE', 'COMPLETED'] },
-    ...(f.companyIds?.length ? { companyId: { in: f.companyIds } } : {}),
+    ...scopedCompanies(req, f.companyIds),
     ...(f.categoryIds?.length ? { categoryId: { in: f.categoryIds } } : {}),
     ...(f.frequencies?.length ? { frequencyUnit: { in: f.frequencies } } : {}),
     ...(f.dueFrom || f.dueTo ? { nextDueDate: { gte: f.dueFrom, lte: f.dueTo } } : {}),
@@ -185,6 +196,7 @@ export async function createBill(ctx: AppContext, req: Request, input: BillInput
   const workspaceId = workspaceIdOf(req);
   const actor = actorOf(req);
   const today = workspaceToday(ctx, req);
+  assertCan(req, 'bills:manage', input.companyId);
   await assertReferences(ctx, workspaceId, input);
 
   const interval = input.frequencyUnit === 'ONCE' ? 1 : input.frequencyInterval;
@@ -225,6 +237,8 @@ export async function updateBill(ctx: AppContext, req: Request, id: string, inpu
   const workspaceId = workspaceIdOf(req);
   const today = workspaceToday(ctx, req);
   const existing = await loadBill(ctx, req, id);
+  assertCan(req, 'bills:manage', existing.companyId);
+  if (input.companyId && input.companyId !== existing.companyId) assertCan(req, 'bills:manage', input.companyId);
   await assertReferences(ctx, workspaceId, input, existing.companyId);
 
   const unit = input.frequencyUnit ?? existing.frequencyUnit;
@@ -288,6 +302,7 @@ export async function updateBill(ctx: AppContext, req: Request, id: string, inpu
 /** Plain account reference for ADMIN/FINANCE (route-guarded). Each reveal is audited. */
 export async function revealReference(ctx: AppContext, req: Request, id: string) {
   const s = await loadBill(ctx, req, id);
+  assertCan(req, 'accountRefs:reveal', s.companyId);
   if (!s.accountRefEncrypted) throw notFound('Account reference');
   await audit(ctx, workspaceIdOf(req), actorOf(req).userId, 'bill.reference.reveal', 'Bill', id);
   return { value: ctx.keys.decrypt(s.accountRefEncrypted) };
@@ -296,6 +311,7 @@ export async function revealReference(ctx: AppContext, req: Request, id: string)
 export async function setArchived(ctx: AppContext, req: Request, id: string, archived: boolean) {
   const workspaceId = workspaceIdOf(req);
   const existing = await loadBill(ctx, req, id);
+  assertCan(req, 'bills:manage', existing.companyId);
   if (!archived && existing.status !== 'ARCHIVED') throw badRequest('This bill is not archived');
   const status = archived
     ? 'ARCHIVED'
@@ -317,6 +333,7 @@ async function isFullyPaid(ctx: AppContext, s: { id: string; nextDueDate: string
 
 export async function deleteBill(ctx: AppContext, req: Request, id: string) {
   const existing = await loadBill(ctx, req, id);
+  assertCan(req, 'bills:manage', existing.companyId);
   const payments = await ctx.db.paymentRecord.count({ where: { billId: id } });
   if (payments > 0) {
     throw new AppError(409, 'HAS_HISTORY', 'This bill has recorded payments. Archive it instead so the history is kept.');

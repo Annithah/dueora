@@ -33,7 +33,8 @@ import {
   isChoiceSelected,
   toggleChoice,
 } from '@/features/notifications/reminderOptions';
-import { useWorkspace } from '@/features/workspaces/api';
+import { usePermissions, useWorkspace } from '@/features/workspaces/api';
+import { useSelectedCompanyId } from '@/state/companyFilter';
 import { formatDate } from '@/lib/dates';
 import { suggestCategory, useAiStatus } from '@/features/ai/api';
 import { guessCategoryName } from '@/lib/guess';
@@ -112,7 +113,15 @@ export interface BillFormProps {
 export function BillForm({ existing, today, onSaved }: BillFormProps) {
   const { colors } = useTheme();
   const workspace = useWorkspace();
-  const companies = useCompanies();
+  const allCompanies = useCompanies();
+  const can = usePermissions();
+  const switcherCompany = useSelectedCompanyId();
+  // Only companies this user may add bills to (their role there is Admin or Finance),
+  // plus the bill's own company when editing.
+  const pickable = (allCompanies.data ?? []).filter(
+    (c) => c.myRole === 'ADMIN' || c.myRole === 'FINANCE' || c.id === existing?.company.id,
+  );
+  const companies = { data: allCompanies.data ? pickable : undefined };
   const categories = useCategories();
   const save = useSaveBill(existing?.id);
   const addCompany = useListMutation('companies', createCompany);
@@ -175,12 +184,14 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
     ? categories.data?.find((c) => c.name === suggestedName)
     : undefined;
 
-  // Preselect the only company, so a one-company workspace never has to choose.
+  // Preselect the only company (or the one the switcher shows), so most people never choose.
+  const pickableIds = pickable.map((c) => c.id).join(',');
   useEffect(() => {
-    const list = companies.data ?? [];
-    if (!existing && !getValues('companyId') && list.length === 1)
-      setValue('companyId', list[0]!.id);
-  }, [companies.data, existing, getValues, setValue]);
+    const ids = pickableIds ? pickableIds.split(',') : [];
+    if (existing || getValues('companyId')) return;
+    if (switcherCompany && ids.includes(switcherCompany)) setValue('companyId', switcherCompany);
+    else if (ids.length === 1) setValue('companyId', ids[0]!);
+  }, [pickableIds, switcherCompany, existing, getValues, setValue]);
 
   // The next due date follows the start date and frequency until the user overrides it.
   useEffect(() => {
@@ -222,7 +233,8 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
         <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: c.color }} />
       ),
     })),
-    { value: NEW_COMPANY, label: '+ New company…' },
+    // Only admins create companies.
+    ...(can.manageCompanies ? [{ value: NEW_COMPANY, label: '+ New company…' }] : []),
   ];
   const categoryOptions = (categories.data ?? []).map((c) => ({
     value: c.id,

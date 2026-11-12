@@ -4,10 +4,11 @@ import type { FunctionDeclaration } from '@google/genai';
 import type { Request } from 'express';
 
 import type { AppContext } from '../context.js';
+import { canAnywhere, canIn } from '../domain/access.js';
 import { can } from '../domain/permissions.js';
 import { addDays, advance, isLeapYear, parseDate } from '../domain/schedule.js';
 import { guessCategoryName } from '../domain/guess.js';
-import { actorOf, workspaceIdOf } from '../http/middleware/auth.js';
+import { accessOf, companyIdScope, companyScope, workspaceIdOf } from '../http/middleware/auth.js';
 import { budgetProgress } from '../modules/budgets/service.js';
 import { dashboard, report } from '../modules/insights/service.js';
 import { listBills, workspaceToday, type BillSort } from '../modules/bills/service.js';
@@ -337,7 +338,7 @@ const EXECUTORS: Record<string, Executor> = {
     const today = workspaceToday(t.ctx, t.req);
     const keys = Array.from({ length: months }, (_, i) => addMonthsKey(today.slice(0, 7), i));
     const to = monthRange(`${keys.at(-1)}-01`).to;
-    const rows = await t.ctx.db.bill.findMany({ where: { workspaceId: workspaceIdOf(t.req), status: 'ACTIVE' }, include: { company: true, category: true } });
+    const rows = await t.ctx.db.bill.findMany({ where: { workspaceId: workspaceIdOf(t.req), status: 'ACTIVE', ...companyScope(t.req) }, include: { company: true, category: true } });
     const totals = new Map<string, number>();
     let total = 0;
     for (const s of rows) {
@@ -365,7 +366,7 @@ const EXECUTORS: Record<string, Executor> = {
     }
     const duplicates = [...groups.values()].filter((g) => g.length > 1).map((g) => g.map((v) => `${v.company.name} · ${v.name} (${usd(v.amountCents)} ${v.frequencyLabel.toLowerCase()})`));
     const changes = await t.ctx.db.priceChange.findMany({
-      where: { workspaceId: workspaceIdOf(t.req), changedAt: { gte: new Date(Date.now() - 90 * 86_400_000) } },
+      where: { workspaceId: workspaceIdOf(t.req), changedAt: { gte: new Date(Date.now() - 90 * 86_400_000) }, bill: companyScope(t.req) },
       include: { bill: { select: { name: true, company: { select: { name: true } } } } },
       orderBy: { changedAt: 'desc' },
     });
@@ -382,6 +383,7 @@ const EXECUTORS: Record<string, Executor> = {
   },
 
   async get_budgets(t) {
+    if (!accessOf(t.req).all) return { note: 'Workspace budgets cover every company; this user only has access to some companies.' };
     const list = await budgetProgress(t.ctx, workspaceIdOf(t.req), workspaceToday(t.ctx, t.req));
     return list.map((b) => ({ scope: b.category?.name ?? 'Whole workspace', limitUSD: usd(b.monthlyLimitCents), spentUSD: usd(b.spentCents), paidUSD: usd(b.paidCents), stillDueUSD: usd(b.dueCents), percent: b.percent, state: b.state }));
   },
@@ -389,7 +391,7 @@ const EXECUTORS: Record<string, Executor> = {
   async list_companies_and_categories(t) {
     const workspaceId = workspaceIdOf(t.req);
     const [companies, categories] = await Promise.all([
-      t.ctx.db.company.findMany({ where: { workspaceId, archivedAt: null }, orderBy: { name: 'asc' } }),
+      t.ctx.db.company.findMany({ where: { workspaceId, archivedAt: null, ...companyIdScope(t.req) }, orderBy: { name: 'asc' } }),
       t.ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] }, orderBy: { name: 'asc' } }),
     ]);
     return { companies: companies.map((c) => c.name), categories: categories.map((c) => c.name) };
@@ -410,11 +412,18 @@ const EXECUTORS: Record<string, Executor> = {
     if (!name) return { needMoreInfo: 'Ask what the bill is called.' };
     if (!amount) return { needMoreInfo: 'Ask for the amount in US dollars.' };
     if (!freq) return { needMoreInfo: 'Ask how often it renews (weekly, monthly, quarterly, yearly, one-time…).' };
-    const companies = await t.ctx.db.company.findMany({ where: { workspaceId, archivedAt: null }, orderBy: { createdAt: 'asc' } });
+    const access = accessOf(t.req);
+    // Only companies this user may add bills to; only admins may create a new one.
+    const companies = (await t.ctx.db.company.findMany({ where: { workspaceId, archivedAt: null }, orderBy: { createdAt: 'asc' } })).filter((c) =>
+      canIn(access, 'bills:manage', c.id),
+    );
     const wanted = typeof a.companyName === 'string' ? a.companyName.trim() : '';
     let company = wanted ? companies.find((c) => c.name.toLowerCase() === wanted.toLowerCase()) ?? companies.find((c) => c.name.toLowerCase().includes(wanted.toLowerCase())) : undefined;
     if (!wanted && companies.length === 1) company = companies[0];
     if (!wanted && !company) return { needMoreInfo: `Ask which company it is for: ${companies.map((c) => c.name).join(', ')}.` };
+    if (!company && access.workspaceRole !== 'ADMIN') {
+      return { error: `This user can't add bills to "${wanted}". They can add bills to: ${companies.map((c) => c.name).join(', ')}.` };
+    }
     const categories = await t.ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] } });
     const catName = typeof a.categoryName === 'string' && a.categoryName.trim() ? a.categoryName.trim() : guessCategoryName(`${name} ${String(a.provider ?? '')}`) ?? 'Other';
     const category = categories.find((c) => c.name.toLowerCase() === catName.toLowerCase()) ?? categories.find((c) => c.name === 'Other')!;
@@ -545,7 +554,7 @@ export async function runTool(t: ToolContext, name: string, args: Record<string,
   if (!exec) return { error: `Unknown tool ${name}` };
   if (WRITE_TOOL_NAMES.has(name)) {
     const personal = name === 'propose_snooze' || name === 'propose_mute';
-    if (!personal && !can(actorOf(t.req).role, 'bills:manage')) {
+    if (!personal && !canAnywhere(accessOf(t.req), 'bills:manage')) {
       return { error: 'This user is a Viewer and cannot make changes. Explain kindly that an admin or finance member can.' };
     }
   }

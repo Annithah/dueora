@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 
 import { api } from '@/api';
+import { useSelectedCompanyId } from '@/state/companyFilter';
 import { useSession } from '@/state/session';
 import type { PaymentStatus } from '@/theme';
 
@@ -154,9 +155,14 @@ export const billKeys = {
   detail: (workspaceId: string | null, id: string) => ['bills', workspaceId, 'detail', id] as const,
 };
 
-/** Bills, 10 per page from the server ("load more" / infinite scroll). */
-export function useBillList(query: BillQuery) {
+/**
+ * Bills, 10 per page from the server ("load more" / infinite scroll). Without an explicit
+ * company filter the list follows the company switcher.
+ */
+export function useBillList(input: BillQuery) {
   const workspaceId = useWorkspaceId();
+  const selected = useSelectedCompanyId();
+  const query: BillQuery = input.companyIds?.length || !selected ? input : { ...input, companyIds: [selected] };
   return useInfiniteQuery({
     queryKey: billKeys.list(workspaceId, query),
     queryFn: ({ pageParam }) =>

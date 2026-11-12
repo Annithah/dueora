@@ -301,3 +301,27 @@ the master prompt, the brief wins.
   changing it would make every stored reference unreadable. "Subscription(s)" otherwise only appears as a kind
   of bill (e.g. the "Software & subscriptions" category suggestion).
 - No `/subscriptions` alias is kept: production was never deployed, so no installed app calls the old paths.
+
+## D35 — Companies are admin-managed; members see all companies or a chosen list
+- Only ADMIN creates, edits, archives and deletes companies (`companies:manage`). A company with bills can't be
+  deleted (409 `HAS_BILLS`); archiving is its own action (`POST /companies/:id/archive`). Companies gain
+  initials, description, reminder offsets and hour, and an optional monthly budget (all optional, falling back to
+  the workspace settings).
+- `Membership.allCompanies` (default true, so every existing member keeps today's access) or a `CompanyAccess`
+  list with FINANCE or VIEWER per company. With a list, the membership role is the strongest company role, so
+  route guards keep working; services then check the bill's own company (`assertCan`). Invites carry the same
+  choice (`Invite.allCompanies` + JSON `companyAccess`), applied on accept; companies deleted meanwhile are skipped.
+- Access is loaded once per request in `requireWorkspace` (`req.workspace.access`, pure rules in
+  `domain/access.ts`). Outside requests (planner, summaries, events) `workspaceAccess()` gives every member's
+  access in two queries.
+- Not visible = 404 (ids can't be probed); visible but read-only = 403.
+- Workspace and category budgets, the full data export, and budget and team notifications add up every company,
+  so they are for members with all companies. Weekly and monthly summaries are built per group of members who
+  share the same access, so a restricted member's totals only cover their companies. The daily AI insight card is
+  cached per workspace, so restricted members get the plain sentence built from their own companies.
+- Import: only admins can create companies through it; for anyone else an unknown company is a row error.
+- Mobile: a company switcher on Home, Bills, Calendar and Reports (and their exports), remembered per workspace
+  on the device (`state/companyFilter.ts`); a remembered company that is archived or no longer visible falls back to
+  "All companies". The Bills tab uses the switcher unless its own company filter is set.
+- The company detail screen has Overview, Members and Settings. Its Bills tab opens the Bills list filtered by the
+  switcher, and its Categories tab waits for per-company categories (Part 3).

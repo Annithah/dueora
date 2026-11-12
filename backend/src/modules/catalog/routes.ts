@@ -5,101 +5,19 @@ import type { AppContext } from '../../context.js';
 import { AppError, notFound } from '../../http/errors.js';
 import { requireAuth, requirePermission, requireWorkspace, userIdOf, workspaceIdOf } from '../../http/middleware/auth.js';
 import { id } from '../../http/schemas.js';
-import { parseBody, parseParams, parseQuery } from '../../http/validate.js';
+import { parseBody, parseParams } from '../../http/validate.js';
 import { audit } from '../workspaces/service.js';
 
 const color = z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Use a #RRGGBB colour');
 const name = z.string().trim().min(1, 'Enter a name').max(60);
-const CompanyBody = z.object({ name, color: color.default('#0F5C5C') });
-const CompanyPatch = z.object({ name, color }).partial().strict();
 const CategoryBody = z.object({ name, icon: z.string().regex(/^[a-z][a-z0-9-]{0,29}$/), color });
-const CompanyQuery = z.object({ includeArchived: z.enum(['true', 'false']).optional() });
 const Params = z.object({ id });
 
-const isUniqueViolation = (err: unknown) => (err as { code?: string } | null)?.code === 'P2002';
-
-/** Companies and categories inside the active workspace. */
+/** Categories inside the active workspace (companies: modules/companies). */
 export function catalogRouter(ctx: AppContext): Router {
   const router = Router();
   // Mounted at the API root, so scope auth to this router's own paths only.
-  router.use(['/companies', '/categories'], requireAuth(ctx), requireWorkspace(ctx));
-
-  const companyView = (c: { id: string; name: string; color: string; archivedAt: Date | null }, count = 0) => ({
-    id: c.id,
-    name: c.name,
-    color: c.color,
-    archived: c.archivedAt !== null,
-    billCount: count,
-  });
-
-  async function findCompany(workspaceId: string, companyId: string) {
-    const c = await ctx.db.company.findFirst({ where: { id: companyId, workspaceId } });
-    if (!c) throw notFound('Company');
-    return c;
-  }
-
-  // --- Companies ---
-  router.get('/companies', async (req, res) => {
-    const { includeArchived } = parseQuery(req, CompanyQuery);
-    const rows = await ctx.db.company.findMany({
-      where: { workspaceId: workspaceIdOf(req), ...(includeArchived === 'true' ? {} : { archivedAt: null }) },
-      orderBy: { name: 'asc' },
-      include: { _count: { select: { bills: { where: { status: { not: 'ARCHIVED' } } } } } },
-    });
-    res.json(rows.map((c) => companyView(c, c._count.bills)));
-  });
-
-  router.post('/companies', requirePermission('companies:manage'), async (req, res) => {
-    const body = parseBody(req, CompanyBody);
-    const workspaceId = workspaceIdOf(req);
-    try {
-      const c = await ctx.db.company.create({ data: { ...body, workspaceId } });
-      await audit(ctx, workspaceId, userIdOf(req), 'company.create', 'Company', c.id, { name: c.name });
-      res.status(201).json(companyView(c));
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new AppError(409, 'CONFLICT', 'A company with this name already exists');
-      throw err;
-    }
-  });
-
-  router.patch('/companies/:id', requirePermission('companies:manage'), async (req, res) => {
-    const { id: companyId } = parseParams(req, Params);
-    const body = parseBody(req, CompanyPatch);
-    const workspaceId = workspaceIdOf(req);
-    await findCompany(workspaceId, companyId);
-    try {
-      const c = await ctx.db.company.update({ where: { id: companyId }, data: body });
-      await audit(ctx, workspaceId, userIdOf(req), 'company.update', 'Company', c.id, { fields: Object.keys(body) });
-      res.json(companyView(c));
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new AppError(409, 'CONFLICT', 'A company with this name already exists');
-      throw err;
-    }
-  });
-
-  /** Deletes an unused company; a company with bills is archived instead so history is kept. */
-  router.delete('/companies/:id', requirePermission('companies:manage'), async (req, res) => {
-    const { id: companyId } = parseParams(req, Params);
-    const workspaceId = workspaceIdOf(req);
-    const c = await findCompany(workspaceId, companyId);
-    const used = await ctx.db.bill.count({ where: { companyId, workspaceId } });
-    if (used === 0) {
-      await ctx.db.company.delete({ where: { id: c.id } });
-      await audit(ctx, workspaceId, userIdOf(req), 'company.delete', 'Company', c.id, { name: c.name });
-      res.json({ deleted: true, archived: false });
-      return;
-    }
-    await ctx.db.company.update({ where: { id: c.id }, data: { archivedAt: ctx.clock.now() } });
-    await audit(ctx, workspaceId, userIdOf(req), 'company.archive', 'Company', c.id, { name: c.name });
-    res.json({ deleted: false, archived: true });
-  });
-
-  router.post('/companies/:id/unarchive', requirePermission('companies:manage'), async (req, res) => {
-    const { id: companyId } = parseParams(req, Params);
-    await findCompany(workspaceIdOf(req), companyId);
-    const c = await ctx.db.company.update({ where: { id: companyId }, data: { archivedAt: null } });
-    res.json(companyView(c));
-  });
+  router.use(['/categories'], requireAuth(ctx), requireWorkspace(ctx));
 
   // --- Categories (built-in defaults + this workspace's custom ones) ---
   router.get('/categories', async (req, res) => {

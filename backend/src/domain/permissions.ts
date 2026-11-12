@@ -2,7 +2,7 @@
  * Role permissions (pure, no I/O).
  *
  * ADMIN    everything
- * FINANCE  manage bills, payments, companies, categories and reports; cannot manage members
+ * FINANCE  manage bills, payments, categories and reports (per company); cannot manage members or companies
  * VIEWER   read-only; receives reminders; sees account references masked only
  */
 
@@ -35,7 +35,8 @@ const WORKSPACE_ACTIONS: Record<WorkspaceAction, readonly Role[]> = {
   'workspace:delete': ['ADMIN'],
   'members:manage': ['ADMIN'],
   'invites:manage': ['ADMIN'],
-  'companies:manage': MANAGERS,
+  // Creating, editing and archiving companies is for administrators (Finalize brief, Part 2).
+  'companies:manage': ['ADMIN'],
   'categories:manage': MANAGERS,
   'bills:manage': MANAGERS,
   'accountRefs:reveal': MANAGERS,

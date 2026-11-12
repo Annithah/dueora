@@ -19,7 +19,7 @@ All bodies are JSON. Dates without time are `YYYY-MM-DD`. **Money is always US d
 ```
 
 Common codes: `VALIDATION_ERROR` (400), `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403),
-`NOT_FOUND` (404), `CONFLICT` (409), `HAS_HISTORY` (409), `LAST_ADMIN` (409), `INVITE_INVALID` (410),
+`NOT_FOUND` (404), `CONFLICT` (409), `HAS_HISTORY` (409), `HAS_BILLS` (409), `LAST_ADMIN` (409), `INVITE_INVALID` (410),
 `TOO_MANY_REQUESTS` (429), `INTERNAL_ERROR` (500). Write bodies are strict: unknown fields are rejected (400).
 
 **Roles** (`backend/src/domain/permissions.ts`):
@@ -27,7 +27,7 @@ Common codes: `VALIDATION_ERROR` (400), `BAD_REQUEST` (400), `UNAUTHORIZED` (401
 | Role | Can |
 |---|---|
 | `ADMIN` | Everything, incl. members, invites and workspace settings |
-| `FINANCE` | Manage bills, payments, companies, categories and reports; reveal account references. Not members. |
+| `FINANCE` | Manage bills, payments, categories and reports; reveal account references. Not members, not companies. |
 | `VIEWER` | Read-only (incl. reports). Receives reminders. Sees account references masked only. |
 
 **Pagination** (bills and payment history): `page` (from 1) and `limit` (default **10**, max 50).
@@ -71,15 +71,15 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 | GET | `/workspaces` | any | My workspaces |
 | POST | `/workspaces` | any | `{ name, type: COMPANY\|PERSONAL, timezone (IANA — the app sends the phone's; default UTC), firstCompanyName? }` → creator becomes ADMIN; a first company is created (named `firstCompanyName`, else the workspace name, or "Personal") |
 | POST | `/workspaces/accept-invite` | any | `{ token }` — the signed-in user's email must match the invite |
-| GET | `/workspaces/current` | member | `{ id, name, type, timezone, reminderHour, quietHoursStart, quietHoursEnd, defaultReminderOffsets, memberCount, companyCount, billCount, myRole }` |
+| GET | `/workspaces/current` | member | `{ id, name, type, timezone, reminderHour, quietHoursStart, quietHoursEnd, defaultReminderOffsets, memberCount, companyCount, billCount, myRole, myAccess: { allCompanies, companies: [{ companyId, role }] } }` |
 | PATCH | `/workspaces/current` | ADMIN | `{ name?, type?, timezone?, reminderHour (0–23)?, quietHoursStart?, quietHoursEnd? (minutes after midnight, both or neither), defaultReminderOffsets? (int days, negative = after due), aiEnabled? }` |
 | GET | `/workspaces/current/export?format=json\|xlsx` | ADMIN, FINANCE | Everything in the workspace as a download. Account references only masked. |
 | DELETE | `/workspaces/current` | ADMIN | `{ confirmName }` must equal the workspace name. Permanent. |
-| GET | `/workspaces/current/members` | member | `[{ id, userId, name, email, role, joinedAt }]` |
-| PATCH | `/workspaces/current/members/:membershipId` | ADMIN | `{ role }`; the last admin can't be demoted (409 `LAST_ADMIN`) |
+| GET | `/workspaces/current/members` | member | `[{ id, userId, name, email, role, allCompanies, companies: [{ companyId, role }], joinedAt }]` |
+| PATCH | `/workspaces/current/members/:membershipId` | ADMIN | `{ role, allCompanies?, companies? }` (see **Company access**); the last admin can't be demoted (409 `LAST_ADMIN`) |
 | DELETE | `/workspaces/current/members/:membershipId` | ADMIN (or yourself, to leave) | |
 | GET | `/workspaces/current/invites` | ADMIN | Pending invites |
-| POST | `/workspaces/current/invites` | ADMIN | `{ email, role (default VIEWER) }` — emails a link `dueora://invite?token=…` (valid 7 days) |
+| POST | `/workspaces/current/invites` | ADMIN | `{ email, role (default VIEWER), allCompanies?, companies? }` — emails a link `dueora://invite?token=…` (valid 7 days) |
 | DELETE | `/workspaces/current/invites/:id` | ADMIN | Revoke |
 
 ## Public — `/public` (no auth)
@@ -93,11 +93,30 @@ Rate-limited per IP + email (login 10/15 min, register 5/h, codes 10/15 min).
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/companies?includeArchived=true` | member | `[{ id, name, color, archived, billCount }]` (archived hidden unless asked) |
-| POST | `/companies` | ADMIN, FINANCE | `{ name, color? }` — names are unique per workspace (409) |
-| PATCH | `/companies/:id` | ADMIN, FINANCE | `{ name?, color? }` |
-| DELETE | `/companies/:id` | ADMIN, FINANCE | Deleted when unused → `{ deleted: true, archived: false }`; **archived** when it has bills → `{ deleted: false, archived: true }` |
-| POST | `/companies/:id/unarchive` | ADMIN, FINANCE | |
+| GET | `/companies?includeArchived=true` | member | Only the companies the caller can see: `[{ id, name, shortName, color, description, reminderOffsets, reminderHour, monthlyBudgetCents, archived, archivedAt, billCount, myRole, createdAt }]` (archived hidden unless asked; `shortName` falls back to the initials) |
+| GET | `/companies/:id` | member with access | The same fields + `members: [{ membershipId, userId, name, email, role, allCompanies }]` (who can see it) |
+| POST | `/companies` | ADMIN | `{ name, color?, shortName?, description?, reminderOffsets?, reminderHour?, monthlyBudgetCents? }` — names are unique per workspace (409) |
+| PATCH | `/companies/:id` | ADMIN | Any of the fields above (null clears an optional one) |
+| POST | `/companies/:id/archive` | ADMIN | Hidden from pickers and the switcher; bills and history kept |
+| POST | `/companies/:id/unarchive` | ADMIN | |
+| DELETE | `/companies/:id` | ADMIN | 204 — only a company **without bills** (409 `HAS_BILLS` otherwise: archive it); a workspace keeps at least one company |
+
+### Company access
+
+An ADMIN sees every company. Any other member has either **all companies** (current and future,
+with their membership role) or a **chosen list**, each with its own role (`FINANCE` or `VIEWER`):
+
+```json
+{ "role": "FINANCE", "allCompanies": false, "companies": [{ "companyId": "…", "role": "FINANCE" }, { "companyId": "…", "role": "VIEWER" }] }
+```
+
+With a list, at least one company is required (400) and the membership role becomes the strongest
+company role. Everything follows it: lists, details, dashboard, calendar, reports and exports,
+history and search, AI tools, import (rows for other companies are errors; only admins create
+companies) and notifications (reminders and bill events go only to members who can see that bill's
+company). A company outside the caller's access is a 404, so ids can't be probed. Workspace and
+category budgets and the full data export add up every company, so they need "all companies"
+(`GET /budgets` returns `[]` otherwise).
 | GET | `/categories` | member | 11 built-in (`isDefault: true`) + this workspace's custom ones, with `billCount` |
 | POST · PATCH /:id · DELETE /:id | `/categories` | ADMIN, FINANCE | `{ name, icon, color }`. Built-ins can't be changed; in-use categories can't be deleted (409). |
 
@@ -226,7 +245,7 @@ Money blocks are `{ amountCents, count }` (USD).
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/dashboard` | member | `today`, `localHour`, `summary` (`overdue`, `dueThisWeek`, `dueThisMonth`, `paidThisMonth` + `changePercent`), `needsAttention` (top 5, most urgent first) + `needsAttentionCount`, `next30Days` (sorted by due date), `spending` (12 months), `byCategory` and `byCompany` (last 12 months, with `share` %), `counts` (`active`, `total`, `overdue`, `upcoming30`) |
-| GET | `/calendar?from=&to=` | member | ≤ 400 days. `events: [{ date, billId, name, company, categoryIcon, categoryColor, amountCents, status, kind: paid\|current\|future }]` |
-| GET | `/reports?period=month\|year&year=&month=` | member | `totals` (`committed`, `paid`, `outstanding`, `overdue`), `byCategory`, `byCompany`, `months`, `forecast` (next 12 months), `overdue`, `outstanding`, `payments` |
+| GET | `/dashboard?companyId=` | member | Optional `companyId` (the company switcher; default = every company the caller can see). `today`, `localHour`, `summary` (`overdue`, `dueThisWeek`, `dueThisMonth`, `paidThisMonth` + `changePercent`), `needsAttention` (top 5, most urgent first) + `needsAttentionCount`, `next30Days` (sorted by due date), `spending` (12 months), `byCategory` and `byCompany` (last 12 months, with `share` %), `counts` (`active`, `total`, `overdue`, `upcoming30`) |
+| GET | `/calendar?from=&to=&companyId=` | member | ≤ 400 days. `events: [{ date, billId, name, company, categoryIcon, categoryColor, amountCents, status, kind: paid\|current\|future }]` |
+| GET | `/reports?period=month\|year&year=&month=&companyId=` | member | `totals` (`committed`, `paid`, `outstanding`, `overdue`), `byCategory`, `byCompany`, `months`, `forecast` (next 12 months), `overdue`, `outstanding`, `payments` |
 | GET | `/reports/export?format=pdf\|xlsx&period=…` | member | File download. PDF: branded summary + tables. Excel: Summary, Payments, Outstanding, Forecast sheets with numeric USD amounts |

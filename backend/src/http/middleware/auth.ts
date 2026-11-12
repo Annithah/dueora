@@ -1,7 +1,8 @@
 import type { Request, RequestHandler } from 'express';
 
 import type { AppContext } from '../../context.js';
-import { can, type Actor, type WorkspaceAction } from '../../domain/permissions.js';
+import { canAnywhere, canIn, canSee, visibleCompanyIds, type Access } from '../../domain/access.js';
+import type { Actor, Role, WorkspaceAction } from '../../domain/permissions.js';
 import { verifyAccessToken } from '../../modules/auth/tokens.js';
 import { AppError, forbidden, notFound, unauthorized } from '../errors.js';
 
@@ -29,7 +30,16 @@ export function requireWorkspace(ctx: AppContext): RequestHandler {
       include: { workspace: { select: { timezone: true } } },
     });
     if (!membership) throw notFound('Workspace');
-    req.workspace = { id: workspaceId, role: membership.role, timezone: membership.workspace.timezone };
+    const all = membership.role === 'ADMIN' || membership.allCompanies;
+    const rows = all
+      ? []
+      : await ctx.db.companyAccess.findMany({ where: { userId: req.userId, workspaceId }, select: { companyId: true, role: true } });
+    const access: Access = {
+      workspaceRole: membership.role,
+      all,
+      companyRoles: Object.fromEntries(rows.map((r) => [r.companyId, r.role as Role])),
+    };
+    req.workspace = { id: workspaceId, role: membership.role, timezone: membership.workspace.timezone, access };
     next();
   };
 }
@@ -38,9 +48,37 @@ export function requireWorkspace(ctx: AppContext): RequestHandler {
 export function requirePermission(action: WorkspaceAction): RequestHandler {
   return (req, _res, next) => {
     if (!req.workspace) throw unauthorized();
-    if (!can(req.workspace.role, action)) throw forbidden();
+    if (!canAnywhere(req.workspace.access, action)) throw forbidden();
     next();
   };
+}
+
+export function accessOf(req: Request): Access {
+  if (!req.workspace) throw unauthorized();
+  return req.workspace.access;
+}
+
+/** Prisma filter on `companyId` for the companies the caller can see ({} = all of them). */
+export function companyScope(req: Request): { companyId?: { in: string[] } } {
+  const ids = visibleCompanyIds(accessOf(req));
+  return ids ? { companyId: { in: ids } } : {};
+}
+
+/** The same filter for the Company table itself (`id`). */
+export function companyIdScope(req: Request): { id?: { in: string[] } } {
+  const ids = visibleCompanyIds(accessOf(req));
+  return ids ? { id: { in: ids } } : {};
+}
+
+/** The company must be visible to the caller (404 otherwise, so ids can't be probed). */
+export function assertCompanyVisible(req: Request, companyId: string): void {
+  if (!canSee(accessOf(req), companyId)) throw notFound('Company');
+}
+
+/** The caller must hold `action` in this company: 404 when they can't see it, 403 when they can't act. */
+export function assertCan(req: Request, action: WorkspaceAction, companyId: string): void {
+  assertCompanyVisible(req, companyId);
+  if (!canIn(accessOf(req), action, companyId)) throw forbidden();
 }
 
 export function actorOf(req: Request): Actor {

@@ -1,6 +1,8 @@
 import type { AppContext } from '../context.js';
 import type { NotificationType, Role } from '../generated/prisma/client.js';
 
+import { membersOfCompany, workspaceAccess } from '../modules/companies/access.js';
+
 import { budgetAlertCopy, priceChangeCopy, billLabel, teamCopy, type Copy, type TeamEvent } from './messages.js';
 import { createNotification, dedupeKey, prefsFor, quietHoursEnd, billUrl, type Prefs } from './store.js';
 
@@ -28,10 +30,18 @@ export interface EventNotification {
 }
 
 export async function notifyMembers(ctx: AppContext, e: EventNotification): Promise<number> {
-  const [workspace, members] = await Promise.all([
+  const [workspace, access, bill] = await Promise.all([
     ctx.db.workspace.findUniqueOrThrow({ where: { id: e.workspaceId } }),
-    ctx.db.membership.findMany({ where: { workspaceId: e.workspaceId, role: { in: e.roles } }, select: { userId: true } }),
+    workspaceAccess(ctx, e.workspaceId),
+    e.billId ? ctx.db.bill.findUnique({ where: { id: e.billId }, select: { companyId: true } }) : null,
   ]);
+  // About a bill: the members with one of `roles` in its company. Otherwise (workspace-wide
+  // budgets, team news) only members who see every company, so no cross-company totals leak.
+  const members = (
+    bill
+      ? membersOfCompany(access, bill.companyId, e.roles)
+      : [...access].filter(([, a]) => a.all && e.roles.includes(a.workspaceRole)).map(([userId]) => userId)
+  ).map((userId) => ({ userId }));
   const sendAfter = quietHoursEnd(ctx.clock.now(), workspace.timezone, workspace.quietHoursStart, workspace.quietHoursEnd);
   let created = 0;
   for (const { userId } of members) {

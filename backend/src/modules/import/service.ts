@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 
 import type { AppContext } from '../../context.js';
+import { canIn, type Access } from '../../domain/access.js';
 import { calculateNextDueDate, parseDate } from '../../domain/schedule.js';
 import { guessCategoryName, parseAmountCents, parseDateCell, parseFrequency } from '../../domain/guess.js';
 import { badRequest } from '../../http/errors.js';
@@ -154,17 +155,23 @@ export interface PreviewRow {
 const text = (c: Cell | undefined): string =>
   c === null || c === undefined ? '' : c instanceof Date ? c.toISOString().slice(0, 10) : String(c).trim();
 
-export async function buildPreview(ctx: AppContext, workspaceId: string, rows: Cell[][], mapping: Mapping | undefined) {
+/**
+ * `access` (the caller's company access) limits the companies rows may go to. Only admins
+ * may create companies, so for anyone else an unknown company name is a row error.
+ */
+export async function buildPreview(ctx: AppContext, workspaceId: string, rows: Cell[][], mapping: Mapping | undefined, access?: Access) {
   if (rows.length < 2) throw badRequest('The file needs a header row and at least one bill');
   const headers = rows[0]!.map((h) => text(h));
   const map = mapping ?? suggestMapping(headers);
   const missing = (['name', 'amount', 'frequency', 'nextDueDate'] as const).filter((f) => map[f] === undefined);
   const body = rows.slice(1, MAX_ROWS + 1);
 
-  const [companies, categories] = await Promise.all([
+  const isAdmin = !access || access.workspaceRole === 'ADMIN';
+  const [allCompanies, categories] = await Promise.all([
     ctx.db.company.findMany({ where: { workspaceId, archivedAt: null }, orderBy: { createdAt: 'asc' } }),
     ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] } }),
   ]);
+  const companies = access ? allCompanies.filter((c) => canIn(access, 'bills:manage', c.id)) : allCompanies;
   const categoryByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.name]));
   const defaultCompany = companies[0]?.name ?? '';
 
@@ -185,7 +192,8 @@ export async function buildPreview(ctx: AppContext, workspaceId: string, rows: C
         warnings.push(`No company — will use "${defaultCompany}"`);
       } else errors.push('Company is missing');
     } else if (!companies.some((c) => c.name.toLowerCase() === company.toLowerCase())) {
-      warnings.push(`New company "${company}" will be created`);
+      if (isAdmin) warnings.push(`New company "${company}" will be created`);
+      else errors.push(`You can't add bills to "${company}". Ask an admin to create it or give you access.`);
     } else company = companies.find((c) => c.name.toLowerCase() === company.toLowerCase())!.name;
 
     let category = values.category;
@@ -244,8 +252,16 @@ export async function buildPreview(ctx: AppContext, workspaceId: string, rows: C
 const CATEGORY_DEFAULT_STYLE = { icon: 'tag', color: '#667373' };
 
 /** Import every valid row. Missing companies and categories are created. Returns counts. */
-export async function commitImport(ctx: AppContext, workspaceId: string, userId: string, today: string, rows: Cell[][], mapping: Mapping | undefined) {
-  const preview = await buildPreview(ctx, workspaceId, rows, mapping);
+export async function commitImport(
+  ctx: AppContext,
+  workspaceId: string,
+  userId: string,
+  today: string,
+  rows: Cell[][],
+  mapping: Mapping | undefined,
+  access?: Access,
+) {
+  const preview = await buildPreview(ctx, workspaceId, rows, mapping, access);
   if (preview.missingColumns.length) throw badRequest(`Map these columns first: ${preview.missingColumns.join(', ')}`);
   const valid = preview.rows.filter((r) => r.errors.length === 0);
   if (valid.length === 0) throw badRequest('No valid rows to import');

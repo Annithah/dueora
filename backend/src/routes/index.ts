@@ -7,6 +7,7 @@ import { authRouter, meRouter } from '../modules/auth/routes.js';
 import { budgetsRouter } from '../modules/budgets/routes.js';
 import { importRouter } from '../modules/import/routes.js';
 import { catalogRouter } from '../modules/catalog/routes.js';
+import { companiesRouter } from '../modules/companies/routes.js';
 import { insightsRouter } from '../modules/insights/routes.js';
 import { billsRouter } from '../modules/bills/routes.js';
 import { paymentsRouter } from '../modules/payments/routes.js';
@@ -27,6 +28,7 @@ export function apiRouter(ctx: AppContext): Router {
   router.use('/me', meRouter(ctx));
   router.use('/workspaces', workspacesRouter(ctx));
   router.use('/bills', billsRouter(ctx));
+  router.use('/companies', companiesRouter(ctx));
   router.use('/budgets', budgetsRouter(ctx));
   router.use('/import', importRouter(ctx));
   router.use('/feedback', feedbackRouter(ctx));

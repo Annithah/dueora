@@ -6,6 +6,7 @@ import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 
 import { LoadMore } from '@/components/layout/LoadMore';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
+import { CompanySwitcher } from '@/components/layout/CompanySwitcher';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
@@ -102,6 +103,7 @@ export default function BillsTab() {
           ) : undefined
         }
       />
+      <CompanySwitcher />
       <SearchBar
         value={q}
         onChangeText={setQ}

@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import type { AppContext } from '../context.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { AppError, notFound } from '../http/errors.js';
-import { actorOf, workspaceIdOf } from '../http/middleware/auth.js';
+import { actorOf, companyIdScope, workspaceIdOf } from '../http/middleware/auth.js';
 import { workspaceToday } from '../modules/bills/service.js';
 
 import { AiUnavailableError, type AiModel, type ToolCall, type Turn } from './model.js';
@@ -81,7 +81,8 @@ export async function chat(ctx: AppContext, req: Request, res: Response, body: {
   const [workspace, user, companies, memories] = await Promise.all([
     ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId } }),
     ctx.db.user.findUniqueOrThrow({ where: { id: actor.userId }, select: { name: true } }),
-    ctx.db.company.findMany({ where: { workspaceId, archivedAt: null }, select: { name: true }, orderBy: { name: 'asc' } }),
+    // Only the companies this user can see, so the model never names the others.
+    ctx.db.company.findMany({ where: { workspaceId, archivedAt: null, ...companyIdScope(req) }, select: { name: true }, orderBy: { name: 'asc' } }),
     ctx.db.aiMemory.findMany({ where: { workspaceId }, orderBy: { createdAt: 'asc' }, take: 50 }),
   ]);
 

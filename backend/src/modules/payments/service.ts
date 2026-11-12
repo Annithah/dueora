@@ -3,11 +3,11 @@ import type { Request } from 'express';
 import type { AppContext } from '../../context.js';
 import type { PaymentMethod, Prisma } from '../../generated/prisma/client.js';
 import { AppError, badRequest, notFound } from '../../http/errors.js';
-import { actorOf, workspaceIdOf } from '../../http/middleware/auth.js';
+import { actorOf, assertCan, workspaceIdOf } from '../../http/middleware/auth.js';
 import { pageOf } from '../../http/schemas.js';
 import { notifyPaymentRecorded } from '../../notifications/paymentRecorded.js';
 import { checkBudgetAlerts } from '../budgets/service.js';
-import { loadBill, viewsFor, workspaceToday } from '../bills/service.js';
+import { loadBill, scopedCompanies, viewsFor, workspaceToday } from '../bills/service.js';
 import { billInclude } from '../bills/view.js';
 import { audit } from '../workspaces/service.js';
 
@@ -67,6 +67,7 @@ export async function recordPayment(ctx: AppContext, req: Request, billId: strin
   const workspaceId = workspaceIdOf(req);
   const actor = actorOf(req);
   const s = await loadBill(ctx, req, billId);
+  assertCan(req, 'payments:record', s.companyId);
   if (s.status === 'ARCHIVED') throw badRequest('Unarchive this bill before recording a payment');
   if (s.status === 'COMPLETED') throw new AppError(409, 'ALREADY_PAID', 'This one-time bill is already fully paid');
   const today = workspaceToday(ctx, req);
@@ -141,7 +142,10 @@ async function result(ctx: AppContext, req: Request, paymentId: string, billId: 
 
 /** Load a payment in this workspace (404 otherwise). */
 async function loadPayment(ctx: AppContext, req: Request, id: string) {
-  const p = await ctx.db.paymentRecord.findFirst({ where: { id, workspaceId: workspaceIdOf(req) }, include: paymentInclude });
+  const p = await ctx.db.paymentRecord.findFirst({
+    where: { id, workspaceId: workspaceIdOf(req), bill: scopedCompanies(req) },
+    include: { ...paymentInclude, bill: { select: { ...paymentInclude.bill.select, companyId: true } } },
+  });
   if (!p) throw notFound('Payment');
   return p;
 }
@@ -161,6 +165,7 @@ export interface EditInput {
 /** ADMIN/FINANCE (route-guarded): correct a payment and recalculate the bill's cycle. */
 export async function editPayment(ctx: AppContext, req: Request, id: string, input: EditInput) {
   const before = await loadPayment(ctx, req, id);
+  assertCan(req, 'payments:edit', before.bill.companyId);
   if (input.paidOn && input.paidOn > workspaceToday(ctx, req)) throw badRequest('The payment date cannot be in the future');
 
   const change = await ctx.db.$transaction(async (tx) => {
@@ -178,6 +183,7 @@ export async function editPayment(ctx: AppContext, req: Request, id: string, inp
 /** ADMIN/FINANCE (route-guarded): remove a payment and recalculate. */
 export async function deletePayment(ctx: AppContext, req: Request, id: string) {
   const before = await loadPayment(ctx, req, id);
+  assertCan(req, 'payments:edit', before.bill.companyId);
   const change = await ctx.db.$transaction(async (tx) => {
     await tx.paymentRecord.delete({ where: { id } });
     return reconcileCycle(tx, before.billId, before.cycleDueDate);
@@ -233,7 +239,7 @@ export async function history(ctx: AppContext, req: Request, f: HistoryFilters) 
   if (f.q) {
     const q = f.q.toLowerCase();
     const candidates = await ctx.db.bill.findMany({
-      where: { workspaceId },
+      where: { workspaceId, ...scopedCompanies(req) },
       select: { id: true, name: true, provider: true, company: { select: { name: true } }, category: { select: { name: true } } },
     });
     matchingBillIds = candidates
@@ -246,7 +252,7 @@ export async function history(ctx: AppContext, req: Request, f: HistoryFilters) 
     method: f.method,
     paidOn: { gte: f.from, lte: f.to },
     bill: {
-      ...(f.companyIds?.length ? { companyId: { in: f.companyIds } } : {}),
+      ...scopedCompanies(req, f.companyIds),
       ...(f.categoryIds?.length ? { categoryId: { in: f.categoryIds } } : {}),
     },
     AND: [

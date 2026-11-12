@@ -122,6 +122,7 @@ model User {
   snoozes           ReminderSnooze[]
   feedback          Feedback[]
   aiConversations   AiConversation[]
+  companyAccess     CompanyAccess[]
 }
 
 model Workspace {
@@ -156,14 +157,17 @@ model Workspace {
   aiConversations   AiConversation[]
   aiUsage           AiUsage[]
   aiInsights        AiInsight[]
+  companyAccess     CompanyAccess[]
 }
 
 model Membership {
-  id          String   @id @default(cuid())
-  userId      String
-  workspaceId String
-  role        Role     @default(VIEWER)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  userId       String
+  workspaceId  String
+  role         Role     @default(VIEWER)
+  /// Access to every company (current and future) with `role`. When false, CompanyAccess lists them.
+  allCompanies Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -173,17 +177,21 @@ model Membership {
 }
 
 model Invite {
-  id          String    @id @default(cuid())
-  workspaceId String
-  email       String
-  role        Role      @default(VIEWER)
+  id            String    @id @default(cuid())
+  workspaceId   String
+  email         String
+  role          Role      @default(VIEWER)
+  /// Same meaning as Membership.allCompanies.
+  allCompanies  Boolean   @default(true)
+  /// JSON [{ companyId, role }] used when allCompanies is false.
+  companyAccess Json?
   /// SHA-256 of the invite token sent by email.
-  tokenHash   String    @unique
-  invitedById String
-  expiresAt   DateTime
-  acceptedAt  DateTime?
-  revokedAt   DateTime?
-  createdAt   DateTime  @default(now())
+  tokenHash     String    @unique
+  invitedById   String
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   invitedBy User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
@@ -228,18 +236,46 @@ model EmailToken {
 
 /// A company inside a workspace. Every bill belongs to exactly one.
 model Company {
-  id          String    @id @default(cuid())
-  workspaceId String
-  name        String
-  color       String    @default("#0F5C5C")
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  name               String
+  /// Initials shown in chips and avatars (e.g. "AN"); derived from the name when empty.
+  shortName          String?
+  color              String    @default("#0F5C5C")
+  description        String?
+  /// JSON int[] of default reminder offsets for new bills; null = the workspace default.
+  reminderOffsets    Json?
+  /// Local hour (0–23) for this company's reminders; null = the workspace reminder hour.
+  reminderHour       Int?
+  /// Optional monthly budget, US dollars in cents.
+  monthlyBudgetCents Int?
   /// Set when a company with bills is "deleted": hidden from pickers, history kept.
-  archivedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  archivedAt         DateTime?
+  createdAt          DateTime  @default(now())
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   bills     Bill[]
+  access    CompanyAccess[]
 
   @@unique([workspaceId, name])
+}
+
+/// Which companies a member (not an admin, not "all companies") can see, and their role in each.
+model CompanyAccess {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  companyId   String
+  /// FINANCE or VIEWER
+  role        Role
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([workspaceId, userId])
 }
 
 model Category {

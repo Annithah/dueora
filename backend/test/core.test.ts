@@ -155,7 +155,7 @@ describe('spreadsheet import', () => {
 
   it('previews with mapping, guesses and validation errors, writing nothing', async () => {
     const before = await ctx.db.bill.count();
-    const res = await fx.as('finance').post('/api/v1/import/preview').send(file);
+    const res = await fx.as('admin').post('/api/v1/import/preview').send(file);
     expect(res.status).toBe(200);
     expect(res.body.mapping).toEqual({ company: 0, category: 1, name: 2, provider: 3, amount: 4, frequency: 5, nextDueDate: 6 });
     expect(res.body).toMatchObject({ total: 4, valid: 3, missingColumns: [] });
@@ -166,6 +166,11 @@ describe('spreadsheet import', () => {
     expect(c.warnings).toContain('New category "Brand new cat" will be created');
     expect(bad.errors).toEqual(['Name is missing', '"abc" is not an amount', '"sometimes" is not a frequency we know (try Monthly, Quarterly, Yearly…)', '"not a date" is not a date']);
     expect(await ctx.db.bill.count()).toBe(before);
+
+    // Only admins create companies, so for Finance the unknown company is an error.
+    const fin = await fx.as('finance').post('/api/v1/import/preview').send(file);
+    expect(fin.body.valid).toBe(2);
+    expect(fin.body.rows[1].errors[0]).toMatch(/can't add bills to "Gamma Bakery"/);
   });
 
   it('imports the valid rows, creating companies and categories', async () => {

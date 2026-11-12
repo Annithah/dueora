@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AppContext } from '../../context.js';
 import { can } from '../../domain/permissions.js';
 import { badRequest, forbidden } from '../../http/errors.js';
-import { actorOf, workspaceIdOf, requireAuth, requireWorkspace, requirePermission, userIdOf } from '../../http/middleware/auth.js';
+import { accessOf, actorOf, workspaceIdOf, requireAuth, requireWorkspace, requirePermission, userIdOf } from '../../http/middleware/auth.js';
 import { email, id, minutesOfDay, reminderOffsets, timeZone } from '../../http/schemas.js';
 import { parseBody, parseParams, parseQuery } from '../../http/validate.js';
 import { renderLayout } from '../../emails/layout.js';
@@ -43,8 +43,14 @@ const UpdateBody = z
     { message: 'Set both quiet-hours start and end (or clear both)' },
   );
 
-const MemberBody = z.object({ role: roleEnum });
-const InviteBody = z.object({ email, role: roleEnum.default('VIEWER') });
+const companyGrant = z.object({ companyId: id, role: z.enum(['FINANCE', 'VIEWER']) });
+/** "All companies" (default) or a chosen list, each with its own role. */
+const accessFields = {
+  allCompanies: z.boolean().optional(),
+  companies: z.array(companyGrant).max(200).optional(),
+};
+const MemberBody = z.object({ role: roleEnum.default('VIEWER'), ...accessFields });
+const InviteBody = z.object({ email, role: roleEnum.default('VIEWER'), ...accessFields });
 const TokenBody = z.object({ token: z.string().min(20).max(200) });
 const DeleteBody = z.object({ confirmName: z.string() });
 
@@ -64,7 +70,13 @@ export function workspacesRouter(ctx: AppContext): Router {
 
   // --- Current workspace (X-Workspace-Id) ---
   router.get('/current', org, async (req, res) => {
-    res.json({ ...(await ws.getWorkspace(ctx, workspaceIdOf(req))), myRole: req.workspace?.role });
+    const a = accessOf(req);
+    res.json({
+      ...(await ws.getWorkspace(ctx, workspaceIdOf(req))),
+      myRole: req.workspace?.role,
+      // What this member can see: every company, or these (with their role in each).
+      myAccess: { allCompanies: a.all, companies: Object.entries(a.companyRoles).map(([companyId, role]) => ({ companyId, role })) },
+    });
   });
 
   router.patch('/current', org, requirePermission('workspace:update'), async (req, res) => {
@@ -84,6 +96,8 @@ export function workspacesRouter(ctx: AppContext): Router {
 
   /** Export all workspace data (Settings → Data & privacy). Keys stay masked. */
   router.get('/current/export', org, requirePermission('data:export'), async (req, res) => {
+    // The full export covers every company, its members and budgets.
+    if (!accessOf(req).all) throw forbidden('The full export covers every company. Use Reports to export your companies.');
     const { format } = parseQuery(req, z.object({ format: z.enum(['json', 'xlsx']).default('json') }));
     const data = await exportWorkspaceData(ctx, workspaceIdOf(req));
     const stamp = data.exportedAt.slice(0, 10);

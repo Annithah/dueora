@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import type { AppContext } from '../../context.js';
 import { addDays, computeStatus, daysBetween, DUE_SOON_DAYS, localTimeIn, type PaymentStatus } from '../../domain/schedule.js';
 import { workspaceIdOf } from '../../http/middleware/auth.js';
-import { viewsFor } from '../bills/service.js';
+import { scopedCompanies, viewsFor } from '../bills/service.js';
 import { billInclude, type BillView } from '../bills/view.js';
 
 import { addMonthsKey, lastMonths, monthRange, occurrencesBetween } from './projection.js';
@@ -14,17 +14,19 @@ import { addMonthsKey, lastMonths, monthRange, occurrencesBetween } from './proj
  */
 
 /** Everything the insight views need, loaded once per request. */
-async function loadScope(ctx: AppContext, req: Request) {
+async function loadScope(ctx: AppContext, req: Request, companyId?: string) {
   const workspaceId = workspaceIdOf(req);
+  // The company switcher ("All companies" = undefined), always within the caller's access.
+  const companyWhere = scopedCompanies(req, companyId ? [companyId] : undefined);
   const workspace = await ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
   const local = localTimeIn(ctx.clock.now(), workspace.timezone);
   const rows = await ctx.db.bill.findMany({
-    where: { workspaceId, status: { in: ['ACTIVE', 'COMPLETED'] } },
+    where: { workspaceId, status: { in: ['ACTIVE', 'COMPLETED'] }, ...companyWhere },
     include: billInclude,
   });
   const views = await viewsFor(ctx, workspaceId, rows, local.date);
   const rowById = new Map(rows.map((r) => [r.id, r]));
-  return { workspaceId, workspace, today: local.date, localHour: local.hour, rowById, views };
+  return { workspaceId, workspace, companyWhere, today: local.date, localHour: local.hour, rowById, views };
 }
 
 type Scope = Awaited<ReturnType<typeof loadScope>>;
@@ -57,7 +59,7 @@ function lite(v: BillView) {
 
 async function paymentsBetween(ctx: AppContext, s: Scope, from: string, to: string) {
   return ctx.db.paymentRecord.findMany({
-    where: { workspaceId: s.workspaceId, paidOn: { gte: from, lte: to } },
+    where: { workspaceId: s.workspaceId, paidOn: { gte: from, lte: to }, bill: s.companyWhere },
     select: {
       amountCents: true,
       paidOn: true,
@@ -102,8 +104,8 @@ const pctChange = (now: number, before: number) => (before > 0 ? Math.round(((no
 
 // --- Dashboard ---------------------------------------------------------------
 
-export async function dashboard(ctx: AppContext, req: Request) {
-  const s = await loadScope(ctx, req);
+export async function dashboard(ctx: AppContext, req: Request, companyId?: string) {
+  const s = await loadScope(ctx, req, companyId);
   const { today, views } = s;
   const month = monthRange(today);
   const weekEnd = addDays(today, DUE_SOON_DAYS - 1);
@@ -207,8 +209,8 @@ export interface CalendarEvent {
   kind: 'paid' | 'current' | 'future';
 }
 
-export async function calendar(ctx: AppContext, req: Request, from: string, to: string) {
-  const s = await loadScope(ctx, req);
+export async function calendar(ctx: AppContext, req: Request, from: string, to: string, companyId?: string) {
+  const s = await loadScope(ctx, req, companyId);
   const events: CalendarEvent[] = [];
 
   // Open and projected cycles.
@@ -235,11 +237,11 @@ export async function calendar(ctx: AppContext, req: Request, from: string, to: 
   // Closed cycles from payment history (one event per cycle, on its due date).
   const paid = await ctx.db.paymentRecord.groupBy({
     by: ['billId', 'cycleDueDate'],
-    where: { workspaceId: s.workspaceId, cycleDueDate: { gte: from, lte: to } },
+    where: { workspaceId: s.workspaceId, cycleDueDate: { gte: from, lte: to }, bill: s.companyWhere },
     _sum: { amountCents: true },
   });
   const paidSubs = await ctx.db.bill.findMany({
-    where: { workspaceId: s.workspaceId, id: { in: [...new Set(paid.map((p) => p.billId))] } },
+    where: { workspaceId: s.workspaceId, id: { in: [...new Set(paid.map((p) => p.billId))] }, ...s.companyWhere },
     include: billInclude,
   });
   const subById = new Map(paidSubs.map((x) => [x.id, x]));
@@ -268,8 +270,8 @@ export async function calendar(ctx: AppContext, req: Request, from: string, to: 
 
 export type ReportPeriod = 'month' | 'year';
 
-export async function report(ctx: AppContext, req: Request, period: ReportPeriod, year: number, month?: number) {
-  const s = await loadScope(ctx, req);
+export async function report(ctx: AppContext, req: Request, period: ReportPeriod, year: number, month?: number, companyId?: string) {
+  const s = await loadScope(ctx, req, companyId);
   const { today } = s;
   const from = period === 'year' ? `${year}-01-01` : `${year}-${String(month).padStart(2, '0')}-01`;
   const to = period === 'year' ? `${year}-12-31` : monthRange(from).to;

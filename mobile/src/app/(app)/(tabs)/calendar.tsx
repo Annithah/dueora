@@ -6,6 +6,7 @@ import { Pressable, View } from 'react-native';
 
 import { monthShort } from '@/components/charts/Charts';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
+import { CompanySwitcher } from '@/components/layout/CompanySwitcher';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Screen } from '@/components/layout/Screen';
 import { BillRow } from '@/components/bills/BillRow';
@@ -207,6 +208,7 @@ export default function CalendarTab() {
   return (
     <Screen edges={['top']} contentStyle={{ gap: 18, paddingBottom: 32 }}>
       <PageHeader eyebrow="Plan ahead" title="Calendar" />
+      <CompanySwitcher />
       <Segmented
         accessibilityLabel="Calendar view"
         value={view}

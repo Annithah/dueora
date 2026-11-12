@@ -185,13 +185,19 @@ used as its summary.
 
 ## Part 2 — Companies
 - [x] Company: name, colour, archivedAt; create/rename/colour/archive/unarchive; delete only when unused.
-- [!] DELETE on a used company silently archives it; the brief wants delete refused and archive explicit.
-- [ ] Short name/initials, description, per-company reminder offsets and hour, monthly budget.
-- [ ] Company detail screen (Overview, Bills, Categories, Members, Settings); category start options at creation.
-- [ ] Global company switcher on Home, Bills, Calendar, Reports (remembered on the device); "All companies" breakdowns.
-- [ ] `CompanyAccess` (FINANCE | VIEWER per company); admin picks companies when inviting/editing a member;
-      enforced in lists, details, reports, exports, notifications, AI, search, calendar; isolation tests.
-      Today every member sees every company.
+- [x] DELETE on a company with bills is refused (409 `HAS_BILLS`); archive is its own action. Admins only (D35).
+- [x] Short name/initials, description, per-company reminder offsets and hour, monthly budget (stored and edited;
+      the reminder planner using the per-company offsets/hour is Part 7).
+- [~] Company detail screen: Overview, Members, Settings. Bills opens the Bills list on that company; Categories and
+      "category start options at creation" wait for Part 3.
+- [x] Global company switcher on Home, Bills, Calendar, Reports (and report exports), remembered per workspace on
+      the device.
+- [ ] "All companies" breakdown tables per the brief (dashboard and reports already have `byCompany`; the new
+      views are Parts 5–6).
+- [x] `CompanyAccess` (FINANCE | VIEWER per company) or all companies; the admin picks them when inviting or editing
+      a member. Enforced in lists, details, dashboard, calendar, reports, exports, history/search, payments,
+      import, budgets, AI tools/insight/chat context and notifications (reminders, events, summaries).
+      `test/companyAccess.test.ts` covers isolation.
 
 ## Part 3 — Categories per company, custom fields
 - [!] Categories are global defaults (11 seeded at start and on every workspace creation) plus workspace custom
@@ -232,7 +238,7 @@ used as its summary.
 ## Part 7 — Notifications
 - [x] Reminders, due today, overdue follow-ups, snooze, mark-as-paid action, dedupe, digest, quiet hours, local
       backups, push/email/in-app, weekly digest, monthly summary, budget alerts, team, price change.
-- [!] Recipients are every workspace member; must follow company access.
+- [x] Recipients follow company access (reminders, bill events, summaries; budget and team alerts → all-companies members).
 - [ ] Copy names the company everywhere ("⏰ {Company} · {Bill} …" — reminders already do; summaries don't).
 - [ ] Per-company reminder offsets/hour; monthly report ready; this month's obligations; next-month preview (25th);
       variable amount needed (5 days before); outstanding per company in the weekly digest.
@@ -241,7 +247,8 @@ used as its summary.
 
 ## Part 8 — AI, verification, release
 - [x] DueOra AI (tools, proposals, insights, offline evals).
-- [ ] AI follows company access; understands companies, sub-categories, variable bills, the new views; new
+- [x] AI follows company access (tools, proposals, chat context, daily insight).
+- [ ] AI understands companies, sub-categories, variable bills, the new views; new
       tools (period views, last-month report, create category with sub-categories, set cycle amount); eval cases.
 - [ ] `docs/FEATURE_STATUS.md`; Maestro flows in `mobile/e2e/`.
 - [ ] Version 1.1.0, production deploy + migration, APK, GitHub Release v1.1.0, `docs/INSTALL.md` + QR, EAS Update.

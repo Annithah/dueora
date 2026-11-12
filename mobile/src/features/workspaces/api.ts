@@ -18,6 +18,8 @@ export interface Workspace {
   billCount: number;
   companyCount: number;
   myRole?: Role;
+  /** What the caller can see: every company, or these with their role in each. */
+  myAccess?: { allCompanies: boolean; companies: { companyId: string; role: Role }[] };
 }
 
 export interface InvitePreview {
@@ -58,7 +60,7 @@ export function useCreateWorkspace() {
 
 export function useSendInvite() {
   return useMutation({
-    mutationFn: (body: { email: string; role: Role }) =>
+    mutationFn: (body: { email: string; role: Role; allCompanies?: boolean; companies?: { companyId: string; role: 'FINANCE' | 'VIEWER' }[] }) =>
       api.post<{ id: string; email: string }>('/workspaces/current/invites', body),
   });
 }
@@ -101,7 +103,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ADMIN: 'Everything, including team and workspace settings',
-  FINANCE: 'Manage bills, payments and reports',
+  FINANCE: 'Manage bills, payments and reports in their companies',
   VIEWER: 'Read-only, receives reminders',
 };
 
@@ -112,7 +114,8 @@ export function permissionsFor(role: Role | undefined) {
     manageBills: manager,
     recordPayments: manager,
     editPayments: manager,
-    manageCompanies: manager,
+    // Creating, editing and archiving companies is for admins (backend permissions.ts).
+    manageCompanies: role === 'ADMIN',
     manageCategories: manager,
     revealKeys: manager,
     manageTeam: role === 'ADMIN',

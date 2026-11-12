@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import { api } from '@/api';
 import { API_URL } from '@/api/config';
 import { PAGE_SIZE, type Page, type PaymentMethod, type Bill } from '@/features/bills/api';
+import { useSelectedCompanyId } from '@/state/companyFilter';
 import { useSession } from '@/state/session';
 import type { PaymentStatus } from '@/theme';
 
@@ -121,20 +122,23 @@ export interface HistoryQuery {
 const useWorkspaceId = () => useSession((s) => s.activeWorkspaceId);
 const csv = (v?: string[]) => (v && v.length ? v.join(',') : undefined);
 
+/** Home, Calendar and Reports follow the company switcher (undefined = all companies). */
 export function useDashboard() {
   const workspaceId = useWorkspaceId();
+  const companyId = useSelectedCompanyId();
   return useQuery({
-    queryKey: ['dashboard', workspaceId],
-    queryFn: () => api.get<Dashboard>('/dashboard'),
+    queryKey: ['dashboard', workspaceId, companyId ?? 'all'],
+    queryFn: () => api.get<Dashboard>('/dashboard', { companyId }),
     enabled: !!workspaceId,
   });
 }
 
 export function useCalendar(from: string, to: string) {
   const workspaceId = useWorkspaceId();
+  const companyId = useSelectedCompanyId();
   return useQuery({
-    queryKey: ['calendar', workspaceId, from, to],
-    queryFn: () => api.get<{ events: CalendarEvent[]; today: string }>('/calendar', { from, to }),
+    queryKey: ['calendar', workspaceId, from, to, companyId ?? 'all'],
+    queryFn: () => api.get<{ events: CalendarEvent[]; today: string }>('/calendar', { from, to, companyId }),
     enabled: !!workspaceId,
     placeholderData: (prev) => prev,
   });
@@ -142,9 +146,10 @@ export function useCalendar(from: string, to: string) {
 
 export function useReport(period: 'month' | 'year', year: number, month?: number) {
   const workspaceId = useWorkspaceId();
+  const companyId = useSelectedCompanyId();
   return useQuery({
-    queryKey: ['reports', workspaceId, period, year, month],
-    queryFn: () => api.get<Report>('/reports', { period, year, month }),
+    queryKey: ['reports', workspaceId, period, year, month, companyId ?? 'all'],
+    queryFn: () => api.get<Report>('/reports', { period, year, month, companyId }),
     enabled: !!workspaceId,
   });
 }

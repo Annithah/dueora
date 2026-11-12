@@ -7,7 +7,7 @@ const matrix: Record<WorkspaceAction, Role[]> = {
   'workspace:delete': ['ADMIN'],
   'members:manage': ['ADMIN'],
   'invites:manage': ['ADMIN'],
-  'companies:manage': ['ADMIN', 'FINANCE'],
+  'companies:manage': ['ADMIN'],
   'categories:manage': ['ADMIN', 'FINANCE'],
   'bills:manage': ['ADMIN', 'FINANCE'],
   'accountRefs:reveal': ['ADMIN', 'FINANCE'],

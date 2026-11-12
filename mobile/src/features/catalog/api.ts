@@ -7,9 +7,44 @@ import { useSession } from '@/state/session';
 export interface Company {
   id: string;
   name: string;
+  /** Initials for chips and avatars (derived from the name when not set). */
+  shortName: string;
   color: string;
+  description: string | null;
+  /** Default reminder offsets for new bills; null = the workspace default. */
+  reminderOffsets: number[] | null;
+  /** Local hour for reminders; null = the workspace reminder hour. */
+  reminderHour: number | null;
+  monthlyBudgetCents: number | null;
   archived: boolean;
   billCount: number;
+  /** The caller's role in this company (null if unknown). */
+  myRole: Role | null;
+}
+
+export interface CompanyMember {
+  membershipId: string;
+  userId: string;
+  name: string;
+  email: string;
+  role: Role;
+  allCompanies: boolean;
+}
+
+export interface CompanyDetail extends Company {
+  members: CompanyMember[];
+}
+
+/** One company a restricted member can see, with their role there. */
+export interface CompanyGrant {
+  companyId: string;
+  role: 'FINANCE' | 'VIEWER';
+}
+
+/** "All companies" or a chosen list (admins always see all). */
+export interface CompanyAccessInput {
+  allCompanies: boolean;
+  companies: CompanyGrant[];
 }
 
 export interface Category {
@@ -27,6 +62,8 @@ export interface Member {
   name: string;
   email: string;
   role: Role;
+  allCompanies: boolean;
+  companies: CompanyGrant[];
   joinedAt: string;
 }
 
@@ -34,6 +71,8 @@ export interface PendingInvite {
   id: string;
   email: string;
   role: Role;
+  allCompanies: boolean;
+  companies: CompanyGrant[];
   expiresAt: string;
 }
 
@@ -48,6 +87,22 @@ export function useCompanies(options: { includeArchived?: boolean } = {}) {
       api.get<Company[]>('/companies', { includeArchived: options.includeArchived ? 'true' : undefined }),
     enabled: !!workspaceId,
   });
+}
+
+export function useCompany(id: string | undefined) {
+  const workspaceId = useWorkspaceId();
+  return useQuery({
+    queryKey: ['companies', workspaceId, 'detail', id],
+    queryFn: () => api.get<CompanyDetail>(`/companies/${id}`),
+    enabled: !!workspaceId && !!id,
+  });
+}
+
+/** The caller's role in one company, from the companies list (undefined while loading). */
+export function useCompanyRole(companyId: string | undefined): Role | null | undefined {
+  const companies = useCompanies({ includeArchived: true });
+  if (!companyId || !companies.data) return undefined;
+  return companies.data.find((c) => c.id === companyId)?.myRole ?? null;
 }
 
 export function useCategories() {
@@ -93,18 +148,29 @@ export function useListMutation<TVars, TResult = unknown>(listKey: string, fn: (
   });
 }
 
-export const createCompany = (body: { name: string; color?: string }) => api.post<Company>('/companies', body);
-export const updateCompany = ({ id, ...body }: { id: string; name?: string; color?: string }) =>
+export interface CompanyFields {
+  name: string;
+  shortName?: string | null;
+  color?: string;
+  description?: string | null;
+  reminderOffsets?: number[] | null;
+  reminderHour?: number | null;
+  monthlyBudgetCents?: number | null;
+}
+
+export const createCompany = (body: CompanyFields) => api.post<Company>('/companies', body);
+export const updateCompany = ({ id, ...body }: Partial<CompanyFields> & { id: string }) =>
   api.patch<Company>(`/companies/${id}`, body);
-/** Deletes an unused company; one with bills is archived instead (history kept). */
-export const deleteCompany = (id: string) => api.del<{ deleted: boolean; archived: boolean }>(`/companies/${id}`);
+/** Only a company without bills; one with bills is refused (409 HAS_BILLS) — archive it instead. */
+export const deleteCompany = (id: string) => api.del(`/companies/${id}`);
+export const archiveCompany = (id: string) => api.post<Company>(`/companies/${id}/archive`);
 export const unarchiveCompany = (id: string) => api.post<Company>(`/companies/${id}/unarchive`);
 
 export const createCategory = (body: { name: string; icon: string; color: string }) =>
   api.post<Category>('/categories', body);
 export const deleteCategory = (id: string) => api.del(`/categories/${id}`);
 
-export const updateMember = ({ id, role }: { id: string; role: Role }) =>
-  api.patch<Member>(`/workspaces/current/members/${id}`, { role });
+export const updateMember = ({ id, ...body }: { id: string; role: Role } & Partial<CompanyAccessInput>) =>
+  api.patch<Member>(`/workspaces/current/members/${id}`, body);
 export const removeMember = (id: string) => api.del(`/workspaces/current/members/${id}`);
 export const revokeInvite = (id: string) => api.del(`/workspaces/current/invites/${id}`);

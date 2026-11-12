@@ -1,10 +1,11 @@
 import type { Request } from 'express';
 
 import type { AppContext } from '../context.js';
-import { can, type WorkspaceAction } from '../domain/permissions.js';
+import { canAnywhere } from '../domain/access.js';
+import { type WorkspaceAction } from '../domain/permissions.js';
 import type { PaymentMethod, Prisma } from '../generated/prisma/client.js';
 import { AppError, forbidden, notFound } from '../http/errors.js';
-import { actorOf, workspaceIdOf } from '../http/middleware/auth.js';
+import { accessOf, actorOf, workspaceIdOf } from '../http/middleware/auth.js';
 import { checkBudgetAlerts, upsertBudget } from '../modules/budgets/service.js';
 import { recordPayment } from '../modules/payments/service.js';
 import { createBill, loadBill, setArchived, snooze, updateBill, workspaceToday } from '../modules/bills/service.js';
@@ -38,6 +39,8 @@ async function execute(ctx: AppContext, req: Request, card: Extract<Card, { type
     case 'add_bill': {
       let companyId = p.companyId as string | null;
       if (!companyId && p.newCompanyName) {
+        // Only admins create companies (same rule as the Companies screen).
+        if (accessOf(req).workspaceRole !== 'ADMIN') throw forbidden('Only an admin can create a company.');
         const existing = await ctx.db.company.findFirst({ where: { workspaceId, name: String(p.newCompanyName) } });
         companyId = existing?.id ?? (await ctx.db.company.create({ data: { workspaceId, name: String(p.newCompanyName) } })).id;
       }
@@ -134,7 +137,7 @@ export async function resolveAction(ctx: AppContext, req: Request, messageId: st
     card.status = 'cancelled';
   } else {
     const need = NEEDS[card.kind];
-    if (need && !can(actorOf(req).role, need)) throw forbidden('Your role can’t make this change. Ask an admin or finance member.');
+    if (need && !canAnywhere(accessOf(req), need)) throw forbidden('Your role can’t make this change. Ask an admin or finance member.');
     try {
       card.result = await execute(ctx, req, card);
       card.status = 'confirmed';

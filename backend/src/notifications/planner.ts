@@ -10,6 +10,7 @@ import {
 import { Prisma, type NotificationType } from '../generated/prisma/client.js';
 
 import { checkBudgetAlerts } from '../modules/budgets/service.js';
+import { membersOfCompany, workspaceAccess } from '../modules/companies/access.js';
 
 import { autoRenewCopy, digestCopy, billLabel, reminderCopy, trialEndingCopy } from './messages.js';
 import { createNotification, dedupeKey, billUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
@@ -117,12 +118,12 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
         select: { billId: true, cycleDueDate: true, amountCents: true },
       })
     : [];
-  const members = await ctx.db.membership.findMany({
-    where: { workspaceId: org.id },
-    select: { userId: true, role: true },
-  });
-  const everyone = recipientsFor(members);
-  const managers = new Set(members.filter((m) => m.role !== 'VIEWER').map((m) => m.userId));
+  const access = await workspaceAccess(ctx, org.id);
+  const everyone = recipientsFor([...access.keys()].map((userId) => ({ userId })));
+  const companyOf = new Map(bills.map((b) => [b.id, b.companyId]));
+  // Recipients per bill follow company access: all who can see it, or its managers.
+  const audienceOf = (billId: string, managersOnly: boolean) =>
+    membersOfCompany(access, companyOf.get(billId)!, managersOnly ? ['ADMIN', 'FINANCE'] : undefined);
   const snoozes = bills.length
     ? await ctx.db.reminderSnooze.findMany({ where: { billId: { in: bills.map((s) => s.id) } } })
     : [];
@@ -217,10 +218,10 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
 
   const perUser = new Map<string, PlannedReminder[]>();
   for (const p of planned) {
-    const targets =
-      typeof p.audience === 'object' ? [p.audience.userId] : p.audience === 'managers' ? everyone.filter((u) => managers.has(u)) : everyone;
+    const visible = audienceOf(p.billId, p.audience === 'managers');
+    const targets = typeof p.audience === 'object' ? [p.audience.userId] : visible;
     for (const userId of targets) {
-      if (!everyone.includes(userId)) continue;
+      if (!visible.includes(userId)) continue;
       // Snoozed: nothing about this cycle until the snooze ends (trial notices still come).
       const z = p.type !== 'TRIAL_ENDING' ? snoozeOf(userId, p.billId, p.cycleDueDate) : undefined;
       if (z && z.snoozedUntil > today) continue;
@@ -236,7 +237,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   }
   // Weekly digest (Mondays), monthly summary (the 1st) and budget alerts ride on the same daily run.
   try {
-    created += await runSummaries(ctx, org, { since, today, sendAfter, members: everyone });
+    created += await runSummaries(ctx, org, { since, today, sendAfter, members: everyone, access });
     created += await checkBudgetAlerts(ctx, org.id, today);
   } catch (err) {
     ctx.logger.error({ err, workspaceId: org.id }, 'Summaries or budget check failed');

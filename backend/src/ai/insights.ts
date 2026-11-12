@@ -16,8 +16,10 @@ import { logUsage } from './chat.js';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const PHRASE = 'You are DueOra AI. Write ONE short, warm sentence (max 140 characters, at most one emoji) for a dashboard card, using only the facts given. Amounts are USD. No preamble.';
 
-async function facts(ctx: AppContext, workspaceId: string, today: string) {
-  const subs = await ctx.db.bill.findMany({ where: { workspaceId, status: 'ACTIVE' }, include: { company: { select: { name: true } } } });
+/** `companyIds` null = every company; otherwise only these (a member with limited access). */
+async function facts(ctx: AppContext, workspaceId: string, today: string, companyIds: string[] | null = null) {
+  const scope = companyIds ? { companyId: { in: companyIds } } : {};
+  const subs = await ctx.db.bill.findMany({ where: { workspaceId, status: 'ACTIVE', ...scope }, include: { company: { select: { name: true } } } });
   const horizon = addDays(today, 90);
   const byMonth = new Map<string, { count: number; cents: number }>();
   for (const s of subs) {
@@ -32,7 +34,7 @@ async function facts(ctx: AppContext, workspaceId: string, today: string) {
   const peak = [...byMonth.entries()].sort((a, b) => b[1].cents - a[1].cents)[0];
   const overdue = subs.filter((s) => s.nextDueDate < today);
   const trials = subs.filter((s) => s.isTrial && s.trialEndsOn && s.trialEndsOn >= today && s.trialEndsOn <= addDays(today, 7));
-  const increases = await ctx.db.priceChange.count({ where: { workspaceId, changedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } } });
+  const increases = await ctx.db.priceChange.count({ where: { workspaceId, changedAt: { gte: new Date(Date.now() - 30 * 86_400_000) }, bill: scope } });
   return {
     activeCount: subs.length,
     overdue: overdue.length,
@@ -51,9 +53,17 @@ function plainInsight(f: Awaited<ReturnType<typeof facts>>): string | null {
 }
 
 /** GET /ai/insight — one sentence for today's dashboard, cached for the day. */
-export async function dailyInsight(ctx: AppContext, workspaceId: string, userId: string): Promise<{ text: string | null; source: 'ai' | 'plain' | 'cache' }> {
+export async function dailyInsight(
+  ctx: AppContext,
+  workspaceId: string,
+  userId: string,
+  companyIds: string[] | null = null,
+): Promise<{ text: string | null; source: 'ai' | 'plain' | 'cache' }> {
   const ws = await ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true, aiEnabled: true } });
   const today = todayIn(ctx.clock.now(), ws.timezone);
+  // The cached card covers every company, so members with limited access get the plain
+  // sentence built from their own companies only.
+  if (companyIds) return { text: plainInsight(await facts(ctx, workspaceId, today, companyIds)), source: 'plain' };
   const cached = await ctx.db.aiInsight.findUnique({ where: { workspaceId_localDate: { workspaceId, localDate: today } } });
   if (cached) return { text: cached.text, source: 'cache' };
   const f = await facts(ctx, workspaceId, today);

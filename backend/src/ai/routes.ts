@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import type { AppContext } from '../context.js';
+import { visibleCompanyIds } from '../domain/access.js';
 import { notFound } from '../http/errors.js';
-import { actorOf, requireAuth, requirePermission, requireWorkspace, userIdOf, workspaceIdOf } from '../http/middleware/auth.js';
+import { accessOf, actorOf, requireAuth, requirePermission, requireWorkspace, userIdOf, workspaceIdOf } from '../http/middleware/auth.js';
 import { id } from '../http/schemas.js';
 import { parseBody, parseParams } from '../http/validate.js';
 
@@ -125,7 +126,7 @@ export function aiRouter(ctx: AppContext): Router {
 
   // --- Proactive and smart-form help ---
   router.get('/insight', async (req, res) => {
-    res.json(await dailyInsight(ctx, workspaceIdOf(req), userIdOf(req)));
+    res.json(await dailyInsight(ctx, workspaceIdOf(req), userIdOf(req), visibleCompanyIds(accessOf(req))));
   });
 
   router.post('/suggest-category', async (req, res) => {

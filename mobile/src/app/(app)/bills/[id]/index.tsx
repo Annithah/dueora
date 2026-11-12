@@ -52,7 +52,8 @@ import {
   type BillDetail,
 } from '@/features/bills/api';
 import { RecordPaymentSheet } from '@/features/bills/RecordPaymentSheet';
-import { usePermissions, useWorkspaceToday } from '@/features/workspaces/api';
+import { useCompanyRole } from '@/features/catalog/api';
+import { permissionsFor, useWorkspaceToday } from '@/features/workspaces/api';
 import { formatDate, humanSpan } from '@/lib/dates';
 import { formatUSD } from '@/lib/money';
 import { useTheme } from '@/theme';
@@ -79,7 +80,9 @@ function Detail({
   intent?: 'record' | 'snooze';
 }) {
   const { colors } = useTheme();
-  const can = usePermissions();
+  // What the user may do here follows their role in this bill's company.
+  const companyRole = useCompanyRole(o.company.id);
+  const can = permissionsFor(companyRole ?? undefined);
   const canManage = can.manageBills;
   const mute = useMute();
   const archive = useArchiveBill();
