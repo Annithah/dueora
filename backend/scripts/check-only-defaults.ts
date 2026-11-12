@@ -5,7 +5,7 @@ import { checkOnlyDefaults } from '../src/db/dataCheck.js';
 
 /**
  * `npm run db:check-empty` — run against a freshly deployed database (before anyone signs up)
- * to confirm it contains only the default categories.
+ * to confirm it is empty.
  */
 async function main() {
   const url = process.env.DATABASE_URL;

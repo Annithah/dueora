@@ -10,7 +10,10 @@ import {
   todayIn,
   type PaymentStatus,
 } from '../../domain/schedule.js';
-import type { FrequencyUnit, PaymentMethod, Prisma } from '../../generated/prisma/client.js';
+import type { AmountType, FrequencyUnit, PaymentMethod, Prisma } from '../../generated/prisma/client.js';
+import { cleanCustomValues } from '../categories/customFields.js';
+import { cyclesBetween, type StoredCycle } from '../../domain/cycles.js';
+import { reconcileCycle } from '../payments/cycle.js';
 import { AppError, badRequest, notFound } from '../../http/errors.js';
 import { accessOf, actorOf, assertCan, companyScope, workspaceIdOf } from '../../http/middleware/auth.js';
 import { visibleCompanyIds } from '../../domain/access.js';
@@ -49,14 +52,30 @@ async function currentCyclePayments(ctx: AppContext, workspaceId: string, subs: 
   return map;
 }
 
+/** Stored cycles from each bill's open cycle on (their own amounts, e.g. a variable bill's actual). */
+export async function openCycleRows(ctx: AppContext, workspaceId: string, subs: { id: string; nextDueDate: string }[]) {
+  const map = new Map<string, Map<string, StoredCycle>>();
+  if (subs.length === 0) return map;
+  const rows = await ctx.db.billCycle.findMany({
+    where: { workspaceId, OR: subs.map((s) => ({ billId: s.id, dueDate: { gte: s.nextDueDate } })) },
+    select: { billId: true, dueDate: true, amountCents: true, isActual: true, closedAt: true },
+  });
+  for (const r of rows) {
+    const m = map.get(r.billId) ?? new Map<string, StoredCycle>();
+    m.set(r.dueDate, r);
+    map.set(r.billId, m);
+  }
+  return map;
+}
+
 export async function viewsFor(
   ctx: AppContext,
   workspaceId: string,
   rows: BillWithRelations[],
   today: string,
 ): Promise<BillView[]> {
-  const payments = await currentCyclePayments(ctx, workspaceId, rows);
-  return rows.map((s) => billView(s, payments.get(s.id) ?? [], today));
+  const [payments, cycles] = await Promise.all([currentCyclePayments(ctx, workspaceId, rows), openCycleRows(ctx, workspaceId, rows)]);
+  return rows.map((s) => billView(s, payments.get(s.id) ?? [], today, cycles.get(s.id)));
 }
 
 /**
@@ -80,6 +99,9 @@ export interface ListFilters {
   companyIds?: string[];
   categoryIds?: string[];
   frequencies?: FrequencyUnit[];
+  amountType?: AmountType;
+  customField?: string;
+  customValue?: string;
   dueFrom?: string;
   dueTo?: string;
   sort: BillSort;
@@ -118,6 +140,7 @@ export async function listBills(ctx: AppContext, req: Request, f: ListFilters) {
     ...scopedCompanies(req, f.companyIds),
     ...(f.categoryIds?.length ? { categoryId: { in: f.categoryIds } } : {}),
     ...(f.frequencies?.length ? { frequencyUnit: { in: f.frequencies } } : {}),
+    ...(f.amountType ? { amountType: f.amountType } : {}),
     ...(f.dueFrom || f.dueTo ? { nextDueDate: { gte: f.dueFrom, lte: f.dueTo } } : {}),
   };
   const rows = await ctx.db.bill.findMany({ where, include: billInclude, take: 5000 });
@@ -131,15 +154,66 @@ export async function listBills(ctx: AppContext, req: Request, f: ListFilters) {
     views = views.filter(
       (v) =>
         keyMatches.has(v.id) ||
-        [v.name, v.provider ?? '', v.company.name, v.category.name, v.description ?? ''].some((s) =>
+        [v.name, v.provider ?? '', v.company.name, v.category.name, v.description ?? '', ...Object.values(v.customValues).map(String)].some((s) =>
           s.toLowerCase().includes(q),
         ),
     );
+  }
+  if (f.customField && f.customValue) {
+    const want = f.customValue.toLowerCase();
+    views = views.filter((v) => {
+      const value = v.customValues[f.customField!];
+      if (value === undefined) return false;
+      const text = String(value).toLowerCase();
+      return typeof value === 'number' ? Number(f.customValue) === value : text === want || text.includes(want);
+    });
   }
   if (f.statuses?.length) views = views.filter((v) => f.statuses!.includes(v.paymentStatus));
 
   views.sort(COMPARATORS[f.sort]);
   return slicePage(views, f.page, f.limit);
+}
+
+// --- Cycles ------------------------------------------------------------------------
+
+/** Every cycle of one bill in [from, to] with its expected, paid and remaining amounts. */
+export async function billCycles(ctx: AppContext, req: Request, id: string, from?: string, to?: string) {
+  const s = await loadBill(ctx, req, id);
+  const today = workspaceToday(ctx, req);
+  const start = from ?? addDays(today, -366);
+  const end = to ?? addDays(today, 366);
+  if (end < start) throw badRequest('`to` must be on or after `from`');
+  const [stored, payments] = await Promise.all([
+    ctx.db.billCycle.findMany({ where: { billId: id }, select: { dueDate: true, amountCents: true, isActual: true, closedAt: true } }),
+    ctx.db.paymentRecord.findMany({ where: { billId: id }, select: { cycleDueDate: true, amountCents: true } }),
+  ]);
+  const map = new Map(stored.map((c) => [c.dueDate, c]));
+  return { billId: id, from: start, to: end, today, cycles: cyclesBetween(s, map, payments, start, end, today) };
+}
+
+/**
+ * Store one cycle's real amount (a VARIABLE bill's actual bill, or a one-off change to a FIXED
+ * one). Only the open cycle or a later one; closed cycles keep their history.
+ */
+export async function setCycleAmount(ctx: AppContext, req: Request, id: string, dueDate: string, amountCents: number) {
+  const s = await loadBill(ctx, req, id);
+  assertCan(req, 'bills:manage', s.companyId);
+  if (s.status !== 'ACTIVE') throw badRequest('This bill has no open cycle');
+  if (dueDate < s.nextDueDate) throw badRequest('That cycle is already closed');
+  const today = workspaceToday(ctx, req);
+  const valid = cyclesBetween(s, new Map(), [], s.nextDueDate, dueDate, today).some((c) => c.dueDate === dueDate);
+  if (!valid) throw badRequest('That date is not one of this bill’s due dates');
+  await ctx.db.$transaction(async (tx) => {
+    await tx.billCycle.upsert({
+      where: { billId_dueDate: { billId: id, dueDate } },
+      create: { workspaceId: s.workspaceId, billId: id, dueDate, amountCents, isActual: true },
+      update: { amountCents, isActual: true },
+    });
+    // A lower amount can make the open cycle fully paid already.
+    if (dueDate === s.nextDueDate) await reconcileCycle(tx, id, undefined, { now: ctx.clock.now() });
+  });
+  await audit(ctx, s.workspaceId, actorOf(req).userId, 'bill.cycle.amount', 'Bill', id, { dueDate, amountCents });
+  return billDetail(ctx, req, id);
 }
 
 // --- Create / update ---------------------------------------------------------------
@@ -163,21 +237,32 @@ export interface BillInput {
   isTrial?: boolean;
   trialEndsOn?: string | null;
   defaultPaymentMethod?: PaymentMethod | null;
+  /** FIXED (default) or VARIABLE — then amountCents is the estimate. */
+  amountType?: AmountType;
+  /** Values of the company's custom fields, keyed by field id. */
+  customValues?: Record<string, unknown> | null;
 }
 
-/** Every referenced id must belong to this workspace (categories may also be built-in). */
-async function assertReferences(ctx: AppContext, workspaceId: string, input: Partial<BillInput>, currentCompanyId?: string) {
-  if (input.companyId) {
-    const company = await ctx.db.company.findFirst({ where: { id: input.companyId, workspaceId } });
-    if (!company) throw badRequest('Choose a company from this workspace');
-    if (company.archivedAt && company.id !== currentCompanyId) throw badRequest('This company is archived');
+/**
+ * The company must be in this workspace (and not archived, unless the bill is already there);
+ * the category must belong to that company. Returns both, for defaults.
+ */
+async function assertReferences(
+  ctx: AppContext,
+  workspaceId: string,
+  companyId: string,
+  categoryId: string,
+  current?: { companyId: string; categoryId: string },
+) {
+  const company = await ctx.db.company.findFirst({ where: { id: companyId, workspaceId } });
+  if (!company) throw badRequest('Choose a company from this workspace');
+  if (company.archivedAt && company.id !== current?.companyId) throw badRequest('This company is archived');
+  const category = await ctx.db.category.findFirst({ where: { id: categoryId, companyId } });
+  if (!category) {
+    throw badRequest(current && companyId !== current.companyId ? 'Choose a category of the new company' : 'Choose a category of this company');
   }
-  if (input.categoryId) {
-    const category = await ctx.db.category.findFirst({
-      where: { id: input.categoryId, OR: [{ workspaceId }, { workspaceId: null }] },
-    });
-    if (!category) throw badRequest('Choose a category from the list');
-  }
+  if (category.archivedAt && category.id !== current?.categoryId) throw badRequest('This category is archived');
+  return { company, category };
 }
 
 /** Encrypted columns for a key change; undefined = leave as is, null/"" = remove the key. */
@@ -197,7 +282,8 @@ export async function createBill(ctx: AppContext, req: Request, input: BillInput
   const actor = actorOf(req);
   const today = workspaceToday(ctx, req);
   assertCan(req, 'bills:manage', input.companyId);
-  await assertReferences(ctx, workspaceId, input);
+  const { company, category } = await assertReferences(ctx, workspaceId, input.companyId, input.categoryId);
+  const customValues = await cleanCustomValues(ctx, input.companyId, input.categoryId, input.customValues);
 
   const interval = input.frequencyUnit === 'ONCE' ? 1 : input.frequencyInterval;
   const startDate = input.startDate ?? today;
@@ -216,16 +302,23 @@ export async function createBill(ctx: AppContext, req: Request, input: BillInput
       description: input.description || null,
       ...keyColumns(ctx, input.accountReference),
       amountCents: input.amountCents,
+      amountType: input.amountType ?? category.defaultAmountType ?? 'FIXED',
+      customValues: customValues as Prisma.InputJsonValue,
       frequencyUnit: input.frequencyUnit,
       frequencyInterval: interval,
       anchorDay,
       startDate,
       nextDueDate,
-      reminderOffsets: input.reminderOffsets ?? (workspace.defaultReminderOffsets as number[]),
+      // Reminders: the bill's own, else its category's, else its company's, else the workspace's.
+      reminderOffsets:
+        input.reminderOffsets ??
+        (category.defaultReminderOffsets as number[] | null) ??
+        (company.reminderOffsets as number[] | null) ??
+        (workspace.defaultReminderOffsets as number[]),
       autoRenew: input.autoRenew ?? false,
       isTrial: input.isTrial ?? false,
       trialEndsOn: input.isTrial ? (input.trialEndsOn ?? null) : null,
-      defaultPaymentMethod: input.defaultPaymentMethod ?? null,
+      defaultPaymentMethod: input.defaultPaymentMethod !== undefined ? input.defaultPaymentMethod : category.defaultPaymentMethod,
     },
     include: billInclude,
   });
@@ -239,7 +332,14 @@ export async function updateBill(ctx: AppContext, req: Request, id: string, inpu
   const existing = await loadBill(ctx, req, id);
   assertCan(req, 'bills:manage', existing.companyId);
   if (input.companyId && input.companyId !== existing.companyId) assertCan(req, 'bills:manage', input.companyId);
-  await assertReferences(ctx, workspaceId, input, existing.companyId);
+  const companyId = input.companyId ?? existing.companyId;
+  const categoryId = input.categoryId ?? existing.categoryId;
+  if (input.companyId || input.categoryId) await assertReferences(ctx, workspaceId, companyId, categoryId, existing);
+  // Custom values are re-checked when they change or when the company/category does.
+  const customValues =
+    input.customValues !== undefined || companyId !== existing.companyId || categoryId !== existing.categoryId
+      ? await cleanCustomValues(ctx, companyId, categoryId, input.customValues !== undefined ? input.customValues : (existing.customValues as Record<string, unknown> | null))
+      : undefined;
 
   const unit = input.frequencyUnit ?? existing.frequencyUnit;
   const interval = unit === 'ONCE' ? 1 : (input.frequencyInterval ?? existing.frequencyInterval);
@@ -263,9 +363,10 @@ export async function updateBill(ctx: AppContext, req: Request, id: string, inpu
     throw badRequest('When does the free trial end?');
   }
 
-  const { accountReference, ...rest } = input;
+  const { accountReference, customValues: _cv, ...rest } = input;
   const data: Prisma.BillUncheckedUpdateInput = {
     ...rest,
+    ...(customValues !== undefined ? { customValues: customValues as Prisma.InputJsonValue } : {}),
     ...(rest.provider !== undefined ? { provider: rest.provider || null } : {}),
     ...(rest.description !== undefined ? { description: rest.description || null } : {}),
     ...keyColumns(ctx, accountReference),

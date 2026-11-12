@@ -43,7 +43,14 @@ export default function HistoryScreen() {
   const sections: ChipSection[] = useMemo(
     () => [
       { key: 'company', title: 'Company', options: (companies.data ?? []).map((c) => ({ value: c.id, label: c.name })) },
-      { key: 'category', title: 'Category', options: (categories.data ?? []).map((c) => ({ value: c.id, label: c.name })) },
+      {
+        key: 'category',
+        title: 'Category',
+        options: (categories.data ?? []).map((c) => ({
+          value: c.id,
+          label: `${(companies.data?.length ?? 0) > 1 ? `${companies.data?.find((x) => x.id === c.companyId)?.name ?? ''} · ` : ''}${c.parent ? `${c.parent.name} › ` : ''}${c.name}`,
+        })),
+      },
     ],
     [companies.data, categories.data],
   );

@@ -3,7 +3,8 @@ import { z } from 'zod';
 
 import type { AppContext } from '../context.js';
 import { badRequest, notFound } from '../http/errors.js';
-import { workspaceIdOf, requireAuth, requireWorkspace, userIdOf } from '../http/middleware/auth.js';
+import { canSee } from '../domain/access.js';
+import { accessOf, workspaceIdOf, requireAuth, requireWorkspace, userIdOf } from '../http/middleware/auth.js';
 import { authLimiter } from '../http/rateLimits.js';
 import { id } from '../http/schemas.js';
 import { parseBody, parseParams, parseQuery } from '../http/validate.js';
@@ -32,6 +33,8 @@ const PrefsBody = z
     budgetAlerts: z.boolean(),
     teamActivity: z.boolean(),
     mutedBillIds: z.array(id).max(1000),
+    /** Per company: { reminders, events, summaries } (false = off; all false = company muted). Replaces the whole map. */
+    companies: z.record(id, z.object({ reminders: z.boolean(), events: z.boolean(), summaries: z.boolean() }).partial().strict()),
   })
   .partial()
   .strict();
@@ -98,18 +101,27 @@ export function notificationsRouter(ctx: AppContext): Router {
     return { ...flags, mutedBillIds: [...muted] };
   }
 
+  /** Keep only companies the user can see (and drop entries that are all "on"). */
+  function cleanCompanies(req: Parameters<typeof workspaceIdOf>[0], companies: Record<string, Record<string, boolean>>) {
+    const a = accessOf(req);
+    return Object.fromEntries(
+      Object.entries(companies).filter(([companyId, v]) => canSee(a, companyId) && Object.values(v).some((on) => on === false)),
+    );
+  }
+
   router.get('/notifications/preferences', ...org, async (req, res) => {
     res.json(await prefsView(userIdOf(req), workspaceIdOf(req)));
   });
 
   router.patch('/notifications/preferences', ...org, async (req, res) => {
-    const body = parseBody(req, PrefsBody);
+    const { companies, ...body } = parseBody(req, PrefsBody);
     const userId = userIdOf(req);
     const workspaceId = workspaceIdOf(req);
+    const companyPrefs = companies ? { companyPrefs: cleanCompanies(req, companies) } : {};
     await ctx.db.notificationPreference.upsert({
       where: { userId_workspaceId: { userId, workspaceId } },
-      update: body,
-      create: { userId, workspaceId, mutedBillIds: body.mutedBillIds ?? [], ...body },
+      update: { ...body, ...companyPrefs },
+      create: { userId, workspaceId, mutedBillIds: body.mutedBillIds ?? [], ...body, ...companyPrefs },
     });
     res.json(await prefsView(userId, workspaceId));
   });

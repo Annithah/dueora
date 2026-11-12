@@ -4,7 +4,7 @@ import type { NotificationType, Role } from '../generated/prisma/client.js';
 import { membersOfCompany, workspaceAccess } from '../modules/companies/access.js';
 
 import { budgetAlertCopy, priceChangeCopy, billLabel, teamCopy, type Copy, type TeamEvent } from './messages.js';
-import { createNotification, dedupeKey, prefsFor, quietHoursEnd, billUrl, type Prefs } from './store.js';
+import { companyAllows, createNotification, dedupeKey, prefsFor, quietHoursEnd, billUrl, type Prefs } from './store.js';
 
 /**
  * Event notifications (something happened, rather than something is due):
@@ -48,6 +48,7 @@ export async function notifyMembers(ctx: AppContext, e: EventNotification): Prom
     if (userId === e.excludeUserId) continue;
     const prefs = await prefsFor(ctx, userId, e.workspaceId);
     if (e.billId && prefs.muted.has(e.billId)) continue;
+    if (bill && !companyAllows(prefs, bill.companyId, 'events')) continue;
     if (e.prefFlag && !prefs[e.prefFlag]) continue;
     const base = {
       workspaceId: e.workspaceId,

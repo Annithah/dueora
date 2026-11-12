@@ -5,6 +5,7 @@ import { roleIn, visibleCompanyIds } from '../../domain/access.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { AppError, badRequest, notFound } from '../../http/errors.js';
 import { accessOf, assertCompanyVisible, userIdOf, workspaceIdOf } from '../../http/middleware/auth.js';
+import { seedCompanyCategories, type CategoryStart } from '../categories/service.js';
 import { audit } from '../workspaces/service.js';
 
 /**
@@ -80,10 +81,15 @@ export async function listCompanies(ctx: AppContext, req: Request, includeArchiv
   return rows.map((c) => companyView(c, { billCount: c._count.bills, myRole: roleIn(accessOf(req), c.id) }));
 }
 
-export async function createCompany(ctx: AppContext, req: Request, input: CompanyInput) {
+export async function createCompany(ctx: AppContext, req: Request, input: CompanyInput, categoryStart: CategoryStart = { mode: 'empty' }) {
   const workspaceId = workspaceIdOf(req);
+  if (categoryStart.mode === 'copy') await loadCompany(ctx, req, categoryStart.fromCompanyId);
   try {
-    const c = await ctx.db.company.create({ data: { ...(dataOf(input) as Prisma.CompanyUncheckedCreateInput), workspaceId, name: input.name.trim() } });
+    const c = await ctx.db.$transaction(async (tx) => {
+      const created = await tx.company.create({ data: { ...(dataOf(input) as Prisma.CompanyUncheckedCreateInput), workspaceId, name: input.name.trim() } });
+      await seedCompanyCategories(tx, workspaceId, created.id, categoryStart);
+      return created;
+    });
     await audit(ctx, workspaceId, userIdOf(req), 'company.create', 'Company', c.id, { name: c.name });
     return c;
   } catch (err) {

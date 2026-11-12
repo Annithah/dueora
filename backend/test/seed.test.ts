@@ -1,33 +1,38 @@
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { createApp } from '../src/app.js';
+import { CATEGORY_SUGGESTIONS } from '../src/config/categorySuggestions.js';
 import { checkOnlyDefaults } from '../src/db/dataCheck.js';
-import { DEFAULT_CATEGORIES, ensureDefaultCategories } from '../src/db/defaults.js';
 
+import { client, register } from './helpers/api.js';
 import { createTestContext } from './helpers/context.js';
 
 const ctx = createTestContext();
+const app = createApp(ctx);
 
 afterAll(async () => {
   await ctx.db.$disconnect();
 });
 
-describe('seed: default categories only', () => {
-  it('a fresh database holds only the nine default categories after setup', async () => {
-    await ensureDefaultCategories(ctx.db);
-    await ensureDefaultCategories(ctx.db); // idempotent (the server runs it on every start)
+describe('no seeded data', () => {
+  it('a fresh database is empty: categories are per company, never seeded', async () => {
     const result = await checkOnlyDefaults(ctx.db);
     expect(result).toEqual({
       ok: true,
-      counts: { users: 0, workspaces: 0, companies: 0, bills: 0, payments: 0, notifications: 0 },
-      defaultCategories: 11,
-      customCategories: 0,
+      counts: { users: 0, workspaces: 0, companies: 0, categories: 0, bills: 0, payments: 0, notifications: 0 },
     });
-    const names = (await ctx.db.category.findMany({ orderBy: { name: 'asc' } })).map((c) => c.name);
-    expect(names).toEqual(DEFAULT_CATEGORIES.map((c) => c.name).sort());
   });
 
-  it('flags anything beyond the defaults', async () => {
-    await ctx.db.user.create({ data: { name: 'x', email: 'x@y.test', passwordHash: 'x' } });
+  it('a new workspace’s first company starts with the suggestions, or empty when asked', async () => {
+    const s = await register(app, 'Seed', 'seed@test.test');
+    const a = await client(app, s).post('/api/v1/workspaces').send({ name: 'Suggested', timezone: 'UTC' });
+    const cats = await client(app, s, a.body.id).get('/api/v1/categories');
+    expect(cats.body.map((c: { name: string }) => c.name)).toEqual(CATEGORY_SUGGESTIONS.map((c) => c.name));
+    const b = await client(app, s).post('/api/v1/workspaces').send({ name: 'Empty', timezone: 'UTC', categoryStart: { mode: 'empty' } });
+    expect((await client(app, s, b.body.id).get('/api/v1/categories')).body).toEqual([]);
+  });
+
+  it('flags anything in the database', async () => {
     expect((await checkOnlyDefaults(ctx.db)).ok).toBe(false);
   });
 });

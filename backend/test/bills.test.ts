@@ -97,7 +97,9 @@ describe('listing bills', () => {
     expect(beta).toHaveLength(3);
     expect((await list({ companyId: `${fx.companies.alpha},${fx.companies.beta}` })).body.total).toBe(12);
 
-    const hosting = (await list({ categoryId: fx.categories['Hosting & domains']! })).body;
+    // Categories belong to a company: Alpha's "Hosting & domains" has 3 bills, Beta's has 2.
+    expect((await list({ categoryId: fx.categories['Hosting & domains']! })).body.total).toBe(3);
+    const hosting = (await list({ categoryId: `${fx.categories['Hosting & domains']},${fx.categoriesOf.beta['Hosting & domains']}` })).body;
     expect(hosting.total).toBe(5);
 
     expect((await list({ frequency: 'WEEK' })).body.items.map((r: Row) => r.name)).toEqual(['Cleaning']);
@@ -107,7 +109,7 @@ describe('listing bills', () => {
     expect(nov.map((r) => r.nextDueDate)).toEqual(['2026-11-05', '2026-11-06', '2026-11-20', '2026-11-30']);
 
     // Filters combine.
-    const combined = await list({ companyId: fx.companies.beta, categoryId: fx.categories['Hosting & domains']!, sort: 'amount_desc' });
+    const combined = await list({ companyId: fx.companies.beta, categoryId: fx.categoriesOf.beta['Hosting & domains']!, sort: 'amount_desc' });
     expect(combined.body.items.map((r: Row) => r.name)).toEqual(['Hosting', 'Domain renewal']);
   });
 
@@ -248,7 +250,7 @@ describe('creating and editing', () => {
     const outsider = await register(app, 'Out Sider', 'outsider@else.test');
     const other = await createWorkspace(app, outsider, 'Elsewhere');
     const theirCompany = (await client(app, outsider, other).get('/api/v1/companies')).body[0].id;
-    const theirCategory = await client(app, outsider, other).post('/api/v1/categories').send({ name: 'Secret', icon: 'tag', color: '#123456' });
+    const theirCategory = await client(app, outsider, other).post('/api/v1/categories').send({ companyId: theirCompany, name: 'Secret', icon: 'tag', color: '#123456' });
     expect((await fx.as('admin').post('/api/v1/bills').send({ ...base(), companyId: theirCompany })).status).toBe(400);
     expect((await fx.as('admin').post('/api/v1/bills').send({ ...base(), categoryId: theirCategory.body.id })).status).toBe(400);
   });
@@ -274,7 +276,7 @@ describe('creating and editing', () => {
       .patch(`/api/v1/bills/${id}`)
       .send({ companyId: fx.companies.alpha, categoryId: fx.categories['Marketing'] });
     expect(res.body).toMatchObject({ company: { name: 'Alpha News' }, category: { name: 'Marketing' } });
-    await fx.as('finance').patch(`/api/v1/bills/${id}`).send({ companyId: fx.companies.beta, categoryId: fx.categories['Social media'] });
+    await fx.as('finance').patch(`/api/v1/bills/${id}`).send({ companyId: fx.companies.beta, categoryId: fx.categoriesOf.beta['Social media'] });
   });
 });
 
@@ -286,7 +288,7 @@ describe('account references', () => {
     const res = await fx.as('admin').post('/api/v1/bills').send({
       name: 'Adobe CC',
       companyId: fx.companies.beta,
-      categoryId: fx.categories['Technology & software'],
+      categoryId: fx.categoriesOf.beta['Technology & software'],
       amountCents: 5_999,
       frequencyUnit: 'MONTH',
       accountReference: KEY,
@@ -368,7 +370,7 @@ describe('archive, unarchive and delete', () => {
   });
 
   it('a category in use cannot be deleted', async () => {
-    const custom = await fx.as('admin').post('/api/v1/categories').send({ name: 'Licences', icon: 'key', color: '#6D36CC' });
+    const custom = await fx.as('admin').post('/api/v1/categories').send({ companyId: fx.companies.alpha, name: 'Licences', icon: 'key', color: '#6D36CC' });
     await fx.as('admin')
       .post('/api/v1/bills')
       .send({ name: 'Figma', companyId: fx.companies.alpha, categoryId: custom.body.id, amountCents: 1500, frequencyUnit: 'MONTH' });

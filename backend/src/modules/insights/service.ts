@@ -7,6 +7,7 @@ import { scopedCompanies, viewsFor } from '../bills/service.js';
 import { billInclude, type BillView } from '../bills/view.js';
 
 import { addMonthsKey, lastMonths, monthRange, occurrencesBetween } from './projection.js';
+import { byCompany, cycleScope, cyclesIn, periodAnalysis, totalsOf } from './views.js';
 
 /**
  * Dashboard, calendar and reports. Everything is US dollars in integer cents, computed
@@ -111,28 +112,26 @@ export async function dashboard(ctx: AppContext, req: Request, companyId?: strin
   const weekEnd = addDays(today, DUE_SOON_DAYS - 1);
   const active = views.filter((v) => v.status === 'ACTIVE');
 
+  // Cycle-level numbers (Part 4/5): every missed cycle counts, variable bills use their cycle amount.
+  const cs = await cycleScope(ctx, req, companyId);
+  const lastMonthKey = addMonthsKey(today.slice(0, 7), -1);
+  const lastMonthRange = monthRange(`${lastMonthKey}-01`);
+  const projectedEnd = monthRange(`${addMonthsKey(today.slice(0, 7), 3)}-01`).to;
+  const all = await cyclesIn(ctx, cs, addDays(today, -3660), projectedEnd);
+  const openDue = all.filter((c) => c.kind !== 'closed' && c.remainingCents > 0);
+  const overdueItems = openDue.filter((c) => c.state === 'OVERDUE');
+  const sumRemaining = (list: typeof all) => ({ amountCents: list.reduce((t, c) => t + c.remainingCents, 0), count: list.length });
+  const thisMonthItems = all.filter((c) => c.dueDate >= month.from && c.dueDate <= month.to);
+  const lastMonthItems = all.filter((c) => c.dueDate >= lastMonthRange.from && c.dueDate <= lastMonthRange.to);
+
   const summary = {
-    overdue: { amountCents: 0, count: 0 },
-    dueThisWeek: { amountCents: 0, count: 0 },
-    dueThisMonth: { amountCents: 0, count: 0 },
+    overdue: sumRemaining(overdueItems),
+    dueThisWeek: sumRemaining(openDue.filter((c) => c.dueDate >= today && c.dueDate <= weekEnd)),
+    // Still to pay from today to the end of the month.
+    dueThisMonth: sumRemaining(openDue.filter((c) => c.dueDate >= today && c.dueDate <= month.to)),
+    /** Anything due on or before today and not paid, including missed cycles. */
+    outstanding: sumRemaining(openDue.filter((c) => c.dueDate <= today)),
   };
-  for (const v of active) {
-    if (v.paymentStatus === 'OVERDUE') {
-      summary.overdue.amountCents += v.remainingCents;
-      summary.overdue.count++;
-      continue;
-    }
-    for (const occ of occurrencesBetween(s.rowById.get(v.id)!, today, month.to)) {
-      const amount = occ.kind === 'current' ? v.remainingCents : v.amountCents;
-      if (amount === 0) continue;
-      summary.dueThisMonth.amountCents += amount;
-      summary.dueThisMonth.count++;
-      if (occ.date <= weekEnd) {
-        summary.dueThisWeek.amountCents += amount;
-        summary.dueThisWeek.count++;
-      }
-    }
-  }
 
   // Payments over the last 24 months feed "paid this month", the trend, and the breakdowns.
   const thisMonth = today.slice(0, 7);
@@ -178,6 +177,40 @@ export async function dashboard(ctx: AppContext, req: Request, companyId?: strin
     .filter((t) => t.amountCents > 0)
     .sort((a, b) => a.date.localeCompare(b.date) || a.bill.name.localeCompare(b.bill.name));
 
+  // Last month at a glance: what was due, what was paid (on time or late) and what is still open.
+  const lastPayments = await ctx.db.paymentRecord.findMany({
+    where: { workspaceId: s.workspaceId, cycleDueDate: { gte: lastMonthRange.from, lte: lastMonthRange.to }, bill: s.companyWhere },
+    select: { billId: true, cycleDueDate: true, paidOn: true },
+  });
+  const lastPaidOn = new Map<string, string>();
+  for (const p of lastPayments) {
+    const k = `${p.billId}|${p.cycleDueDate}`;
+    if (!lastPaidOn.has(k) || p.paidOn > lastPaidOn.get(k)!) lastPaidOn.set(k, p.paidOn);
+  }
+  const lastPaid = lastMonthItems.filter((c) => c.state === 'PAID');
+  const lastOnTime = lastPaid.filter((c) => (lastPaidOn.get(`${c.bill.id}|${c.dueDate}`) ?? c.dueDate) <= c.dueDate).length;
+  const lastMonth = {
+    month: lastMonthKey,
+    ...totalsOf(lastMonthItems),
+    paidCount: lastPaid.length,
+    onTime: lastOnTime,
+    late: lastPaid.length - lastOnTime,
+    unpaid: lastMonthItems.filter((c) => c.remainingCents > 0).length,
+  };
+
+  // 6 past months (paid) + this month + 3 projected months (due), for the cash-flow chart.
+  const flowMonths = Array.from({ length: 10 }, (_, i) => addMonthsKey(today.slice(0, 7), i - 6));
+  const cashflow = flowMonths.map((m) => {
+    const due = all.filter((c) => c.dueDate.startsWith(m));
+    return {
+      month: m,
+      paidCents: byMonth.get(m) ?? 0,
+      dueCents: due.reduce((t, c) => t + c.expectedCents, 0),
+      remainingCents: due.reduce((t, c) => t + c.remainingCents, 0),
+      projected: m > today.slice(0, 7),
+    };
+  });
+
   return {
     today,
     localHour: s.localHour,
@@ -185,6 +218,15 @@ export async function dashboard(ctx: AppContext, req: Request, companyId?: strin
       ...summary,
       paidThisMonth: { amountCents: paidThisMonth, count: paidThisMonthCount, changePercent: pctChange(paidThisMonth, paidLastMonth) },
     },
+    /** This month in full (total due, paid, remaining). */
+    thisMonth: totalsOf(thisMonthItems),
+    lastMonth,
+    cashflow,
+    /** This month per company (the "All companies" breakdown). */
+    companies: byCompany(thisMonthItems).map((c) => ({
+      ...c,
+      overdueCents: overdueItems.filter((o) => o.bill.company.id === c.company.id).reduce((t, o) => t + o.remainingCents, 0),
+    })),
     needsAttention: attention.slice(0, 5).map(lite),
     needsAttentionCount: attention.length,
     next30Days: timeline.slice(0, 20),
@@ -192,6 +234,15 @@ export async function dashboard(ctx: AppContext, req: Request, companyId?: strin
     byCategory: buckets(lastYear.map((p) => ({ key: p.bill.category, amountCents: p.amountCents }))),
     byCompany: buckets(lastYear.map((p) => ({ key: p.bill.company, amountCents: p.amountCents }))),
     counts: { active: active.length, total: views.length, overdue: summary.overdue.count, upcoming30: timeline.length },
+    /** The Bills-tab segment counts. */
+    segments: {
+      upcoming: openDue.filter((c) => c.dueDate >= today && c.dueDate <= addDays(today, 29)).length,
+      thisMonth: thisMonthItems.length,
+      nextMonth: all.filter((c) => c.dueDate.startsWith(addMonthsKey(today.slice(0, 7), 1))).length,
+      overdue: overdueItems.length,
+      outstanding: summary.outstanding.count,
+      paid: thisMonthItems.filter((c) => c.state === 'PAID').length,
+    },
   };
 }
 
@@ -301,8 +352,10 @@ export async function report(ctx: AppContext, req: Request, period: ReportPeriod
     }
   }
 
-  const overdueItems = active.filter((v) => v.paymentStatus === 'OVERDUE').map(lite);
+  // Overdue now (every missed cycle counts), from the cycle engine.
+  const overdueItems = active.filter((v) => v.paymentStatus === 'OVERDUE').map((v) => ({ ...lite(v), remainingCents: v.overdueCents, overdueCycles: v.overdueCycles }));
   const overdue = overdueItems.reduce((sum, o) => sum + o.remainingCents, 0);
+  const analysis = await periodAnalysis(ctx, req, from, to, companyId);
 
   // 12-month forecast from the current month.
   const forecastMonths = Array.from({ length: 12 }, (_, i) => addMonthsKey(today.slice(0, 7), i));
@@ -326,6 +379,9 @@ export async function report(ctx: AppContext, req: Request, period: ReportPeriod
     to,
     today,
     workspace: { name: s.workspace.name },
+    company: analysis.company,
+    /** Payment report, ageing, upcoming, per company, categories and the period's cycles (Part 6). */
+    analysis,
     totals: {
       committed: { amountCents: paid + outstanding, count: payments.length + outstandingItems.length },
       paid: { amountCents: paid, count: payments.length },

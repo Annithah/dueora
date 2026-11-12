@@ -7,8 +7,8 @@ import { ApiError } from '@/api';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
-import { Avatar, BottomSheet, Card, EmptyState, ListItem, SectionHeader, Text, toast } from '@/components/ui';
-import { createCompany, unarchiveCompany, useCompanies, useListMutation } from '@/features/catalog/api';
+import { Avatar, BottomSheet, Card, Chip, EmptyState, ListItem, SectionHeader, Segmented, Select, Text, toast } from '@/components/ui';
+import { createCompany, unarchiveCompany, useCategorySuggestions, useCompanies, useListMutation } from '@/features/catalog/api';
 import { CompanyForm } from '@/features/catalog/CompanyForm';
 import { ROLE_LABELS, usePermissions } from '@/features/workspaces/api';
 import { formatUSD } from '@/lib/money';
@@ -21,6 +21,12 @@ export default function CompaniesSettings() {
   const create = useListMutation('companies', createCompany);
   const restore = useListMutation('companies', unarchiveCompany);
   const [adding, setAdding] = useState(false);
+  // How the new company's categories start (Finalize brief, Part 3).
+  const [start, setStart] = useState<'suggestions' | 'empty' | 'copy'>('suggestions');
+  const [copyFrom, setCopyFrom] = useState<string | null>(null);
+  const suggestions = useCategorySuggestions();
+  const [picked, setPicked] = useState<string[] | null>(null);
+  const pickedNames = picked ?? (suggestions.data ?? []).map((s) => s.name);
   const fail = (e: unknown) => toast.error('Could not save', e instanceof ApiError ? e.message : undefined);
 
   return (
@@ -108,11 +114,52 @@ export default function CompaniesSettings() {
 
       <BottomSheet visible={adding} onClose={() => setAdding(false)} title="New company">
         {adding ? (
+          <View style={{ gap: 14 }}>
+            <Text variant="label">Categories to start with</Text>
+            <Segmented
+              accessibilityLabel="Categories to start with"
+              value={start}
+              onChange={setStart}
+              options={[
+                { value: 'suggestions', label: 'Suggestions' },
+                { value: 'copy', label: 'Copy' },
+                { value: 'empty', label: 'Empty' },
+              ]}
+            />
+            {start === 'suggestions' ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {(suggestions.data ?? []).map((s) => (
+                  <Chip
+                    key={s.name}
+                    label={s.name}
+                    showCheck
+                    selected={pickedNames.includes(s.name)}
+                    onPress={() => setPicked(pickedNames.includes(s.name) ? pickedNames.filter((n) => n !== s.name) : [...pickedNames, s.name])}
+                  />
+                ))}
+              </View>
+            ) : null}
+            {start === 'copy' ? (
+              <Select
+                label="Copy categories from"
+                value={copyFrom}
+                options={(companies.data ?? []).filter((c) => !c.archived).map((c) => ({ value: c.id, label: c.name }))}
+                onChange={setCopyFrom}
+              />
+            ) : null}
           <CompanyForm
             submitLabel="Add company"
             loading={create.isPending}
             onSubmit={(fields) =>
-              create.mutate(fields, {
+              create.mutate({
+                ...fields,
+                categoryStart:
+                  start === 'copy' && copyFrom
+                    ? { mode: 'copy', fromCompanyId: copyFrom }
+                    : start === 'suggestions'
+                      ? { mode: 'suggestions', names: pickedNames, withSubcategories: true }
+                      : { mode: 'empty' },
+              }, {
                 onSuccess: (c) => {
                   setAdding(false);
                   toast.success(`${c.name} added`);
@@ -121,6 +168,7 @@ export default function CompaniesSettings() {
               })
             }
           />
+          </View>
         ) : null}
       </BottomSheet>
     </Screen>

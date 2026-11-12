@@ -11,6 +11,7 @@ import {
   Ellipsis,
   Gift,
   Moon,
+  PencilLine,
   Repeat,
   TrendingDown,
   TrendingUp,
@@ -34,6 +35,7 @@ import {
   CountdownRing,
   EmptyState,
   IconButton,
+  Input,
   ListItem,
   SectionHeader,
   StatusBadge,
@@ -49,13 +51,16 @@ import {
   useSnooze,
   useDeleteBill,
   useBill,
+  useBillCycles,
+  useSetCycleAmount,
+  type BillCycle,
   type BillDetail,
 } from '@/features/bills/api';
 import { RecordPaymentSheet } from '@/features/bills/RecordPaymentSheet';
-import { useCompanyRole } from '@/features/catalog/api';
+import { useCompanyRole, useCustomFields } from '@/features/catalog/api';
 import { permissionsFor, useWorkspaceToday } from '@/features/workspaces/api';
 import { formatDate, humanSpan } from '@/lib/dates';
-import { formatUSD } from '@/lib/money';
+import { centsToInput, formatUSD, parseUSDInput } from '@/lib/money';
 import { useTheme } from '@/theme';
 
 function offsetLabel(offset: number): string {
@@ -92,6 +97,7 @@ function Detail({
   // A new key per opening gives the sheet fresh fields every time.
   const [recordKey, setRecordKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [amountOpen, setAmountOpen] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(intent === 'snooze' && o.status === 'ACTIVE');
   const snooze = useSnooze(o.id);
   const muted = o.muted;
@@ -111,8 +117,13 @@ function Detail({
           {o.name}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginVertical: 6 }}>
-          <Text variant="amountXL">{formatUSD(o.amountCents)}</Text>
+          <Text variant="amountXL">{formatUSD(active ? o.cycleAmountCents : o.amountCents)}</Text>
         </View>
+        {o.amountType === 'VARIABLE' ? (
+          <Text variant="smallStrong" tone={o.isEstimate ? 'muted' : 'primary'} style={{ marginBottom: 6 }}>
+            {o.isEstimate ? 'Estimated · variable amount' : `This cycle’s real amount · estimate ${formatUSD(o.amountCents)}`}
+          </Text>
+        ) : null}
         <StatusBadge status={o.paymentStatus} />
         {o.paidCents > 0 && active ? (
           <Text variant="small" color={colors.purple} style={{ marginTop: 6 }}>
@@ -150,6 +161,27 @@ function Detail({
           </Text>
         </Card>
       )}
+
+      {active && o.missedCycles > 0 ? (
+        <Card tone="accent" style={{ gap: 4 }}>
+          <Text variant="bodyStrong">
+            {o.overdueCycles} cycles overdue · {formatUSD(o.overdueCents)} owed
+          </Text>
+          <Text variant="small" tone="muted">
+            Payments go to the oldest cycle first ({formatDate(o.nextDueDate)}); each one paid moves on to the next.
+          </Text>
+        </Card>
+      ) : null}
+
+      {active && canManage ? (
+        <Button
+          variant="secondary"
+          icon={<PencilLine size={18} color={colors.primaryStrong} />}
+          onPress={() => setAmountOpen(true)}
+        >
+          {o.amountType === 'VARIABLE' ? 'Set this cycle’s amount' : 'Change this cycle’s amount'}
+        </Button>
+      ) : null}
 
       {active && (o.isTrial || o.autoRenew || o.snoozedUntil) ? (
         <View style={{ gap: 8 }}>
@@ -235,6 +267,9 @@ function Detail({
           </Text>
         ) : null}
       </View>
+
+      <CustomValuesCard bill={o} />
+      <CyclesCard billId={o.id} />
 
       {o.reminders.length ? (
         <View>
@@ -369,6 +404,8 @@ function Detail({
           </Button>
         </View>
       ) : null}
+
+      <CycleAmountSheet bill={o} visible={amountOpen} onClose={() => setAmountOpen(false)} />
 
       <RecordPaymentSheet
         key={recordKey}
@@ -568,5 +605,110 @@ export default function BillDetailScreen() {
         }
       </QueryState>
     </Screen>
+  );
+}
+
+const CYCLE_LABEL: Record<BillCycle['state'], string> = {
+  PAID: 'Paid',
+  PARTIALLY_PAID: 'Part paid',
+  OVERDUE: 'Overdue',
+  DUE_TODAY: 'Due today',
+  DUE_SOON: 'Due soon',
+  UPCOMING: 'Upcoming',
+};
+
+/** Past and coming cycles with their own amounts (history stays exact when the amount changes). */
+function CyclesCard({ billId }: { billId: string }) {
+  const { colors } = useTheme();
+  const cycles = useBillCycles(billId);
+  const list = (cycles.data?.cycles ?? []).filter((c) => c.kind !== 'future').slice(-6).reverse();
+  const next = (cycles.data?.cycles ?? []).filter((c) => c.kind === 'future').slice(0, 2);
+  if (!list.length && !next.length) return null;
+  return (
+    <View>
+      <SectionHeader title="Cycles" />
+      <Card padding={0} style={{ overflow: 'hidden' }}>
+        {[...next.reverse(), ...list].map((c, i) => (
+          <ListItem
+            key={c.dueDate}
+            divider={i > 0}
+            title={formatDate(c.dueDate)}
+            subtitle={`${CYCLE_LABEL[c.state]}${c.isEstimate ? ' · estimate' : ''}${c.daysOverdue ? ` · ${c.daysOverdue} days late` : ''}`}
+            trailing={
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text variant="bodyStrong" color={c.state === 'OVERDUE' ? colors.red : undefined}>
+                  {formatUSD(c.expectedCents)}
+                </Text>
+                {c.paidCents > 0 && c.remainingCents > 0 ? (
+                  <Text variant="caption" tone="muted">
+                    {formatUSD(c.remainingCents)} left
+                  </Text>
+                ) : null}
+              </View>
+            }
+          />
+        ))}
+      </Card>
+    </View>
+  );
+}
+
+/** The company's custom fields on this bill. */
+function CustomValuesCard({ bill }: { bill: BillDetail }) {
+  const fields = useCustomFields(bill.company.id);
+  const shown = (fields.data ?? []).filter((f) => (!f.categoryIds || f.categoryIds.includes(bill.category.id)) && bill.customValues[f.id] !== undefined);
+  if (!shown.length) return null;
+  return (
+    <View>
+      <SectionHeader title="More details" />
+      <Card padding={0} style={{ overflow: 'hidden' }}>
+        {shown.map((f, i) => (
+          <ListItem
+            key={f.id}
+            divider={i > 0}
+            title={f.name}
+            trailing={<Text variant="bodyStrong">{f.type === 'DATE' ? formatDate(String(bill.customValues[f.id])) : String(bill.customValues[f.id])}</Text>}
+          />
+        ))}
+      </Card>
+    </View>
+  );
+}
+
+/** Set the open cycle's real amount (variable bills) or change it once (fixed bills). */
+function CycleAmountSheet({ bill, visible, onClose }: { bill: BillDetail; visible: boolean; onClose: () => void }) {
+  const set = useSetCycleAmount(bill.id);
+  const [value, setValue] = useState(centsToInput(bill.cycleAmountCents));
+  const cents = parseUSDInput(value);
+  return (
+    <BottomSheet visible={visible} onClose={onClose} title="This cycle’s amount" eyebrow={`${bill.name} · due ${formatDate(bill.nextDueDate)}`}>
+      <View style={{ gap: 14 }}>
+        <Text variant="small" tone="muted">
+          {bill.amountType === 'VARIABLE'
+            ? `The estimate is ${formatUSD(bill.amountCents)}. Enter the real amount on the bill; later cycles keep the estimate until you set them.`
+            : 'Only this cycle changes. To change every cycle, edit the bill’s amount instead.'}
+        </Text>
+        <Input label="Amount (USD)" value={value} onChangeText={setValue} keyboardType="decimal-pad" autoFocus error={value && cents === null ? 'Enter an amount like 45.50' : undefined} />
+        <Button
+          full
+          disabled={cents === null || cents <= 0}
+          loading={set.isPending}
+          onPress={() =>
+            set.mutate(
+              { dueDate: bill.nextDueDate, amountCents: cents! },
+              {
+                onSuccess: () => {
+                  toast.success('Amount saved');
+                  onClose();
+                },
+                onError: (e) => toast.error('Could not save', e instanceof ApiError ? e.message : undefined),
+              },
+            )
+          }
+        >
+          Save amount
+        </Button>
+      </View>
+    </BottomSheet>
   );
 }

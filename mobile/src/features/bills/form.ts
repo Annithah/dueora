@@ -47,6 +47,10 @@ export const formSchema = z
     isTrial: z.boolean(),
     trialEndsOn: z.string(),
     defaultPaymentMethod: z.enum(['', 'MOBILE_MONEY', 'BANK_TRANSFER', 'CARD', 'CASH', 'OTHER']),
+    /** FIXED, or VARIABLE (the amount is an estimate). */
+    amountType: z.enum(['FIXED', 'VARIABLE']),
+    /** { [customFieldId]: typed text } — checked by the server against the company's fields. */
+    customValues: z.record(z.string(), z.string()),
   })
   .superRefine((v, ctx) => {
     if (v.isTrial && !v.trialEndsOn) ctx.addIssue({ code: 'custom', path: ['trialEndsOn'], message: 'When does the free trial end?' });
@@ -96,6 +100,8 @@ export function defaultsFrom(
       isTrial: false,
       trialEndsOn: '',
       defaultPaymentMethod: '',
+      amountType: 'FIXED',
+      customValues: {},
     };
   }
   return {
@@ -119,6 +125,8 @@ export function defaultsFrom(
     isTrial: s.isTrial,
     trialEndsOn: s.trialEndsOn ?? '',
     defaultPaymentMethod: s.defaultPaymentMethod ?? '',
+    amountType: s.amountType ?? 'FIXED',
+    customValues: Object.fromEntries(Object.entries(s.customValues ?? {}).map(([k, v]) => [k, String(v)])),
   };
 }
 
@@ -140,6 +148,8 @@ export function toInput(v: FormValues, existing?: Bill): BillInput {
     isTrial: v.isTrial,
     trialEndsOn: v.isTrial ? v.trialEndsOn : null,
     defaultPaymentMethod: (v.defaultPaymentMethod || null) as PaymentMethod | null,
+    amountType: v.amountType,
+    customValues: Object.fromEntries(Object.entries(v.customValues).map(([k, val]) => [k, val.trim() || null])),
   };
   // New: always send the date shown. Edit: only when changed, so the server can re-derive it.
   if (!existing || v.nextDueDate !== existing.nextDueDate) input.nextDueDate = v.nextDueDate;

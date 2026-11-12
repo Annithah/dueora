@@ -19,6 +19,8 @@ const RecordBody = z
     method: method.optional(),
     reference: text(100).optional(),
     notes: text(2000).optional(),
+    /** Close the cycle at this payment even if it is less than expected (a variable bill's real amount, a discount). */
+    paidInFull: z.boolean().optional(),
   })
   .strict();
 

@@ -144,10 +144,10 @@ export function useRateMessage() {
   });
 }
 
-export async function suggestCategory(name: string, provider?: string) {
+export async function suggestCategory(name: string, provider?: string, companyId?: string) {
   const r = await api.post<{
-    suggestion: { categoryId: string; categoryName: string; source: string } | null;
-  }>('/ai/suggest-category', { name, provider });
+    suggestion: { categoryId: string | null; categoryName: string; source: string } | null;
+  }>('/ai/suggest-category', { name, provider, companyId });
   return r.suggestion;
 }
 

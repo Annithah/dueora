@@ -46,8 +46,16 @@ export interface Dashboard {
     overdue: MoneyBlock;
     dueThisWeek: MoneyBlock;
     dueThisMonth: MoneyBlock;
+    /** Everything due and not paid, missed cycles included. */
+    outstanding: MoneyBlock;
     paidThisMonth: MoneyBlock & { changePercent: number | null };
   };
+  thisMonth: CycleTotals;
+  lastMonth: CycleTotals & { month: string; paidCount: number; onTime: number; late: number; unpaid: number };
+  /** 6 past months, this month and 3 projected months. */
+  cashflow: { month: string; paidCents: number; dueCents: number; remainingCents: number; projected: boolean }[];
+  companies: (CycleTotals & { company: { id: string; name: string; color: string }; overdueCents: number })[];
+  segments: { upcoming: number; thisMonth: number; nextMonth: number; overdue: number; outstanding: number; paid: number };
   needsAttention: BillLite[];
   needsAttentionCount: number;
   next30Days: { date: string; bill: BillLite; amountCents: number; status: PaymentStatus }[];
@@ -81,6 +89,33 @@ export interface Report {
   months: { month: string; paidCents: number; outstandingCents: number }[];
   forecast: { month: string; amountCents: number }[];
   overdue: BillLite[];
+  company: { id: string; name: string } | null;
+  analysis: ReportAnalysis;
+}
+
+/** The payment report and its sections (Finalize brief, Part 6). */
+export interface ReportAnalysis {
+  generatedOn: string;
+  due: CycleTotals;
+  timing: { paid: number; onTime: number; late: number; unpaid: number; unpaidCents: number };
+  paidInPeriodCents: number;
+  previous: { from: string; to: string; paidCents: number; changePercent: number | null };
+  byMethod: { method: PaymentMethod; count: number; amountCents: number }[];
+  variable: { billId: string; name: string; company: string; dueDate: string; estimateCents: number; actualCents: number | null }[];
+  perCompany: (CycleTotals & { company: { id: string; name: string; color: string }; onTime: number; late: number; unpaid: number })[];
+  ageing: { bucket: string; count: number; amountCents: number }[];
+  upcoming: { days30: CycleTotals; days60: CycleTotals; days90: CycleTotals };
+  categories: {
+    id: string;
+    name: string;
+    color: string;
+    icon: string;
+    expectedCents: number;
+    paidCents: number;
+    remainingCents: number;
+    count: number;
+    subcategories: { id: string; name: string; expectedCents: number; count: number }[];
+  }[];
 }
 
 export interface HistoryItem {
@@ -210,4 +245,57 @@ export async function downloadAndShare(path: string, fileName: string, mimeType:
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: fileName });
   }
+}
+
+export type ViewName = 'upcoming' | 'this-month' | 'next-month' | 'outstanding' | 'overdue' | 'paid' | 'obligations';
+
+export interface CycleTotals {
+  count: number;
+  expectedCents: number;
+  paidCents: number;
+  remainingCents: number;
+  estimatedCents: number;
+}
+
+export interface ViewItem {
+  dueDate: string;
+  kind: 'closed' | 'current' | 'missed' | 'future';
+  expectedCents: number;
+  isEstimate: boolean;
+  paidCents: number;
+  remainingCents: number;
+  state: 'PAID' | 'PARTIALLY_PAID' | 'OVERDUE' | 'DUE_TODAY' | 'DUE_SOON' | 'UPCOMING';
+  daysOverdue: number;
+  nextReminder: string | null;
+  bill: {
+    id: string;
+    name: string;
+    provider: string | null;
+    amountType: 'FIXED' | 'VARIABLE';
+    company: { id: string; name: string; color: string };
+    category: { id: string; name: string; icon: string; color: string };
+  };
+}
+
+export interface TrackingView {
+  view: ViewName;
+  from: string;
+  to: string;
+  today: string;
+  totals: CycleTotals;
+  byCompany: (CycleTotals & { company: { id: string; name: string; color: string } })[];
+  ageing?: { bucket: string; count: number; amountCents: number }[];
+  items: ViewItem[];
+}
+
+/** A tracking view computed by the server (follows the company switcher). */
+export function useView(view: ViewName, opts: { days?: number; enabled?: boolean } = {}) {
+  const workspaceId = useWorkspaceId();
+  const companyId = useSelectedCompanyId();
+  return useQuery({
+    queryKey: ['views', workspaceId, view, opts.days ?? null, companyId ?? 'all'],
+    queryFn: () => api.get<TrackingView>(`/views/${view}`, { days: opts.days, companyId }),
+    enabled: !!workspaceId && opts.enabled !== false,
+    placeholderData: keepPreviousData,
+  });
 }

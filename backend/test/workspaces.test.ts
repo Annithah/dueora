@@ -98,7 +98,7 @@ describe('companies', () => {
   let companyId: string;
 
   it('creates, renames and lists companies; names are unique per workspace', async () => {
-    const res = await asAdmin().post('/api/v1/companies').send({ name: 'Radio Two', color: '#3B82F6' });
+    const res = await asAdmin().post('/api/v1/companies').send({ name: 'Radio Two', color: '#3B82F6', categoryStart: { mode: 'suggestions' } });
     expect(res.status).toBe(201);
     companyId = res.body.id;
     expect((await asAdmin().post('/api/v1/companies').send({ name: 'Radio Two' })).status).toBe(409);
@@ -111,7 +111,7 @@ describe('companies', () => {
     const unused = await asAdmin().post('/api/v1/companies').send({ name: 'Unused' });
     expect((await asAdmin().delete(`/api/v1/companies/${unused.body.id}`)).status).toBe(204);
 
-    const cats = await asAdmin().get('/api/v1/categories');
+    const cats = await asAdmin().get('/api/v1/categories').query({ companyId });
     await asAdmin()
       .post('/api/v1/bills')
       .send({ name: 'Streaming', companyId, categoryId: cats.body[0].id, amountCents: 999, frequencyUnit: 'MONTH' });
@@ -145,35 +145,87 @@ describe('companies', () => {
 });
 
 describe('categories', () => {
-  it('lists the eleven defaults first, then custom ones', async () => {
-    const res = await asAdmin().get('/api/v1/categories');
-    const defaults = res.body.filter((c: { isDefault: boolean }) => c.isDefault).map((c: { name: string }) => c.name);
-    expect(defaults.sort()).toEqual(
-      [
-        'Technology & software',
-        'Hosting & domains',
-        'Communication & internet',
-        'Social media',
-        'Office & rent',
-        'Insurance',
-        'Marketing',
-        'Utilities',
-        'Transport',
-        'Education & training',
-        'Other',
-      ].sort(),
-    );
+  let companyId: string;
+
+  it('belong to a company; the first company starts with the suggestions', async () => {
+    companyId = (await asAdmin().get('/api/v1/companies')).body[0].id;
+    const list = (await asAdmin().get('/api/v1/categories').query({ companyId })).body as { name: string; companyId: string }[];
+    expect(list.length).toBeGreaterThan(5);
+    expect(list.every((c) => c.companyId === companyId)).toBe(true);
+    expect(list.map((c) => c.name)).toContain('Insurance');
   });
 
-  it('creates, edits and deletes custom categories; defaults are protected', async () => {
-    const created = await asAdmin().post('/api/v1/categories').send({ name: 'Licences', icon: 'key', color: '#7C3AED' });
+  it('creates with sub-categories, edits, archives and deletes; names are unique per company', async () => {
+    const created = await asAdmin()
+      .post('/api/v1/categories')
+      .send({ companyId, name: 'Licences', icon: 'key', color: '#7C3AED', subcategories: ['Design', 'Office'], defaultFrequencyUnit: 'YEAR' });
     expect(created.status).toBe(201);
-    expect((await asAdmin().post('/api/v1/categories').send({ name: 'Insurance', icon: 'shield', color: '#157A53' })).status).toBe(409);
+    expect(created.body.defaults.frequencyUnit).toBe('YEAR');
+    const subs = (await asAdmin().get('/api/v1/categories').query({ companyId })).body.filter((c: { parentId: string | null }) => c.parentId === created.body.id);
+    expect(subs.map((c: { name: string }) => c.name).sort()).toEqual(['Design', 'Office']);
+    // One level only.
+    expect((await asAdmin().post('/api/v1/categories').send({ companyId, name: 'Deep', parentId: subs[0].id })).status).toBe(400);
+    expect((await asAdmin().post('/api/v1/categories').send({ companyId, name: 'Insurance', icon: 'shield', color: '#157A53' })).status).toBe(409);
     expect((await asAdmin().patch(`/api/v1/categories/${created.body.id}`).send({ name: 'Licenses' })).body.name).toBe('Licenses');
-    const builtIn = (await asAdmin().get('/api/v1/categories')).body.find((c: { isDefault: boolean }) => c.isDefault);
-    expect((await asAdmin().patch(`/api/v1/categories/${builtIn.id}`).send({ name: 'Mine' })).status).toBe(404);
-    expect((await asAdmin().delete(`/api/v1/categories/${builtIn.id}`)).status).toBe(404);
+
+    const archived = await asAdmin().post(`/api/v1/categories/${created.body.id}/archive`);
+    expect(archived.body.archived).toBe(true);
+    expect((await asAdmin().get('/api/v1/categories').query({ companyId })).body.some((c: { id: string }) => c.id === created.body.id)).toBe(false);
+    expect((await asAdmin().post(`/api/v1/categories/${created.body.id}/unarchive`)).body.archived).toBe(false);
     expect((await asAdmin().delete(`/api/v1/categories/${created.body.id}`)).status).toBe(204);
+    // Its sub-categories became top level.
+    const after = (await asAdmin().get('/api/v1/categories').query({ companyId })).body.filter((c: { name: string }) => ['Design', 'Office'].includes(c.name));
+    expect(after.every((c: { parentId: string | null }) => c.parentId === null)).toBe(true);
+  });
+
+  it('merges and moves bills before deleting, and reorders', async () => {
+    const cats = (await asAdmin().get('/api/v1/categories').query({ companyId })).body as { id: string; name: string }[];
+    const from = cats.find((c) => c.name === 'Design')!;
+    const into = cats.find((c) => c.name === 'Office')!;
+    const bill = await asAdmin().post('/api/v1/bills').send({ name: 'Figma', companyId, categoryId: from.id, amountCents: 1500, frequencyUnit: 'MONTH' });
+    expect((await asAdmin().delete(`/api/v1/categories/${from.id}`)).status).toBe(409);
+    expect((await asAdmin().delete(`/api/v1/categories/${from.id}`).query({ moveToId: into.id })).status).toBe(204);
+    expect((await asAdmin().get(`/api/v1/bills/${bill.body.id}`)).body.category.id).toBe(into.id);
+
+    const ids = (await asAdmin().get('/api/v1/categories').query({ companyId })).body.filter((c: { parentId: string | null }) => !c.parentId).map((c: { id: string }) => c.id);
+    const reversed = [...ids].reverse();
+    expect((await asAdmin().post('/api/v1/categories/reorder').send({ companyId, ids: reversed })).status).toBe(204);
+    const now = (await asAdmin().get('/api/v1/categories').query({ companyId })).body.filter((c: { parentId: string | null }) => !c.parentId).map((c: { id: string }) => c.id);
+    expect(now).toEqual(reversed);
+  });
+
+  it('a new company can start empty, from suggestions, or as a copy', async () => {
+    const empty = await asAdmin().post('/api/v1/companies').send({ name: 'Empty Co' });
+    expect((await asAdmin().get('/api/v1/categories').query({ companyId: empty.body.id })).body).toEqual([]);
+    const picked = await asAdmin().post('/api/v1/companies').send({ name: 'Picked Co', categoryStart: { mode: 'suggestions', names: ['Utilities'], withSubcategories: true } });
+    const pickedCats = (await asAdmin().get('/api/v1/categories').query({ companyId: picked.body.id })).body.map((c: { name: string }) => c.name);
+    expect(pickedCats.sort()).toEqual(['Electricity', 'Utilities', 'Water']);
+    const copy = await asAdmin().post('/api/v1/companies').send({ name: 'Copy Co', categoryStart: { mode: 'copy', fromCompanyId: picked.body.id } });
+    const copyCats = (await asAdmin().get('/api/v1/categories').query({ companyId: copy.body.id })).body.map((c: { name: string }) => c.name);
+    expect(copyCats.sort()).toEqual(['Electricity', 'Utilities', 'Water']);
+    for (const c of [empty, picked, copy]) await asAdmin().delete(`/api/v1/companies/${c.body.id}`);
+  });
+
+  it('custom fields: at most 10, typed values checked on bills', async () => {
+    const cats = (await asAdmin().get('/api/v1/categories').query({ companyId })).body as { id: string; name: string }[];
+    const insurance = cats.find((c) => c.name === 'Insurance')!;
+    const meter = await asAdmin().post('/api/v1/custom-fields').query({ companyId }).send({ name: 'Meter no.', type: 'TEXT' });
+    expect(meter.status).toBe(201);
+    const kind = await asAdmin().post('/api/v1/custom-fields').query({ companyId }).send({ name: 'Plan', type: 'DROPDOWN', options: ['Basic', 'Pro'], required: true, categoryIds: [insurance.id] });
+    expect(kind.status).toBe(201);
+    expect((await asAdmin().post('/api/v1/custom-fields').query({ companyId }).send({ name: 'Bad', type: 'DROPDOWN', options: ['Only'] })).status).toBe(400);
+
+    const base = { name: 'Cover', companyId, categoryId: insurance.id, amountCents: 9_000, frequencyUnit: 'YEAR' };
+    expect((await asAdmin().post('/api/v1/bills').send(base)).status).toBe(400); // "Plan" is required here
+    expect((await asAdmin().post('/api/v1/bills').send({ ...base, customValues: { [kind.body.id]: 'Gold' } })).status).toBe(400);
+    const ok = await asAdmin().post('/api/v1/bills').send({ ...base, customValues: { [kind.body.id]: 'Pro', [meter.body.id]: ' M-42 ', junk: 'x' } });
+    expect(ok.status).toBe(201);
+    const detail = await asAdmin().get(`/api/v1/bills/${ok.body.id}`);
+    expect(detail.body.customValues).toEqual({ [kind.body.id]: 'Pro', [meter.body.id]: 'M-42' });
+
+    for (let i = 0; i < 8; i++) await asAdmin().post('/api/v1/custom-fields').query({ companyId }).send({ name: `F${i}`, type: 'NUMBER' });
+    expect((await asAdmin().post('/api/v1/custom-fields').query({ companyId }).send({ name: 'Eleventh', type: 'TEXT' })).status).toBe(409);
+    expect((await asAdmin().get('/api/v1/custom-fields').query({ companyId })).body).toHaveLength(10);
   });
 });
 
@@ -270,9 +322,10 @@ describe('role permissions on workspace routes', () => {
 
   it('only admins manage companies; finance manages categories; viewers are read-only', async () => {
     expect((await client(app, finance, workspaceId).post('/api/v1/companies').send({ name: 'Finance Co' })).status).toBe(403);
-    expect((await client(app, finance, workspaceId).post('/api/v1/categories').send({ name: 'F', icon: 'tag', color: '#000000' })).status).toBe(201);
+    const companyId = (await asAdmin().get('/api/v1/companies')).body[0].id;
+    expect((await client(app, finance, workspaceId).post('/api/v1/categories').send({ companyId, name: 'F', icon: 'tag', color: '#000000' })).status).toBe(201);
     expect((await client(app, viewer, workspaceId).post('/api/v1/companies').send({ name: 'Viewer Co' })).status).toBe(403);
-    expect((await client(app, viewer, workspaceId).post('/api/v1/categories').send({ name: 'V', icon: 'tag', color: '#000000' })).status).toBe(
+    expect((await client(app, viewer, workspaceId).post('/api/v1/categories').send({ companyId, name: 'V', icon: 'tag', color: '#000000' })).status).toBe(
       403,
     );
     expect((await client(app, viewer, workspaceId).get('/api/v1/companies')).status).toBe(200);

@@ -36,7 +36,7 @@ beforeAll(async () => {
   const members = await b.get('/api/v1/workspaces/current/members');
   bMemberId = members.body.find((m: { email: string }) => m.email === 'carol@b.test').id;
   bCompanyId = (await b.post('/api/v1/companies').send({ name: 'B-Company' })).body.id;
-  bCategoryId = (await b.post('/api/v1/categories').send({ name: 'B-Only', icon: 'tag', color: '#111111' })).body.id;
+  bCategoryId = (await b.post('/api/v1/categories').send({ companyId: bCompanyId, name: 'B-Only', icon: 'tag', color: '#111111' })).body.id;
   const created = await b.post('/api/v1/bills').send({
     name: 'B secret hosting',
     companyId: bCompanyId,

@@ -9,7 +9,7 @@ import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomSheet, Button, Card, Chip, EmptyState, Input, Select, Text, toast } from '@/components/ui';
 import { useDeleteBudget, useBudgets, useSaveBudget } from '@/features/budgets/api';
-import { useCategories } from '@/features/catalog/api';
+import { useCategories, useCompanies } from '@/features/catalog/api';
 import { usePermissions } from '@/features/workspaces/api';
 import { centsToInput, parseUSDInput } from '@/lib/money';
 import { useTheme } from '@/theme';
@@ -22,6 +22,9 @@ export default function BudgetsSettings() {
   const can = usePermissions();
   const budgets = useBudgets();
   const categories = useCategories();
+  const companies = useCompanies();
+  const categoryLabel = (c: { name: string; companyId: string; parent: { name: string } | null }) =>
+    `${(companies.data?.length ?? 0) > 1 ? `${companies.data?.find((x) => x.id === c.companyId)?.name ?? ''} · ` : ''}${c.parent ? `${c.parent.name} › ` : ''}${c.name}`;
   const save = useSaveBudget();
   const remove = useDeleteBudget();
   const [open, setOpen] = useState(false);
@@ -98,7 +101,8 @@ export default function BudgetsSettings() {
             onChange={setScope}
             options={[
               { value: WHOLE, label: 'Whole workspace' },
-              ...(categories.data ?? []).map((c) => ({ value: c.id, label: c.name })),
+              // Categories belong to a company: name the company when there are several.
+              ...(categories.data ?? []).map((c) => ({ value: c.id, label: categoryLabel(c) })),
             ]}
           />
           <Input label="Monthly limit (USD)" keyboardType="decimal-pad" placeholder="0.00" value={amount} onChangeText={setAmount} />

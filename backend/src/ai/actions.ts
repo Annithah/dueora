@@ -7,8 +7,9 @@ import type { PaymentMethod, Prisma } from '../generated/prisma/client.js';
 import { AppError, forbidden, notFound } from '../http/errors.js';
 import { accessOf, actorOf, workspaceIdOf } from '../http/middleware/auth.js';
 import { checkBudgetAlerts, upsertBudget } from '../modules/budgets/service.js';
+import { createCategory } from '../modules/categories/service.js';
 import { recordPayment } from '../modules/payments/service.js';
-import { createBill, loadBill, setArchived, snooze, updateBill, workspaceToday } from '../modules/bills/service.js';
+import { createBill, loadBill, setArchived, setCycleAmount, snooze, updateBill, workspaceToday } from '../modules/bills/service.js';
 import { audit } from '../modules/workspaces/service.js';
 import { prefsFor } from '../notifications/store.js';
 
@@ -27,6 +28,7 @@ const NEEDS: Record<ActionKind, WorkspaceAction | null> = {
   create_category: 'categories:manage',
   set_budget: 'budgets:manage',
   remember: 'bills:manage',
+  set_cycle_amount: 'bills:manage',
   // Personal: they only change the caller's own reminders.
   snooze: null,
   mute: null,
@@ -44,10 +46,17 @@ async function execute(ctx: AppContext, req: Request, card: Extract<Card, { type
         const existing = await ctx.db.company.findFirst({ where: { workspaceId, name: String(p.newCompanyName) } });
         companyId = existing?.id ?? (await ctx.db.company.create({ data: { workspaceId, name: String(p.newCompanyName) } })).id;
       }
+      let categoryId = p.categoryId as string | null;
+      if (!categoryId) {
+        // The category didn't exist in that company: create it there (Finance or Admin of it).
+        const name = String(p.newCategoryName ?? 'Other').slice(0, 60);
+        const existing = await ctx.db.category.findFirst({ where: { companyId: companyId!, name } });
+        categoryId = existing?.id ?? (await createCategory(ctx, req, { companyId: companyId!, name })).id;
+      }
       const s = await createBill(ctx, req, {
         name: String(p.name),
         companyId: companyId!,
-        categoryId: String(p.categoryId),
+        categoryId,
         provider: (p.provider as string | null) ?? null,
         amountCents: Number(p.amountCents),
         frequencyUnit: p.frequencyUnit as 'WEEK' | 'MONTH' | 'YEAR' | 'ONCE',
@@ -104,14 +113,22 @@ async function execute(ctx: AppContext, req: Request, card: Extract<Card, { type
     }
     case 'create_category': {
       const name = String(p.name);
-      if (await ctx.db.category.findFirst({ where: { name, OR: [{ workspaceId }, { workspaceId: null }] } })) throw new AppError(409, 'CONFLICT', 'That category already exists');
-      await ctx.db.category.create({ data: { workspaceId, name, icon: 'tag', color: '#667373' } });
+      await createCategory(ctx, req, {
+        companyId: String(p.companyId),
+        name,
+        parentId: (p.parentId as string | null) ?? null,
+        subcategories: (p.subcategories as string[] | undefined) ?? [],
+      });
       return `Created the category "${name}" ✅`;
     }
     case 'set_budget': {
       await upsertBudget(ctx, workspaceId, { categoryId: (p.categoryId as string | null) ?? null, monthlyLimitCents: Number(p.monthlyLimitCents), alertAtPercent: Number(p.alertAtPercent) });
       await checkBudgetAlerts(ctx, workspaceId, workspaceToday(ctx, req));
       return 'Budget saved 📊';
+    }
+    case 'set_cycle_amount': {
+      const s = await setCycleAmount(ctx, req, String(p.billId), String(p.dueDate), Number(p.amountCents));
+      return `Set ${s.company.name} · ${s.name} to $${(Number(p.amountCents) / 100).toFixed(2)} for ${String(p.dueDate)} ✅`;
     }
     case 'remember': {
       await ctx.db.aiMemory.create({ data: { workspaceId, text: String(p.fact), createdBy: actorOf(req).userId, createdAt: ctx.clock.now() } });

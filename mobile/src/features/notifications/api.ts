@@ -47,7 +47,12 @@ export interface NotificationPrefs {
   budgetAlerts: boolean;
   teamActivity: boolean;
   mutedBillIds: string[];
+  /** Per company: false turns that kind off (missing = on). */
+  companies: Record<string, CompanyNotificationPrefs>;
 }
+
+export type CompanyNotificationKind = 'reminders' | 'events' | 'summaries';
+export type CompanyNotificationPrefs = Partial<Record<CompanyNotificationKind, boolean>>;
 
 export const inboxKey = (workspaceId: string | null) => ['inbox', workspaceId] as const;
 export const prefsKey = (workspaceId: string | null) =>

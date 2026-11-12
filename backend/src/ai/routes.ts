@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 
 import type { AppContext } from '../context.js';
-import { visibleCompanyIds } from '../domain/access.js';
+import { canSee, visibleCompanyIds } from '../domain/access.js';
 import { notFound } from '../http/errors.js';
 import { accessOf, actorOf, requireAuth, requirePermission, requireWorkspace, userIdOf, workspaceIdOf } from '../http/middleware/auth.js';
 import { id } from '../http/schemas.js';
@@ -15,7 +15,9 @@ import { dailyInsight, suggestCategory, suggestImportFixes } from './insights.js
 const ChatBody = z.object({ conversationId: id.optional(), message: z.string().trim().min(1, 'Type a message').max(2000) }).strict();
 const FeedbackBody = z.object({ rating: z.union([z.literal(1), z.literal(-1)]), comment: z.string().trim().max(1000).optional() }).strict();
 const MemoryBody = z.object({ text: z.string().trim().min(3).max(300) }).strict();
-const SuggestBody = z.object({ name: z.string().trim().min(1).max(120), provider: z.string().trim().max(120).optional() }).strict();
+const SuggestBody = z
+  .object({ name: z.string().trim().min(1).max(120), provider: z.string().trim().max(120).optional(), companyId: id.optional() })
+  .strict();
 const ImportSuggestBody = z
   .object({
     rows: z
@@ -131,7 +133,8 @@ export function aiRouter(ctx: AppContext): Router {
 
   router.post('/suggest-category', async (req, res) => {
     const body = parseBody(req, SuggestBody);
-    res.json({ suggestion: await suggestCategory(ctx, workspaceIdOf(req), userIdOf(req), body.name, body.provider) });
+    const companyId = body.companyId && canSee(accessOf(req), body.companyId) ? body.companyId : undefined;
+    res.json({ suggestion: await suggestCategory(ctx, workspaceIdOf(req), userIdOf(req), body.name, body.provider, companyId) });
   });
 
   router.post('/import-suggestions', requirePermission('import:run'), async (req, res) => {

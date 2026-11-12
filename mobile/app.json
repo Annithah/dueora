@@ -2,7 +2,7 @@
   "expo": {
     "name": "DueOra",
     "slug": "dueora",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -59,6 +59,17 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "a626ce45-890a-4b0c-b674-9425f62c5db9"
+      }
+    },
+    "owner": "anitha_dev"
   }
 }

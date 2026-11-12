@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 
 import type { AppContext } from '../../context.js';
+import { CATEGORY_SUGGESTIONS, DEFAULT_CATEGORY_STYLE } from '../../config/categorySuggestions.js';
 import { canIn, type Access } from '../../domain/access.js';
 import { calculateNextDueDate, parseDate } from '../../domain/schedule.js';
 import { guessCategoryName, parseAmountCents, parseDateCell, parseFrequency } from '../../domain/guess.js';
@@ -169,10 +170,11 @@ export async function buildPreview(ctx: AppContext, workspaceId: string, rows: C
   const isAdmin = !access || access.workspaceRole === 'ADMIN';
   const [allCompanies, categories] = await Promise.all([
     ctx.db.company.findMany({ where: { workspaceId, archivedAt: null }, orderBy: { createdAt: 'asc' } }),
-    ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] } }),
+    ctx.db.category.findMany({ where: { workspaceId } }),
   ]);
   const companies = access ? allCompanies.filter((c) => canIn(access, 'bills:manage', c.id)) : allCompanies;
-  const categoryByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.name]));
+  // Categories belong to a company: "companyId|name" → stored name.
+  const categoryByName = new Map(categories.map((c) => [`${c.companyId}|${c.name.toLowerCase()}`, c.name]));
   const defaultCompany = companies[0]?.name ?? '';
 
   const preview: PreviewRow[] = body.map((r, i) => {
@@ -195,6 +197,7 @@ export async function buildPreview(ctx: AppContext, workspaceId: string, rows: C
       if (isAdmin) warnings.push(`New company "${company}" will be created`);
       else errors.push(`You can't add bills to "${company}". Ask an admin to create it or give you access.`);
     } else company = companies.find((c) => c.name.toLowerCase() === company.toLowerCase())!.name;
+    const companyId = companies.find((c) => c.name.toLowerCase() === company.toLowerCase())?.id;
 
     let category = values.category;
     let categoryGuessed = false;
@@ -202,10 +205,10 @@ export async function buildPreview(ctx: AppContext, workspaceId: string, rows: C
       category = guessCategoryName(`${name} ${values.provider}`) ?? 'Other';
       categoryGuessed = true;
       warnings.push(`Category guessed: ${category}`);
-    } else if (categoryByName.has(category.toLowerCase())) {
-      category = categoryByName.get(category.toLowerCase())!;
+    } else if (companyId && categoryByName.has(`${companyId}|${category.toLowerCase()}`)) {
+      category = categoryByName.get(`${companyId}|${category.toLowerCase()}`)!;
     } else {
-      warnings.push(`New category "${category}" will be created`);
+      warnings.push(`New category "${category}" will be created${company ? ` in ${company}` : ''}`);
     }
 
     const amountRaw = raw('amount');
@@ -249,7 +252,6 @@ export async function buildPreview(ctx: AppContext, workspaceId: string, rows: C
   };
 }
 
-const CATEGORY_DEFAULT_STYLE = { icon: 'tag', color: '#667373' };
 
 /** Import every valid row. Missing companies and categories are created. Returns counts. */
 export async function commitImport(
@@ -270,10 +272,7 @@ export async function commitImport(
   const companyIds = new Map<string, string>();
   const categoryIds = new Map<string, string>();
   for (const c of await ctx.db.company.findMany({ where: { workspaceId } })) companyIds.set(c.name.toLowerCase(), c.id);
-  for (const c of await ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] } })) {
-    // A workspace's own category wins over a default with the same name.
-    if (!categoryIds.has(c.name.toLowerCase()) || c.workspaceId) categoryIds.set(c.name.toLowerCase(), c.id);
-  }
+  for (const c of await ctx.db.category.findMany({ where: { workspaceId } })) categoryIds.set(`${c.companyId}|${c.name.toLowerCase()}`, c.id);
 
   let createdCompanies = 0;
   let createdCategories = 0;
@@ -286,10 +285,13 @@ export async function commitImport(
         companyIds.set(p.company.toLowerCase(), companyId);
         createdCompanies++;
       }
-      let categoryId = categoryIds.get(p.category.toLowerCase());
+      const key = `${companyId}|${p.category.toLowerCase()}`;
+      let categoryId = categoryIds.get(key);
       if (!categoryId) {
-        categoryId = (await tx.category.create({ data: { workspaceId, name: p.category.slice(0, 60), ...CATEGORY_DEFAULT_STYLE } })).id;
-        categoryIds.set(p.category.toLowerCase(), categoryId);
+        // A suggested name keeps its suggested icon and colour.
+        const style = CATEGORY_SUGGESTIONS.find((x) => x.name.toLowerCase() === p.category.toLowerCase()) ?? DEFAULT_CATEGORY_STYLE;
+        categoryId = (await tx.category.create({ data: { workspaceId, companyId, name: p.category.slice(0, 60), icon: style.icon, color: style.color } })).id;
+        categoryIds.set(key, categoryId);
         createdCategories++;
       }
       const unit = p.frequencyUnit!;

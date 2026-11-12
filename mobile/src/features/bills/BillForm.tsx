@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 import { Eye, EyeOff, KeyRound, RotateCcw } from 'lucide-react-native';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Pressable, TextInput, View } from 'react-native';
 
@@ -14,20 +14,26 @@ import {
   CategoryIcon,
   Chip,
   DateField,
+  DatePickerField,
   FormMessage,
   Input,
+  Segmented,
   Select,
   Switch,
   Text,
   toast,
 } from '@/components/ui';
 import {
+  categoryTree,
+  createCategory,
   createCompany,
   useCategories,
   useCompanies,
+  useCustomFields,
   useListMutation,
   type Company,
 } from '@/features/catalog/api';
+import { CategoryForm } from '@/features/catalog/CategoryForm';
 import {
   REMINDER_CHOICES,
   isChoiceSelected,
@@ -51,6 +57,7 @@ import {
 } from './form';
 
 const NEW_COMPANY = '__new__';
+const NEW_CATEGORY = '__new_category__';
 
 function Section({
   n,
@@ -122,7 +129,6 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
     (c) => c.myRole === 'ADMIN' || c.myRole === 'FINANCE' || c.id === existing?.company.id,
   );
   const companies = { data: allCompanies.data ? pickable : undefined };
-  const categories = useCategories();
   const save = useSaveBill(existing?.id);
   const addCompany = useListMutation('companies', createCompany);
   const [formError, setFormError] = useState<string | null>(null);
@@ -147,6 +153,8 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
     provider,
     categoryId,
     isTrial,
+    companyId,
+    amountType,
   ] = useWatch({
     control,
     name: [
@@ -160,8 +168,46 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
       'provider',
       'categoryId',
       'isTrial',
+      'companyId',
+      'amountType',
     ],
   });
+  // Categories and custom fields belong to the chosen company.
+  const categories = useCategories({ companyId: companyId || undefined });
+  const customFields = useCustomFields(companyId || undefined);
+  const company = allCompanies.data?.find((c) => c.id === companyId);
+  const canAddCategory = company?.myRole === 'ADMIN' || company?.myRole === 'FINANCE';
+  const [newCategory, setNewCategory] = useState(false);
+  const addCategory = useListMutation('categories', createCategory);
+  const fieldsHere = (customFields.data ?? []).filter((f) => !f.categoryIds || (categoryId && f.categoryIds.includes(categoryId)));
+
+  // Switching company clears a category of the previous company.
+  useEffect(() => {
+    if (!categories.data || !categoryId) return;
+    if (!categories.data.some((c) => c.id === categoryId)) setValue('categoryId', '');
+  }, [categories.data, categoryId, setValue]);
+
+  // A new bill takes its category's defaults (how often, fixed/variable, method, reminders).
+  const appliedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (existing || !categoryId || appliedFor.current === categoryId) return;
+    const c = categories.data?.find((x) => x.id === categoryId);
+    if (!c) return;
+    appliedFor.current = categoryId;
+    const d = c.defaults;
+    if (d.frequencyUnit) {
+      const preset = FREQUENCIES.find((f) => f.key !== 'custom' && f.unit === d.frequencyUnit && f.interval === (d.frequencyInterval ?? 1));
+      if (preset) setValue('frequency', preset.key);
+      else if (d.frequencyUnit !== 'ONCE') {
+        setValue('frequency', 'custom');
+        setValue('customUnit', d.frequencyUnit);
+        setValue('customInterval', d.frequencyInterval ?? 1);
+      }
+    }
+    if (d.amountType) setValue('amountType', d.amountType);
+    if (d.paymentMethod) setValue('defaultPaymentMethod', d.paymentMethod);
+    if (d.reminderOffsets?.length) setValue('reminderOffsets', d.reminderOffsets);
+  }, [existing, categoryId, categories.data, setValue]);
   // "Hosting" → suggest Hosting & domains (only while no category is chosen). Keywords answer
   // instantly; when they don't know, DueOra AI is asked (debounced) if it's switched on.
   const ai = useAiStatus();
@@ -171,12 +217,12 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
   useEffect(() => {
     if (categoryId || keywordName || !ai.data?.enabled || text.length < 4) return;
     const handle = setTimeout(() => {
-      suggestCategory(name ?? '', provider || undefined)
+      suggestCategory(name ?? '', provider || undefined, companyId || undefined)
         .then((s) => (s ? setAiSuggestion({ for: text, name: s.categoryName }) : undefined))
         .catch(() => undefined);
     }, 700);
     return () => clearTimeout(handle);
-  }, [text, categoryId, keywordName, ai.data?.enabled, name, provider]);
+  }, [text, categoryId, keywordName, ai.data?.enabled, name, provider, companyId]);
   const suggestedName = categoryId
     ? null
     : (keywordName ?? (aiSuggestion?.for === text ? aiSuggestion.name : null));
@@ -236,11 +282,14 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
     // Only admins create companies.
     ...(can.manageCompanies ? [{ value: NEW_COMPANY, label: '+ New company…' }] : []),
   ];
-  const categoryOptions = (categories.data ?? []).map((c) => ({
-    value: c.id,
-    label: c.name,
-    leading: <CategoryIcon icon={c.icon} size={32} />,
-  }));
+  const categoryOptions = [
+    ...categoryTree(categories.data ?? []).map(({ category: c, depth }) => ({
+      value: c.id,
+      label: depth ? `${c.parent?.name ?? ''} › ${c.name}` : c.name,
+      leading: <CategoryIcon icon={c.icon} size={depth ? 26 : 32} />,
+    })),
+    ...(canAddCategory ? [{ value: NEW_CATEGORY, label: '+ New category…' }] : []),
+  ];
 
   return (
     <Screen
@@ -291,8 +340,9 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
               label="Category"
               value={field.value}
               options={categoryOptions}
-              onChange={field.onChange}
-              placeholder="Choose a category"
+              onChange={(v) => (v === NEW_CATEGORY ? setNewCategory(true) : field.onChange(v))}
+              placeholder={companyId ? 'Choose a category' : 'Choose the company first'}
+              disabled={!companyId}
               error={fieldState.error?.message}
             />
           )}
@@ -326,7 +376,22 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
         />
       </Section>
 
-      <Section n={2} title="Amount" hint="How much is due each time, in US dollars">
+      <Section n={2} title="Amount" hint={amountType === 'VARIABLE' ? 'An estimate — set the real amount each cycle' : 'How much is due each time, in US dollars'}>
+        <Controller
+          control={control}
+          name="amountType"
+          render={({ field }) => (
+            <Segmented
+              accessibilityLabel="Amount type"
+              value={field.value}
+              onChange={field.onChange}
+              options={[
+                { value: 'FIXED', label: 'Fixed amount' },
+                { value: 'VARIABLE', label: 'Variable amount' },
+              ]}
+            />
+          )}
+        />
         <Controller
           control={control}
           name="amount"
@@ -643,6 +708,60 @@ export function BillForm({ existing, today, onSaved }: BillFormProps) {
           )}
         />
       </Section>
+
+      {fieldsHere.length ? (
+        <Section n={7} title="More details" hint={`${company?.name ?? 'This company'}’s own fields`}>
+          {fieldsHere.map((f) => (
+            <Controller
+              key={f.id}
+              control={control}
+              name={`customValues.${f.id}`}
+              render={({ field }) =>
+                f.type === 'DROPDOWN' ? (
+                  <Select
+                    label={`${f.name}${f.required ? '' : ' (optional)'}`}
+                    value={field.value || null}
+                    options={(f.options ?? []).map((o) => ({ value: o, label: o }))}
+                    onChange={field.onChange}
+                  />
+                ) : f.type === 'DATE' ? (
+                  <DatePickerField label={`${f.name}${f.required ? '' : ' (optional)'}`} value={field.value || null} onChange={field.onChange} />
+                ) : (
+                  <Input
+                    label={`${f.name}${f.required ? '' : ' (optional)'}`}
+                    value={field.value ?? ''}
+                    onChangeText={field.onChange}
+                    keyboardType={f.type === 'NUMBER' ? 'decimal-pad' : 'default'}
+                  />
+                )
+              }
+            />
+          ))}
+        </Section>
+      ) : null}
+
+      <BottomSheet visible={newCategory} onClose={() => setNewCategory(false)} title={`New category in ${company?.name ?? 'this company'}`}>
+        {newCategory ? (
+          <CategoryForm
+            compact
+            parents={(categories.data ?? []).filter((c) => !c.parentId)}
+            submitLabel="Add category"
+            loading={addCategory.isPending}
+            onSubmit={(f) =>
+              addCategory.mutate(
+                { ...f, companyId },
+                {
+                  onSuccess: (c) => {
+                    setValue('categoryId', c.id, { shouldValidate: true });
+                    setNewCategory(false);
+                  },
+                  onError: (err) => toast.error('Could not add the category', err instanceof ApiError ? err.message : undefined),
+                },
+              )
+            }
+          />
+        ) : null}
+      </BottomSheet>
 
       <BottomSheet
         visible={newCompany !== null}

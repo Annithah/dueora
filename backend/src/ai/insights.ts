@@ -2,6 +2,7 @@ import type { AppContext } from '../context.js';
 import { addDays, todayIn } from '../domain/schedule.js';
 import { guessCategoryName, parseFrequency } from '../domain/guess.js';
 import { formatUSD, plural } from '../lib/format.js';
+import { CATEGORY_SUGGESTIONS } from '../config/categorySuggestions.js';
 import { occurrencesBetween } from '../modules/insights/projection.js';
 
 import { logUsage } from './chat.js';
@@ -105,8 +106,14 @@ export async function weeklyAiLine(ctx: AppContext, workspaceId: string, items: 
 }
 
 /** Smart form: a category for what the user is typing. AI when on, keywords otherwise. */
-export async function suggestCategory(ctx: AppContext, workspaceId: string, userId: string, name: string, provider?: string) {
-  const categories = await ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] }, select: { id: true, name: true } });
+export async function suggestCategory(ctx: AppContext, workspaceId: string, userId: string, name: string, provider?: string, companyId?: string) {
+  // Categories belong to a company: suggest from the bill's company. Without one (e.g. an
+  // import row), pick among the names used in the workspace and the suggestions; then
+  // categoryId is null and the caller matches the name in the right company.
+  const own = await ctx.db.category.findMany({ where: { workspaceId, archivedAt: null, ...(companyId ? { companyId } : {}) }, select: { id: true, name: true } });
+  const categories: { id: string | null; name: string }[] = companyId
+    ? own
+    : [...new Set([...own.map((c) => c.name), ...CATEGORY_SUGGESTIONS.map((c) => c.name)])].map((name) => ({ id: null, name }));
   const byName = (n: string | null | undefined) => (n ? categories.find((c) => c.name.toLowerCase() === n.trim().toLowerCase()) : undefined);
   const keyword = byName(guessCategoryName(`${name} ${provider ?? ''}`));
   const ws = await ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { aiEnabled: true } });

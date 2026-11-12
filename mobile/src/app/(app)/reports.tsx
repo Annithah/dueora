@@ -99,6 +99,8 @@ function Body({ r }: { r: Report }) {
           ))}
         </View>
       </View>
+      <PaymentReport r={r} />
+
       <View>
         <SectionHeader title="12-month forecast" action="USD" />
         <Card>
@@ -191,6 +193,136 @@ function Body({ r }: { r: Report }) {
                   subtitle: `${o.company.name} · ${o.frequencyLabel}`,
                 }}
               />
+            ))}
+          </Card>
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+const METHOD_NAMES: Record<string, string> = {
+  MOBILE_MONEY: 'Mobile money',
+  BANK_TRANSFER: 'Bank transfer',
+  CARD: 'Card',
+  CASH: 'Cash',
+  OTHER: 'Other',
+};
+
+function Line({ label, value, tone }: { label: string; value: string; tone?: 'danger' | 'success' }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10, minHeight: 28, alignItems: 'center' }}>
+      <Text variant="small" tone="muted" style={{ flex: 1 }}>
+        {label}
+      </Text>
+      <Text variant="smallStrong" tone={tone}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+/** Payment report, per company, variable bills, ageing, coming up and categories. */
+function PaymentReport({ r }: { r: Report }) {
+  const { colors } = useTheme();
+  const a = r.analysis;
+  const m = (v: number) => formatUSD(v, { compact: true });
+  const change = a.previous.changePercent;
+  return (
+    <>
+      <View>
+        <SectionHeader title="Payment report" action={r.company?.name ?? 'All companies'} />
+        <Card style={{ gap: 2 }}>
+          <Line label={`Due in this ${r.period}`} value={`${a.due.count} · ${m(a.due.expectedCents)}`} />
+          <Line label="Paid on time" value={String(a.timing.onTime)} tone="success" />
+          <Line label="Paid late" value={String(a.timing.late)} tone={a.timing.late ? 'danger' : undefined} />
+          <Line label="Still unpaid" value={a.timing.unpaid ? `${a.timing.unpaid} · ${m(a.timing.unpaidCents)}` : 'None'} tone={a.timing.unpaid ? 'danger' : undefined} />
+          <Line label="Paid in this period" value={m(a.paidInPeriodCents)} />
+          <Line label="The period before" value={`${m(a.previous.paidCents)}${change === null ? '' : ` (${change >= 0 ? '+' : ''}${change}%)`}`} />
+          {a.due.estimatedCents ? <Line label="Still estimated (variable)" value={m(a.due.estimatedCents)} /> : null}
+          {a.byMethod.length ? (
+            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.line }}>
+              {a.byMethod.map((x) => (
+                <Line key={x.method} label={`${METHOD_NAMES[x.method] ?? x.method} (${x.count})`} value={m(x.amountCents)} />
+              ))}
+            </View>
+          ) : null}
+        </Card>
+      </View>
+
+      {!r.company && a.perCompany.length > 1 ? (
+        <View>
+          <SectionHeader title="Per company" />
+          <Card padding={0} style={{ overflow: 'hidden' }}>
+            {a.perCompany.map((c, i) => (
+              <View key={c.company.id} style={{ padding: 12, gap: 2, borderTopWidth: i ? 1 : 0, borderTopColor: colors.line }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.company.color }} />
+                  <Text variant="bodyStrong" style={{ flex: 1 }}>
+                    {c.company.name}
+                  </Text>
+                  <Text variant="bodyStrong">{m(c.expectedCents)}</Text>
+                </View>
+                <Text variant="small" tone="muted">
+                  {m(c.paidCents)} paid · {m(c.remainingCents)} left · {c.onTime} on time · {c.late} late
+                </Text>
+              </View>
+            ))}
+          </Card>
+        </View>
+      ) : null}
+
+      {a.variable.length ? (
+        <View>
+          <SectionHeader title="Variable bills: estimate vs actual" />
+          <Card style={{ gap: 2 }}>
+            {a.variable.map((v) => (
+              <Line key={`${v.billId}-${v.dueDate}`} label={`${v.company} · ${v.name} (${v.dueDate.slice(5)})`} value={`${m(v.estimateCents)} → ${v.actualCents === null ? 'not set' : m(v.actualCents)}`} />
+            ))}
+          </Card>
+        </View>
+      ) : null}
+
+      {a.ageing.some((b) => b.count) ? (
+        <View>
+          <SectionHeader title="Overdue by age" action="days late" />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {a.ageing.map((b) => (
+              <Card key={b.bucket} style={{ flex: 1, padding: 10, gap: 2 }}>
+                <Text variant="caption" tone="muted">
+                  {b.bucket}
+                </Text>
+                <Text variant="smallStrong" tone={b.count ? 'danger' : undefined}>
+                  {m(b.amountCents)}
+                </Text>
+              </Card>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      <View>
+        <SectionHeader title="Coming up" />
+        <Card style={{ gap: 2 }}>
+          <Line label={`Next 30 days (${a.upcoming.days30.count})`} value={m(a.upcoming.days30.remainingCents)} />
+          <Line label={`Next 60 days (${a.upcoming.days60.count})`} value={m(a.upcoming.days60.remainingCents)} />
+          <Line label={`Next 90 days (${a.upcoming.days90.count})`} value={m(a.upcoming.days90.remainingCents)} />
+        </Card>
+      </View>
+
+      {a.categories.length ? (
+        <View>
+          <SectionHeader title="Category report" />
+          <Card style={{ gap: 2 }}>
+            {a.categories.map((c) => (
+              <View key={c.id}>
+                <Line label={`${c.name} (${c.count})`} value={m(c.expectedCents)} />
+                {c.subcategories.map((s) => (
+                  <View key={s.id} style={{ paddingLeft: 14 }}>
+                    <Line label={`${s.name} (${s.count})`} value={m(s.expectedCents)} />
+                  </View>
+                ))}
+              </View>
             ))}
           </Card>
         </View>

@@ -117,8 +117,27 @@ companies) and notifications (reminders and bill events go only to members who c
 company). A company outside the caller's access is a 404, so ids can't be probed. Workspace and
 category budgets and the full data export add up every company, so they need "all companies"
 (`GET /budgets` returns `[]` otherwise).
-| GET | `/categories` | member | 11 built-in (`isDefault: true`) + this workspace's custom ones, with `billCount` |
-| POST · PATCH /:id · DELETE /:id | `/categories` | ADMIN, FINANCE | `{ name, icon, color }`. Built-ins can't be changed; in-use categories can't be deleted (409). |
+
+### Categories (per company) and custom fields
+
+Categories belong to one company, with one level of sub-categories. "Manage" = ADMIN or FINANCE **in that company**.
+Nothing is seeded: `POST /companies` takes `categoryStart` (`{ mode: 'empty' }` default · `{ mode: 'suggestions', names?, withSubcategories? }` · `{ mode: 'copy', fromCompanyId }`); a new workspace's first company starts with the suggestions (`POST /workspaces` takes `categoryStart` too).
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/categories?companyId=&includeArchived=true` | member | Visible companies' categories (one company with `companyId`): `[{ id, companyId, parentId, parent, name, icon, color, description, sortOrder, defaults: { frequencyUnit, frequencyInterval, amountType, reminderOffsets, paymentMethod }, archived, billCount }]` |
+| GET | `/categories/suggestions` | member | The list in `backend/src/config/categorySuggestions.ts` (`name, icon, color, children`) |
+| POST | `/categories` | manage | `{ companyId, name, icon?, color?, parentId?, description?, subcategories?: string[], defaultFrequencyUnit?, defaultFrequencyInterval?, defaultAmountType?, defaultReminderOffsets?, defaultPaymentMethod? }` — names unique per company (409); a sub-category can't have children (400) |
+| PATCH | `/categories/:id` | manage | Any field above except `companyId`/`subcategories` |
+| POST | `/categories/reorder` | manage | `{ companyId, ids }` — one level at a time |
+| POST | `/categories/:id/archive` · `/unarchive` | manage | Archiving a parent archives its sub-categories (restoring brings them back) |
+| POST | `/categories/:id/merge` | manage | `{ intoId }` (same company): bills, sub-categories and budget move, then it is deleted |
+| DELETE | `/categories/:id?moveToId=` | manage | 204. With bills it needs `moveToId` (409 `CATEGORY_IN_USE` otherwise); sub-categories become top level |
+| GET | `/custom-fields?companyId=` | member | `[{ id, companyId, name, type: TEXT\|NUMBER\|DATE\|DROPDOWN, options, categoryIds (null = all bills), required, sortOrder }]` |
+| POST | `/custom-fields?companyId=` | manage | `{ name, type, options? (DROPDOWN: ≥ 2), categoryIds?, required? }` — at most 10 per company (409 `LIMIT_REACHED`) |
+| PATCH · DELETE | `/custom-fields/:id` | manage | Deleting leaves old values on bills; they are no longer shown or exported |
+
+Bills carry `customValues: { [fieldId]: value }` — checked against the company's fields (types, dropdown options, required ones for the bill's category; unknown keys dropped).
 
 ## Bills — `/bills` 🔒 (workspace)
 
@@ -182,6 +201,21 @@ Frequencies: weekly (`WEEK`,1), every 2 weeks (`WEEK`,2), monthly (`MONTH`,1), e
 quarterly (`MONTH`,3), every 6 months (`MONTH`,6), yearly (`YEAR`,1), custom (any unit × N), one-time (`ONCE`).
 Month-end anchors are kept: anchor 31 → 31 Jan, 28/29 Feb, 31 Mar, 30 Apr …
 
+### Cycles and variable amounts
+
+Bills have `amountType: FIXED | VARIABLE` (for VARIABLE, `amountCents` is the estimate). Each cycle may store its own amount
+(`BillCycle`): set for a variable bill's real bill, and written when a cycle closes, so past cycles keep their amounts.
+Bill responses add `cycleAmountCents`, `isEstimate`, `daysOverdue`, `outstandingCents`, `overdueCents`, `overdueCycles`,
+`missedCycles` — a recurring bill unpaid for several cycles owes **every** missed cycle (payments go to the oldest).
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/bills/:id/cycles?from=&to=` | member | Default a year back to a year ahead: `cycles: [{ dueDate, kind: closed\|current\|missed\|future, expectedCents, isEstimate, paidCents, remainingCents, state, daysOverdue }]` |
+| PUT | `/bills/:id/cycles/:dueDate` | ADMIN, FINANCE (company) | `{ amountCents }` — the open cycle or a later one (400 for closed cycles or dates off the schedule). Returns the bill |
+| POST | `/bills/:id/payments` | | also takes `paidInFull: true` — closes the cycle at the paid amount (a variable bill's real bill, a discount) |
+
+`GET /bills` also filters by `amountType` and `customField` + `customValue` (text matches partially); `q` searches custom values.
+
 ## Budgets — `/budgets` 🔒 (workspace)
 
 | Method | Path | Who | Notes |
@@ -229,7 +263,7 @@ Design: `docs/NOTIFICATIONS.md`. Everything below except `/devices` is per works
 | GET | `/notifications` | The Alerts inbox (in-app channel), newest first. Query: `unreadOnly=true`, `page`, `pageSize`. → `{ items: [{ id, type, title, body, data, billId, cycleDueDate, offsetDays, readAt, createdAt }], total, unreadCount }` |
 | POST | `/notifications/:id/read` | 204 |
 | POST | `/notifications/read-all` | `{ updated }` |
-| GET · PATCH | `/notifications/preferences` | `{ pushEnabled, emailEnabled, digestEnabled, mutedBillIds }` |
+| GET · PATCH | `/notifications/preferences` | `{ pushEnabled, emailEnabled, inAppEnabled, digestEnabled, weeklySummary, monthlySummary, budgetAlerts, teamActivity, mutedBillIds, companies: { [companyId]: { reminders?, events?, summaries? } } }` — `companies` replaces the map; only visible companies are kept; false = off |
 | POST | `/bills/:id/mute` · `/unmute` | Stop/resume reminders for one bill (for you only; any role) |
 | POST | `/notifications/test` | Sends "🔔 Test from DueOra" now (push if you have a device, else email). Rate-limited. → `{ queued, channel, devices }` |
 | POST | `/devices` | `{ expoPushToken, platform: ios\|android\|web }` — register/refresh this phone |
@@ -245,7 +279,8 @@ Money blocks are `{ amountCents, count }` (USD).
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/dashboard?companyId=` | member | Optional `companyId` (the company switcher; default = every company the caller can see). `today`, `localHour`, `summary` (`overdue`, `dueThisWeek`, `dueThisMonth`, `paidThisMonth` + `changePercent`), `needsAttention` (top 5, most urgent first) + `needsAttentionCount`, `next30Days` (sorted by due date), `spending` (12 months), `byCategory` and `byCompany` (last 12 months, with `share` %), `counts` (`active`, `total`, `overdue`, `upcoming30`) |
+| GET | `/views/:view?companyId=&days=&month=` | member | Tracking views from the cycle engine: `upcoming` (`days` 7/30/60/90, default 30), `this-month`, `next-month`, `outstanding`, `overdue` (+ `ageing` 0–30/31–60/61–90/90+), `paid` (`month` YYYY-MM), `obligations` (upcoming with `nextReminder`). `{ view, from, to, today, totals: { count, expectedCents, paidCents, remainingCents, estimatedCents }, byCompany, items: [cycle + bill + nextReminder] }` |
+| GET | `/dashboard?companyId=` | member | Optional `companyId` (the company switcher; default = every company the caller can see). `today`, `localHour`, `summary` (`overdue` — every missed cycle counts, `dueThisWeek`, `dueThisMonth`, `outstanding`, `paidThisMonth` + `changePercent`), `thisMonth` (total/paid/left), `lastMonth` (due, paid on time/late, unpaid), `cashflow` (6 past months paid + this month + 3 projected), `companies` (this month per company), `segments` (Bills-tab counts), `needsAttention` (top 5, most urgent first) + `needsAttentionCount`, `next30Days` (sorted by due date), `spending` (12 months), `byCategory` and `byCompany` (last 12 months, with `share` %), `counts` (`active`, `total`, `overdue`, `upcoming30`) |
 | GET | `/calendar?from=&to=&companyId=` | member | ≤ 400 days. `events: [{ date, billId, name, company, categoryIcon, categoryColor, amountCents, status, kind: paid\|current\|future }]` |
-| GET | `/reports?period=month\|year&year=&month=&companyId=` | member | `totals` (`committed`, `paid`, `outstanding`, `overdue`), `byCategory`, `byCompany`, `months`, `forecast` (next 12 months), `overdue`, `outstanding`, `payments` |
-| GET | `/reports/export?format=pdf\|xlsx&period=…` | member | File download. PDF: branded summary + tables. Excel: Summary, Payments, Outstanding, Forecast sheets with numeric USD amounts |
+| GET | `/reports?period=month\|year&year=&month=&companyId=` | member | `totals` (`committed`, `paid`, `outstanding`, `overdue`), `byCategory`, `byCompany`, `months`, `forecast` (next 12 months), `overdue`, `outstanding`, `payments`, `company`, and `analysis`: `due`, `timing` (paid on time / late, still unpaid), `paidInPeriodCents`, `previous` (period before + `changePercent`), `byMethod`, `variable` (estimate vs actual), `perCompany`, `ageing`, `upcoming` (30/60/90), `categories` (sub-categories rolled up), `cycles` (with custom fields) |
+| GET | `/reports/export?format=pdf\|xlsx&period=…&companyId=` | member | File download named after the workspace and company. PDF: summary, payment report, per company, variable bills, ageing, coming up, tables. Excel: Summary (company, period, generated date), Due in period (custom fields as columns), one sheet per company for "All companies", Payment report, Payments, Outstanding, Forecast |

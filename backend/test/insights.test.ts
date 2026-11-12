@@ -35,6 +35,7 @@ describe('an empty workspace', () => {
       overdue: { amountCents: 0, count: 0 },
       dueThisWeek: { amountCents: 0, count: 0 },
       dueThisMonth: { amountCents: 0, count: 0 },
+      outstanding: { amountCents: 0, count: 0 },
       paidThisMonth: { amountCents: 0, count: 0, changePercent: null },
     });
     expect(d.needsAttention).toEqual([]);

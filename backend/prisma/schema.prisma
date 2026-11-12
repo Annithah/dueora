@@ -66,6 +66,10 @@ enum NotificationType {
   MONTHLY_SUMMARY
   TEAM
   SYSTEM
+  /// The 25th: what next month will cost (per company).
+  NEXT_MONTH_PREVIEW
+  /// A variable bill is due in 5 days and its real amount isn't set yet.
+  AMOUNT_NEEDED
 }
 
 enum AiRole {
@@ -146,6 +150,8 @@ model Workspace {
   memberships       Membership[]
   companies         Company[]
   categories        Category[]
+  customFields      CustomField[]
+  billCycles        BillCycle[]
   bills             Bill[]
   notifications     Notification[]
   notificationPrefs NotificationPreference[]
@@ -253,9 +259,11 @@ model Company {
   archivedAt         DateTime?
   createdAt          DateTime  @default(now())
 
-  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  bills     Bill[]
-  access    CompanyAccess[]
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  bills        Bill[]
+  access       CompanyAccess[]
+  categories   Category[]
+  customFields CustomField[]
 
   @@unique([workspaceId, name])
 }
@@ -278,21 +286,97 @@ model CompanyAccess {
   @@index([workspaceId, userId])
 }
 
+/// A category inside one company (Finalize brief, Part 3). One level of sub-categories.
 model Category {
-  id          String   @id @default(cuid())
-  /// Null for the built-in defaults shared by every workspace.
-  workspaceId String?
-  name        String
-  icon        String
-  color       String
-  isDefault   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id                       String         @id @default(cuid())
+  workspaceId              String
+  companyId                String
+  /// Set for a sub-category (only one level: a parent never has a parent).
+  parentId                 String?
+  name                     String
+  icon                     String
+  color                    String
+  description              String?
+  sortOrder                Int            @default(0)
+  /// Defaults for new bills in this category (all optional).
+  defaultFrequencyUnit     FrequencyUnit?
+  defaultFrequencyInterval Int?
+  defaultAmountType        AmountType?
+  /// JSON int[]; null = the company / workspace default.
+  defaultReminderOffsets   Json?
+  defaultPaymentMethod     PaymentMethod?
+  /// Hidden from pickers; bills keep it.
+  archivedAt               DateTime?
+  createdAt                DateTime       @default(now())
 
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Category[] @relation("CategoryTree")
   bills     Bill[]
   budgets   Budget[]
 
-  @@unique([workspaceId, name])
+  @@unique([companyId, name])
+  @@index([workspaceId, companyId])
+}
+
+/// A company's own extra field on its bills (at most 10 per company).
+model CustomField {
+  id          String          @id @default(cuid())
+  workspaceId String
+  companyId   String
+  name        String
+  type        CustomFieldType
+  /// JSON string[] — the choices of a DROPDOWN field.
+  options     Json?
+  /// JSON string[] of category ids it applies to; null = every bill of the company.
+  categoryIds Json?
+  required    Boolean         @default(false)
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  DROPDOWN
+}
+
+/// FIXED: the same amount every cycle. VARIABLE: amountCents is an estimate; each cycle's real amount is set when known.
+enum AmountType {
+  FIXED
+  VARIABLE
+}
+
+/// One stored cycle of a bill: its own expected amount (so history stays exact when the bill's amount changes),
+/// what was paid and when it closed. Cycles without a row use the bill's current amount.
+model BillCycle {
+  id          String    @id @default(cuid())
+  workspaceId String
+  billId      String
+  /// "YYYY-MM-DD"
+  dueDate     String
+  /// Expected amount for this cycle, cents.
+  amountCents Int
+  /// Variable bills: true once the real amount is known.
+  isActual    Boolean   @default(false)
+  paidCents   Int       @default(0)
+  /// Fully paid (or marked "paid in full").
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  bill      Bill      @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@unique([billId, dueDate])
+  @@index([workspaceId, dueDate])
 }
 
 model Bill {
@@ -309,8 +393,11 @@ model Bill {
   accountRefLast4      String?
   /// HMAC-SHA256 of the normalised key, for exact-match search without decrypting.
   accountRefHash       String?
-  /// US dollars, integer cents.
+  /// US dollars, integer cents. For a VARIABLE bill: the estimate.
   amountCents          Int
+  amountType           AmountType     @default(FIXED)
+  /// JSON { [customFieldId]: string | number } — values of the company's custom fields.
+  customValues         Json?
   frequencyUnit        FrequencyUnit
   frequencyInterval    Int            @default(1)
   /// Day of month (1–31) the schedule is anchored to, so month-end dates recover (31 → 28 → 31).
@@ -335,6 +422,7 @@ model Bill {
   workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   company       Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   category      Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  cycles        BillCycle[]
   payments      PaymentRecord[]
   notifications Notification[]
   priceChanges  PriceChange[]
@@ -398,6 +486,9 @@ model NotificationPreference {
   teamActivity   Boolean  @default(true)
   /// JSON string[] of bill ids the user muted.
   mutedBillIds   Json
+  /// JSON { [companyId]: { reminders?: boolean, events?: boolean, summaries?: boolean } } — false turns that kind off
+  /// for one company; all three false = the company is muted. Missing = on.
+  companyPrefs   Json?
   updatedAt      DateTime @updatedAt
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -465,13 +556,15 @@ model AuditLog {
 model WorkspaceReminderRun {
   id          String   @id @default(cuid())
   workspaceId String
+  /// "" = the workspace reminder hour; a company id = that company's own hour.
+  scope       String   @default("")
   /// Workspace-local "YYYY-MM-DD".
   localDate   String
   createdAt   DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, localDate])
+  @@unique([workspaceId, scope, localDate])
 }
 
 /// Database-backed job queue (DECISIONS.md D2).

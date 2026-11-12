@@ -38,7 +38,10 @@ export type BillKey = (typeof BILLS)[number]['key'];
 export interface Fixture {
   workspaceId: string;
   companies: { alpha: string; beta: string };
+  /** Alpha's categories by name (the first company). */
   categories: Record<string, string>;
+  /** Each company's own categories by name (categories belong to a company). */
+  categoriesOf: { alpha: Record<string, string>; beta: Record<string, string> };
   sessions: Record<UserKey, Session>;
   userIds: Record<UserKey, string>;
   billIds: Record<BillKey, string>;
@@ -57,9 +60,11 @@ export async function buildFixture(app: Express, ctx: TestContext, opts: { bills
 
   const companiesRes = await as0.get('/api/v1/companies');
   const alpha = companiesRes.body[0].id as string;
-  const beta = (await as0.post('/api/v1/companies').send({ name: 'Beta Radio', color: '#3B82F6' })).body.id as string;
-  const cats = await as0.get('/api/v1/categories');
-  const categories = Object.fromEntries((cats.body as { name: string; id: string }[]).map((c) => [c.name, c.id]));
+  const beta = (await as0.post('/api/v1/companies').send({ name: 'Beta Radio', color: '#3B82F6', categoryStart: { mode: 'suggestions' } })).body.id as string;
+  const byName = async (companyId: string) =>
+    Object.fromEntries(((await as0.get('/api/v1/categories').query({ companyId })).body as { name: string; id: string }[]).map((c) => [c.name, c.id]));
+  const categoriesOf = { alpha: await byName(alpha), beta: await byName(beta) };
+  const categories = categoriesOf.alpha;
 
   const finance = await addMember(app, ctx, admin, workspaceId, USERS.finance.name, USERS.finance.email, 'FINANCE');
   const viewer = await addMember(app, ctx, admin, workspaceId, USERS.viewer.name, USERS.viewer.email, 'VIEWER');
@@ -74,7 +79,7 @@ export async function buildFixture(app: Express, ctx: TestContext, opts: { bills
         .send({
           name: s.name,
           companyId: s.company === 'alpha' ? alpha : beta,
-          categoryId: categories[s.category],
+          categoryId: categoriesOf[s.company][s.category],
           amountCents: s.amountCents,
           frequencyUnit: s.unit,
           frequencyInterval: s.interval,
@@ -97,6 +102,7 @@ export async function buildFixture(app: Express, ctx: TestContext, opts: { bills
     workspaceId,
     companies: { alpha, beta },
     categories,
+    categoriesOf,
     sessions,
     userIds: { admin: admin.userId, finance: finance.userId, viewer: viewer.userId },
     billIds,

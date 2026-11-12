@@ -154,8 +154,8 @@ describe('monthly summary', () => {
     const rows = await inApp({ type: 'MONTHLY_SUMMARY' });
     expect(rows).toHaveLength(3);
     expect(rows.every((n) => localDay(n.createdAt) === '2026-12-01')).toBe(true);
-    expect(rows[0]!.title).toBe('📈 November in review');
-    expect(rows[0]!.body).toBe('You paid $30.00 in November. This month: 2 bills, $39.99.');
+    expect(rows[0]!.title).toBe('📈 November report is ready');
+    expect(rows[0]!.body).toBe("You paid $30.00 in November. This month's obligations: 2 bills, $39.99.");
   });
 });
 

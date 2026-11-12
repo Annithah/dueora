@@ -11,6 +11,7 @@ import {
   Input,
   Segmented,
   Select,
+  Switch,
   Text,
 } from '@/components/ui';
 import { ApiError } from '@/api';
@@ -45,6 +46,8 @@ export function RecordPaymentSheet({
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // A variable bill's real amount, or a discount: close the cycle at what was paid.
+  const [paidInFull, setPaidInFull] = useState(false);
 
   const cents = parseUSDInput(amount);
   const left = cents !== null ? remaining - cents : null;
@@ -55,6 +58,7 @@ export function RecordPaymentSheet({
     try {
       const res = await record.mutateAsync({
         amountCents: mode === 'full' ? undefined : cents,
+        paidInFull: mode === 'partial' && paidInFull ? true : undefined,
         paidOn,
         method,
         reference: reference.trim() || null,
@@ -118,12 +122,28 @@ export function RecordPaymentSheet({
             USD
           </Text>
         </View>
-        {mode === 'partial' && left !== null && left > 0 ? (
+        {mode === 'partial' && left !== null && left > 0 && !paidInFull ? (
           <Text variant="smallStrong" color={colors.purple}>
             {formatUSD(left)} will remain outstanding
           </Text>
         ) : null}
+        {bill.isEstimate && mode === 'full' ? (
+          <Text variant="small" tone="muted">
+            This is the estimate. Paid a different amount? Choose “Partial payment” and switch on “Paid in full”.
+          </Text>
+        ) : null}
       </View>
+      {mode === 'partial' ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text variant="bodyStrong">Paid in full</Text>
+            <Text variant="small" tone="muted">
+              This closes the cycle at this amount (the real bill, or a discount).
+            </Text>
+          </View>
+          <Switch accessibilityLabel="Paid in full" value={paidInFull} onValueChange={setPaidInFull} />
+        </View>
+      ) : null}
       <FormMessage message={error} />
       <DateField label="Date paid" today={today} quickPicks={false} value={paidOn} maximumDate={today} onChange={setPaidOn} />
       <Select label="Method" value={method} options={METHODS} onChange={setMethod} />

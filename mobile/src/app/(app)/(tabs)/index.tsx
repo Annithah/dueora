@@ -175,6 +175,14 @@ function DashboardBody({ d }: { d: Dashboard }) {
           sub={countLabel(d.summary.overdue.count)}
           dot={statusBrand.overdue}
         />
+        {d.summary.outstanding.count > d.summary.overdue.count ? (
+          <SummaryCard
+            label="Outstanding"
+            block={d.summary.outstanding}
+            sub={countLabel(d.summary.outstanding.count)}
+            dot={statusBrand.overdue}
+          />
+        ) : null}
         <SummaryCard
           label={t('home.dueThisWeek')}
           block={d.summary.dueThisWeek}
@@ -280,6 +288,57 @@ function DashboardBody({ d }: { d: Dashboard }) {
           </Card>
         )}
       </View>
+
+      {d.lastMonth.count ? (
+        <View>
+          <SectionHeader title="Last month at a glance" action="Report" onAction={() => router.push('/reports')} />
+          <Card style={{ gap: 10 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text variant="body" tone="muted">
+                Due in {monthShort(d.lastMonth.month)}
+              </Text>
+              <Text variant="bodyStrong">{formatUSD(d.lastMonth.expectedCents)}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text variant="body" tone="muted">
+                Paid on time · late
+              </Text>
+              <Text variant="bodyStrong">
+                {d.lastMonth.onTime} · {d.lastMonth.late}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text variant="body" tone="muted">
+                Still unpaid
+              </Text>
+              <Text variant="bodyStrong" tone={d.lastMonth.unpaid ? 'danger' : undefined}>
+                {d.lastMonth.unpaid ? `${d.lastMonth.unpaid} · ${formatUSD(d.lastMonth.remainingCents)}` : 'None 🎉'}
+              </Text>
+            </View>
+          </Card>
+        </View>
+      ) : null}
+
+      {d.companies.length > 1 ? (
+        <View>
+          <SectionHeader title="This month by company" />
+          <Card padding={0} style={{ overflow: 'hidden' }}>
+            {d.companies.map((c, i) => (
+              <View key={c.company.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i ? 1 : 0, borderTopColor: colors.line }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.company.color }} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyStrong">{c.company.name}</Text>
+                  <Text variant="small" tone="muted">
+                    {formatUSD(c.paidCents)} paid · {formatUSD(c.remainingCents)} left
+                    {c.overdueCents ? ` · ${formatUSD(c.overdueCents)} overdue` : ''}
+                  </Text>
+                </View>
+                <Text variant="bodyStrong">{formatUSD(c.expectedCents, { compact: true })}</Text>
+              </View>
+            ))}
+          </Card>
+        </View>
+      ) : null}
 
       <View>
         <SectionHeader title={t('home.quickActions')} />
@@ -413,6 +472,23 @@ function DashboardBody({ d }: { d: Dashboard }) {
               value: m.amountCents,
             }))}
           />
+        </Card>
+      </View>
+
+      <View>
+        <SectionHeader title="Cash flow" action="6 months back · 3 ahead" />
+        <Card style={{ gap: 8 }}>
+          <BarChart
+            accessibilityLabel="Paid in the last 6 months, and what is due this month and the next 3"
+            highlightIndex={d.cashflow.findIndex((m) => m.month === d.today.slice(0, 7))}
+            data={d.cashflow.map((m) => ({
+              label: monthShort(m.month),
+              value: m.month < d.today.slice(0, 7) ? m.paidCents : m.dueCents,
+            }))}
+          />
+          <Text variant="caption" tone="muted">
+            Past months: paid. This month and the next 3: due (estimates for variable bills).
+          </Text>
         </Card>
       </View>
 

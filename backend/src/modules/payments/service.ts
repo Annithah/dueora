@@ -11,7 +11,7 @@ import { loadBill, scopedCompanies, viewsFor, workspaceToday } from '../bills/se
 import { billInclude } from '../bills/view.js';
 import { audit } from '../workspaces/service.js';
 
-import { reconcileCycle, type CycleChange } from './cycle.js';
+import { expectedCents, reconcileCycle, type CycleChange } from './cycle.js';
 
 export interface PaymentRecordedEvent {
   workspaceId: string;
@@ -30,6 +30,7 @@ export interface RecordInput {
   method?: PaymentMethod;
   reference?: string | null;
   notes?: string | null;
+  paidInFull?: boolean;
 }
 
 const paymentInclude = {
@@ -76,7 +77,7 @@ export async function recordPayment(ctx: AppContext, req: Request, billId: strin
   const cycleDueDate = s.nextDueDate;
   const { payment, change } = await ctx.db.$transaction(async (tx) => {
     const paid = await tx.paymentRecord.aggregate({ where: { billId, cycleDueDate }, _sum: { amountCents: true } });
-    const remaining = Math.max(0, s.amountCents - (paid._sum.amountCents ?? 0));
+    const remaining = Math.max(0, (await expectedCents(tx, s, cycleDueDate)) - (paid._sum.amountCents ?? 0));
     const amountCents = input.amountCents ?? remaining;
     if (amountCents <= 0) throw badRequest('Enter an amount greater than zero');
     const created = await tx.paymentRecord.create({
@@ -92,7 +93,7 @@ export async function recordPayment(ctx: AppContext, req: Request, billId: strin
         createdAt: ctx.clock.now(),
       },
     });
-    return { payment: created, change: await reconcileCycle(tx, billId) };
+    return { payment: created, change: await reconcileCycle(tx, billId, undefined, { now: ctx.clock.now(), paidInFull: input.paidInFull }) };
   });
 
   await audit(ctx, workspaceId, actor.userId, 'payment.record', 'PaymentRecord', payment.id, {
@@ -170,7 +171,7 @@ export async function editPayment(ctx: AppContext, req: Request, id: string, inp
 
   const change = await ctx.db.$transaction(async (tx) => {
     await tx.paymentRecord.update({ where: { id }, data: input });
-    return reconcileCycle(tx, before.billId, before.cycleDueDate);
+    return reconcileCycle(tx, before.billId, before.cycleDueDate, { now: ctx.clock.now() });
   });
   await audit(ctx, workspaceIdOf(req), actorOf(req).userId, 'payment.update', 'PaymentRecord', id, {
     before: { amountCents: before.amountCents, paidOn: before.paidOn, method: before.method, reference: before.reference },
@@ -186,7 +187,7 @@ export async function deletePayment(ctx: AppContext, req: Request, id: string) {
   assertCan(req, 'payments:edit', before.bill.companyId);
   const change = await ctx.db.$transaction(async (tx) => {
     await tx.paymentRecord.delete({ where: { id } });
-    return reconcileCycle(tx, before.billId, before.cycleDueDate);
+    return reconcileCycle(tx, before.billId, before.cycleDueDate, { now: ctx.clock.now() });
   });
   await audit(ctx, workspaceIdOf(req), actorOf(req).userId, 'payment.delete', 'PaymentRecord', id, {
     billId: before.billId,

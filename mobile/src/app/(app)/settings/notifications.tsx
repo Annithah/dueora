@@ -33,6 +33,7 @@ import {
   toast,
 } from '@/components/ui';
 import { ApiError, api } from '@/api';
+import { useCompanies } from '@/features/catalog/api';
 import { usePrefs, useSendTest, useUpdatePrefs } from '@/features/notifications/api';
 import { permissionState, type PermissionState } from '@/features/notifications/push';
 import {
@@ -57,6 +58,7 @@ export default function NotificationSettings() {
   const queryClient = useQueryClient();
   const workspaceId = useSession((s) => s.activeWorkspaceId);
   const prefs = usePrefs();
+  const companies = useCompanies();
   const updatePrefs = useUpdatePrefs();
   const workspace = useWorkspace();
   const sendTest = useSendTest();
@@ -229,6 +231,53 @@ export default function NotificationSettings() {
           ))}
         </Card>
       </View>
+
+      {(companies.data?.length ?? 0) > 1 && p ? (
+        <View>
+          <SectionHeader title="Companies" />
+          <Text variant="small" tone="muted" style={{ marginBottom: 8 }}>
+            Choose what you hear about each company. You only ever get notifications for companies you can see.
+          </Text>
+          <Card padding={0} style={{ overflow: 'hidden' }}>
+            {(companies.data ?? []).map((c, i) => {
+              const cp = p.companies?.[c.id] ?? {};
+              const set = (kind: 'reminders' | 'events' | 'summaries', on: boolean) => {
+                const next = { ...(p.companies ?? {}), [c.id]: { ...cp, [kind]: on } };
+                setPref({ companies: next });
+              };
+              return (
+                <View key={c.id} style={{ padding: 12, gap: 6, borderTopWidth: i ? 1 : 0, borderTopColor: colors.line }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.color }} />
+                    <Text variant="bodyStrong" style={{ flex: 1 }}>
+                      {c.name}
+                    </Text>
+                    {cp.reminders === false && cp.events === false && cp.summaries === false ? (
+                      <Text variant="captionStrong" tone="muted">
+                        Muted
+                      </Text>
+                    ) : null}
+                  </View>
+                  {(
+                    [
+                      ['reminders', 'Due-date reminders'],
+                      ['events', 'Payments and price changes'],
+                      ['summaries', 'Weekly and monthly summaries'],
+                    ] as const
+                  ).map(([kind, label]) => (
+                    <View key={kind} style={{ flexDirection: 'row', alignItems: 'center', minHeight: 36 }}>
+                      <Text variant="small" style={{ flex: 1 }}>
+                        {label}
+                      </Text>
+                      <Switch accessibilityLabel={`${c.name}: ${label}`} value={cp[kind] !== false} onValueChange={(v) => set(kind, v)} />
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </Card>
+        </View>
+      ) : null}
 
       <View>
         <SectionHeader title="When" />

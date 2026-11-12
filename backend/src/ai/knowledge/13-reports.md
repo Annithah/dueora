@@ -1,3 +1,3 @@
 # What reports are there?
 
-More → Reports shows the month or the year: paid, outstanding and overdue, spending by category and by company, and a 12-month forecast. Export any report to PDF or Excel and share it from your phone.
+More → Reports shows a month or a year for one company or all of them (use the company switcher). It includes what was due, paid and left; the **payment report** (paid on time or late, still unpaid, by payment method, estimate vs actual for variable bills, compared with the month before); a table per company; overdue money by age (0–30, 31–60, 61–90, 90+ days); what's coming in the next 30, 60 and 90 days; spending by category with sub-categories; and a 12-month forecast. Export to PDF or Excel — "All companies" exports get one sheet per company, with the company, period, generated date and your custom fields.

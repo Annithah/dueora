@@ -106,7 +106,7 @@ export interface BudgetInput {
 /** Create or replace the budget for a scope (the workspace, or one category). */
 export async function upsertBudget(ctx: AppContext, workspaceId: string, input: BudgetInput) {
   if (input.categoryId) {
-    const category = await ctx.db.category.findFirst({ where: { id: input.categoryId, OR: [{ workspaceId }, { workspaceId: null }] } });
+    const category = await ctx.db.category.findFirst({ where: { id: input.categoryId, workspaceId } });
     if (!category) throw badRequest('Choose a category from the list');
   }
   const scope = input.categoryId ?? 'all';

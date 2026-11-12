@@ -113,17 +113,57 @@ export function teamCopy(event: TeamEvent, memberName: string, role?: keyof type
   return { title: 'New member', body: `👋 ${memberName} joined the workspace${r ? ` as ${r}` : ''}.` };
 }
 
-export function weeklyDigestCopy(input: { count: number; totalCents: number; aiLine?: string | null }): Copy {
+/** "Alpha News $1,200.00 · Beta Radio $80.00" — amounts per company, largest first. */
+export function perCompanyLine(rows: readonly { company: string; amountCents: number }[], max = 3): string {
+  const list = rows.filter((r) => r.amountCents > 0).sort((a, b) => b.amountCents - a.amountCents);
+  const shown = list.slice(0, max).map((r) => `${r.company} ${formatUSD(r.amountCents)}`);
+  return list.length > max ? `${shown.join(' · ')} · +${list.length - max} more` : shown.join(' · ');
+}
+
+export function weeklyDigestCopy(input: {
+  count: number;
+  totalCents: number;
+  aiLine?: string | null;
+  /** Still owed per company (overdue and missed cycles included). */
+  outstanding?: readonly { company: string; amountCents: number }[];
+}): Copy {
   const head =
     input.count === 0
       ? 'Nothing due this week — enjoy the calm. 🌿'
       : `${plural(input.count, 'bill')} due this week — ${formatUSD(input.totalCents)} in total.`;
-  return { title: '🗓️ Your week ahead', body: input.aiLine ? `${head} ${input.aiLine}` : head };
+  const owed = input.outstanding?.length ? ` Still owed: ${perCompanyLine(input.outstanding)}.` : '';
+  return { title: '🗓️ Your week ahead', body: `${head}${owed}${input.aiLine ? ` ${input.aiLine}` : ''}` };
 }
 
-export function monthlySummaryCopy(input: { monthLabel: string; paidCents: number; comingCents: number; comingCount: number }): Copy {
+/** The 25th: next month's obligations, per company. */
+export function nextMonthPreviewCopy(input: { monthLabel: string; count: number; totalCents: number; perCompany: readonly { company: string; amountCents: number }[] }): Copy {
+  if (input.count === 0) return { title: `📅 ${input.monthLabel} preview`, body: `Nothing is due in ${input.monthLabel} yet.` };
+  const split = input.perCompany.length > 1 ? ` ${perCompanyLine(input.perCompany)}.` : '';
   return {
-    title: `📈 ${input.monthLabel} in review`,
-    body: `You paid ${formatUSD(input.paidCents)} in ${input.monthLabel}. This month: ${plural(input.comingCount, 'bill')}, ${formatUSD(input.comingCents)}.`,
+    title: `📅 ${input.monthLabel} preview`,
+    body: `${plural(input.count, 'bill')} due in ${input.monthLabel} — ${formatUSD(input.totalCents)}.${split}`,
+  };
+}
+
+/** A variable bill is due soon and its real amount isn't set yet. */
+export function amountNeededCopy(input: { label: string; dueDate: string; estimateCents: number; daysUntilDue: number }): Copy {
+  return {
+    title: `✏️ ${input.label}: amount needed`,
+    body: `Due in ${plural(input.daysUntilDue, 'day')} (${formatLongDate(input.dueDate)}). Set this cycle's real amount — the estimate is ${formatUSD(input.estimateCents)}.`,
+  };
+}
+
+export function monthlySummaryCopy(input: {
+  monthLabel: string;
+  paidCents: number;
+  comingCents: number;
+  comingCount: number;
+  /** This month's obligations per company (shown when there are several). */
+  perCompany?: readonly { company: string; amountCents: number }[];
+}): Copy {
+  const split = (input.perCompany?.length ?? 0) > 1 ? ` (${perCompanyLine(input.perCompany!)})` : '';
+  return {
+    title: `📈 ${input.monthLabel} report is ready`,
+    body: `You paid ${formatUSD(input.paidCents)} in ${input.monthLabel}. This month's obligations: ${plural(input.comingCount, 'bill')}, ${formatUSD(input.comingCents)}${split}.`,
   };
 }

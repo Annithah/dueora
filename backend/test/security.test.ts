@@ -123,7 +123,7 @@ beforeAll(async () => {
   fx = await buildFixture(app, ctx);
   const a = fx.as('admin');
   const pay = await a.post(`/api/v1/bills/${fx.billIds.internet}/payments`).send({ method: 'CASH' });
-  const cat = await a.post('/api/v1/categories').send({ name: 'Victim cat', icon: 'tag', color: '#111111' });
+  const cat = await a.post('/api/v1/categories').send({ companyId: fx.companies.alpha, name: 'Victim cat', icon: 'tag', color: '#111111' });
   const inv = await a.post('/api/v1/workspaces/current/invites').send({ email: 'someone@fixture.test', role: 'VIEWER' });
   const members = await a.get('/api/v1/workspaces/current/members');
   await a.post('/api/v1/notifications/test');

@@ -36,16 +36,17 @@ export async function buildAiFixture(app: Express, ctx: TestContext): Promise<Ai
   const viewer = await addMember(app, ctx, admin, workspaceId, 'Ivy Chen', 'ivy@riverside-school.test', 'VIEWER');
   const as = client(app, admin, workspaceId);
   const school = (await as.get('/api/v1/companies')).body[0].id as string;
-  const canteen = (await as.post('/api/v1/companies').send({ name: 'Riverside Canteen' })).body.id as string;
-  const cats = (await as.get('/api/v1/categories')).body as { id: string; name: string }[];
-  const cat = (n: string) => cats.find((c) => c.name === n)!.id;
+  const canteen = (await as.post('/api/v1/companies').send({ name: 'Riverside Canteen', categoryStart: { mode: 'suggestions' } })).body.id as string;
+  const cats = (await as.get('/api/v1/categories')).body as { id: string; name: string; companyId: string }[];
+  // Categories belong to a company.
+  const cat = (n: string, companyId = school) => cats.find((c) => c.name === n && c.companyId === companyId)!.id;
   const add = async (body: Record<string, unknown>) => (await as.post('/api/v1/bills').send(body)).body.id as string;
   const subs = {
     internet: await add({ name: 'Internet', companyId: school, categoryId: cat('Communication & internet'), amountCents: 5_000, frequencyUnit: 'MONTH', startDate: '2026-11-05' }),
     exam: await add({ name: 'Exam software', companyId: school, categoryId: cat('Technology & software'), amountCents: 120_000, frequencyUnit: 'YEAR', startDate: '2027-01-15' }),
     hosting: await add({ name: 'Hosting', companyId: school, categoryId: cat('Hosting & domains'), amountCents: 24_000, frequencyUnit: 'YEAR', startDate: '2026-11-20', accountReference: SCHOOL_KEY }),
-    cleaning: await add({ name: 'Cleaning', companyId: canteen, categoryId: cat('Office & rent'), amountCents: 4_000, frequencyUnit: 'WEEK', startDate: '2026-10-26', nextDueDate: '2026-10-26' }),
-    canteenGas: await add({ name: 'Cooking gas', companyId: canteen, categoryId: cat('Utilities'), amountCents: 9_000, frequencyUnit: 'MONTH', startDate: '2026-11-25' }),
+    cleaning: await add({ name: 'Cleaning', companyId: canteen, categoryId: cat('Office & rent', canteen), amountCents: 4_000, frequencyUnit: 'WEEK', startDate: '2026-10-26', nextDueDate: '2026-10-26' }),
+    canteenGas: await add({ name: 'Cooking gas', companyId: canteen, categoryId: cat('Utilities', canteen), amountCents: 9_000, frequencyUnit: 'MONTH', startDate: '2026-11-25' }),
   };
 
   const clinicAdmin = await register(app, 'Dr. Sam Okoro', 'sam@lakeview-clinic.test');

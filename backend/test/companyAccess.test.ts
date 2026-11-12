@@ -114,7 +114,7 @@ describe('a member limited to Beta', () => {
   it('manages Beta bills and payments', async () => {
     const create = await as(betaFin)
       .post('/api/v1/bills')
-      .send({ name: 'Studio power', companyId: fx.companies.beta, categoryId: fx.categories['Marketing'], amountCents: 5_000, frequencyUnit: 'MONTH' });
+      .send({ name: 'Studio power', companyId: fx.companies.beta, categoryId: fx.categoriesOf.beta['Marketing'], amountCents: 5_000, frequencyUnit: 'MONTH' });
     expect(create.status).toBe(201);
     expect((await as(betaFin).post(`/api/v1/bills/${fx.billIds['beta-x']}/payments`).send({ method: 'CASH' })).status).toBe(201);
   });

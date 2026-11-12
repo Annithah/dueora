@@ -32,6 +32,9 @@ const fields = {
   isTrial: z.boolean(),
   trialEndsOn: isoDate.nullable(),
   defaultPaymentMethod: z.enum(METHODS).nullable(),
+  amountType: z.enum(['FIXED', 'VARIABLE']),
+  /** { [customFieldId]: value } — checked against the company's fields by the service. */
+  customValues: z.record(z.string().max(40), z.union([z.string().max(500), z.number(), z.null()])).nullable(),
 };
 
 const CreateBody = z
@@ -49,6 +52,8 @@ const CreateBody = z
     isTrial: fields.isTrial.optional(),
     trialEndsOn: fields.trialEndsOn.optional(),
     defaultPaymentMethod: fields.defaultPaymentMethod.optional(),
+    amountType: fields.amountType.optional(),
+    customValues: fields.customValues.optional(),
   })
   .strict()
   .refine((b) => !b.isTrial || !!b.trialEndsOn, { message: 'When does the free trial end?', path: ['trialEndsOn'] })
@@ -76,6 +81,10 @@ const ListQuery = pagination.extend({
   companyId: idList,
   categoryId: idList,
   frequency: csvEnum(UNITS),
+  amountType: z.enum(['FIXED', 'VARIABLE']).optional(),
+  /** Custom-field filter: `customField=<fieldId>&customValue=<value>` (text fields match partially). */
+  customField: id.optional(),
+  customValue: z.string().trim().max(200).optional(),
   dueFrom: isoDate.optional(),
   dueTo: isoDate.optional(),
 });
@@ -103,6 +112,9 @@ export function billsRouter(ctx: AppContext): Router {
         companyIds: q.companyId,
         categoryIds: q.categoryId,
         frequencies: q.frequency,
+        amountType: q.amountType,
+        customField: q.customField,
+        customValue: q.customValue,
         dueFrom: q.dueFrom,
         dueTo: q.dueTo,
         page: q.page,
@@ -139,6 +151,19 @@ export function billsRouter(ctx: AppContext): Router {
 
   router.post('/:id/unarchive', manage, async (req, res) => {
     res.json(await svc.setArchived(ctx, req, parseParams(req, Params).id, false));
+  });
+
+  /** The bill's cycles in a range (default: a year back to a year ahead), with stored amounts. */
+  router.get('/:id/cycles', async (req, res) => {
+    const q = parseQuery(req, z.object({ from: isoDate.optional(), to: isoDate.optional() }));
+    res.json(await svc.billCycles(ctx, req, parseParams(req, Params).id, q.from, q.to));
+  });
+
+  /** Set one cycle's real amount (variable bills; also a one-off change for a fixed bill). */
+  router.put('/:id/cycles/:dueDate', manage, async (req, res) => {
+    const { id: billId, dueDate } = parseParams(req, z.object({ id, dueDate: isoDate }));
+    const body = parseBody(req, z.object({ amountCents }).strict());
+    res.json(await svc.setCycleAmount(ctx, req, billId, dueDate, body.amountCents));
   });
 
   /** Snooze reminders for this cycle (any role; only affects the caller). */

@@ -12,8 +12,8 @@ import { Prisma, type NotificationType } from '../generated/prisma/client.js';
 import { checkBudgetAlerts } from '../modules/budgets/service.js';
 import { membersOfCompany, workspaceAccess } from '../modules/companies/access.js';
 
-import { autoRenewCopy, digestCopy, billLabel, reminderCopy, trialEndingCopy } from './messages.js';
-import { createNotification, dedupeKey, billUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
+import { amountNeededCopy, autoRenewCopy, digestCopy, billLabel, reminderCopy, trialEndingCopy } from './messages.js';
+import { companyAllows, createNotification, dedupeKey, billUrl, prefsFor, quietHoursEnd, type Prefs } from './store.js';
 import { runSummaries } from './summaries.js';
 
 /** TRIAL_ENDING goes out this many days before the trial ends. */
@@ -35,6 +35,7 @@ interface OrgForReminders {
 
 export interface PlannedReminder {
   billId: string;
+  companyId: string;
   cycleDueDate: string;
   offsetDays: number;
   type: NotificationType;
@@ -88,19 +89,48 @@ export async function runRemindersForAllOrgs(ctx: AppContext): Promise<RunResult
  * Plan and enqueue today's reminders for one workspace. Returns null when it's too
  * early locally or another worker already processed today.
  */
-export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders): Promise<RunResult | null> {
-  const now = ctx.clock.now();
-  const local = localTimeIn(now, org.timezone);
-  if (local.hour < org.reminderHour) return null;
-  const today = local.date;
+/** A variable bill's "amount needed" reminder goes out this many days before it is due. */
+export const AMOUNT_NEEDED_OFFSETS = [5] as const;
 
-  // Claim the day — the unique (workspaceId, localDate) makes this atomic across workers.
+/**
+ * Companies may have their own reminder hour (Finalize brief, Part 7). Each hour is its own run
+ * scope: "" for the workspace hour (and companies without their own), else the company id.
+ * Summaries and budget alerts ride on the workspace scope.
+ */
+export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders): Promise<RunResult | null> {
+  const local = localTimeIn(ctx.clock.now(), org.timezone);
+  const companies = await ctx.db.company.findMany({ where: { workspaceId: org.id }, select: { id: true, reminderHour: true } });
+  const own = companies.filter((c) => c.reminderHour !== null && c.reminderHour !== org.reminderHour);
+  const ownIds = new Set(own.map((c) => c.id));
+  const scopes = [
+    { key: '', hour: org.reminderHour, companyIds: companies.filter((c) => !ownIds.has(c.id)).map((c) => c.id), main: true },
+    ...own.map((c) => ({ key: c.id, hour: c.reminderHour!, companyIds: [c.id], main: false })),
+  ];
+  const runs: RunResult[] = [];
+  for (const scope of scopes) {
+    if (local.hour < scope.hour) continue;
+    const r = await runScope(ctx, org, scope);
+    if (r) runs.push(r);
+  }
+  if (runs.length === 0) return null;
+  return runs.reduce((a, r) => ({ ...a, reminders: a.reminders + r.reminders, notifications: a.notifications + r.notifications }));
+}
+
+async function runScope(
+  ctx: AppContext,
+  org: OrgForReminders,
+  scope: { key: string; companyIds: string[]; main: boolean },
+): Promise<RunResult | null> {
+  const now = ctx.clock.now();
+  const today = localTimeIn(now, org.timezone).date;
+
+  // Claim the day — the unique (workspaceId, scope, localDate) makes this atomic across workers.
   const previous = await ctx.db.workspaceReminderRun.findFirst({
-    where: { workspaceId: org.id, localDate: { lt: today } },
+    where: { workspaceId: org.id, scope: scope.key, localDate: { lt: today } },
     orderBy: { localDate: 'desc' },
   });
   try {
-    await ctx.db.workspaceReminderRun.create({ data: { workspaceId: org.id, localDate: today, createdAt: now } });
+    await ctx.db.workspaceReminderRun.create({ data: { workspaceId: org.id, scope: scope.key, localDate: today, createdAt: now } });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return null;
     throw err;
@@ -109,9 +139,17 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   const since = previous?.localDate ?? addDays(today, -1);
 
   const bills = await ctx.db.bill.findMany({
-    where: { workspaceId: org.id, status: 'ACTIVE' },
+    where: { workspaceId: org.id, status: 'ACTIVE', companyId: { in: scope.companyIds } },
     include: { company: { select: { name: true } } },
   });
+  // The open cycle's own amount (a variable bill's actual), when stored.
+  const cycleRows = bills.length
+    ? await ctx.db.billCycle.findMany({
+        where: { OR: bills.map((b) => ({ billId: b.id, dueDate: b.nextDueDate })) },
+        select: { billId: true, amountCents: true, isActual: true },
+      })
+    : [];
+  const cycleOf = new Map(cycleRows.map((c) => [c.billId, c]));
   const payments = bills.length
     ? await ctx.db.paymentRecord.findMany({
         where: { workspaceId: org.id, OR: bills.map((o) => ({ billId: o.id, cycleDueDate: o.nextDueDate })) },
@@ -134,7 +172,8 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   for (const o of bills) {
     const offsets = o.reminderOffsets as number[];
     const paid = paidForCycle(payments.filter((p) => p.billId === o.id), o.nextDueDate);
-    const remaining = o.amountCents - paid;
+    const stored = cycleOf.get(o.id);
+    const remaining = (stored?.amountCents ?? o.amountCents) - paid;
     const label = billLabel(o.name, o.company.name);
     const days = daysBetween(today, o.nextDueDate);
     const emailItem = {
@@ -153,6 +192,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
       const copy = reminderCopy({ name: o.name, company: o.company.name, amountCents: remaining, dueDate: o.nextDueDate, daysUntilDue: days });
       return {
         billId: o.id,
+        companyId: o.companyId,
         cycleDueDate: o.nextDueDate,
         offsetDays,
         type: days > 0 ? 'REMINDER' : days === 0 ? 'DUE_TODAY' : 'OVERDUE',
@@ -171,6 +211,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
         const copy = trialEndingCopy({ name: o.name, daysLeft: daysBetween(today, o.trialEndsOn) });
         planned.push({
           billId: o.id,
+          companyId: o.companyId,
           cycleDueDate: o.trialEndsOn,
           offsetDays: t.offsetDays,
           type: 'TRIAL_ENDING',
@@ -185,6 +226,26 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
 
     if (remaining <= 0) continue;
 
+    // A variable bill whose real amount isn't set yet: ask its managers 5 days before.
+    if (o.amountType === 'VARIABLE' && !stored?.isActual) {
+      const n = mostRecentMissedReminder(o.nextDueDate, AMOUNT_NEEDED_OFFSETS, since, today);
+      if (n && days > 0) {
+        const copy = amountNeededCopy({ label, dueDate: o.nextDueDate, estimateCents: o.amountCents, daysUntilDue: days });
+        planned.push({
+          billId: o.id,
+          companyId: o.companyId,
+          cycleDueDate: o.nextDueDate,
+          offsetDays: n.offsetDays,
+          type: 'AMOUNT_NEEDED',
+          title: copy.title,
+          body: copy.body,
+          keyMoment: false,
+          audience: 'managers',
+          emailItem,
+        });
+      }
+    }
+
     // Heads-up before an automatic renewal charges the card.
     if (o.autoRenew) {
       const a = mostRecentMissedReminder(o.nextDueDate, AUTO_RENEW_OFFSETS, since, today);
@@ -192,6 +253,7 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
         const copy = autoRenewCopy({ label, dueDate: o.nextDueDate, amountCents: remaining });
         planned.push({
           billId: o.id,
+          companyId: o.companyId,
           cycleDueDate: o.nextDueDate,
           offsetDays: a.offsetDays,
           type: 'AUTO_RENEW_NOTICE',
@@ -235,12 +297,15 @@ export async function runRemindersForOrg(ctx: AppContext, org: OrgForReminders):
   for (const [userId, items] of perUser) {
     created += await deliverToUser(ctx, org, userId, items, today, sendAfter);
   }
-  // Weekly digest (Mondays), monthly summary (the 1st) and budget alerts ride on the same daily run.
-  try {
-    created += await runSummaries(ctx, org, { since, today, sendAfter, members: everyone, access });
-    created += await checkBudgetAlerts(ctx, org.id, today);
-  } catch (err) {
-    ctx.logger.error({ err, workspaceId: org.id }, 'Summaries or budget check failed');
+  // Weekly digest (Mondays), monthly summary (the 1st), next-month preview (the 25th) and budget
+  // alerts ride on the workspace's own run.
+  if (scope.main) {
+    try {
+      created += await runSummaries(ctx, org, { since, today, sendAfter, members: everyone, access });
+      created += await checkBudgetAlerts(ctx, org.id, today);
+    } catch (err) {
+      ctx.logger.error({ err, workspaceId: org.id }, 'Summaries or budget check failed');
+    }
   }
   ctx.logger.info({ workspaceId: org.id, today, since, reminders: reminderCount, notifications: created }, 'Reminders planned');
   return { workspaceId: org.id, localDate: today, since, reminders: reminderCount, notifications: created };
@@ -263,7 +328,7 @@ async function deliverToUser(
   sendAfter: Date | null,
 ): Promise<number> {
   const prefs: Prefs = await prefsFor(ctx, userId, org.id);
-  const items = all.filter((i) => !prefs.muted.has(i.billId));
+  const items = all.filter((i) => !prefs.muted.has(i.billId) && companyAllows(prefs, i.companyId, 'reminders'));
   if (items.length === 0) return 0;
   const hasDevice = (await ctx.db.deviceToken.count({ where: { userId, active: true } })) > 0;
   const canPush = prefs.pushEnabled && hasDevice;

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Archive, ArchiveRestore, ListChecks, Trash2, Users } from 'lucide-react-native';
+import { Archive, ArchiveRestore, ListChecks, Tags, Trash2, Users } from 'lucide-react-native';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -8,12 +8,14 @@ import { ApiError } from '@/api';
 import { QueryState } from '@/components/layout/QueryState';
 import { Screen } from '@/components/layout/Screen';
 import { TopBar } from '@/components/layout/TopBar';
-import { Avatar, BottomSheet, Button, Card, ListItem, SectionHeader, Segmented, Text, toast } from '@/components/ui';
+import { Avatar, BottomSheet, Button, Card, CategoryIcon, ListItem, SectionHeader, Segmented, Text, toast } from '@/components/ui';
 import {
   archiveCompany,
   deleteCompany,
   unarchiveCompany,
+  categoryTree,
   updateCompany,
+  useCategories,
   useCompany,
   type CompanyDetail,
 } from '@/features/catalog/api';
@@ -25,7 +27,7 @@ import { useSelectCompany } from '@/state/companyFilter';
 import { useSession } from '@/state/session';
 import { useTheme } from '@/theme';
 
-type Tab = 'overview' | 'members' | 'settings';
+type Tab = 'overview' | 'categories' | 'members' | 'settings';
 
 const offsetText = (d: number) => (d === 0 ? 'on the day' : d > 0 ? `${d}d before` : `${-d}d after`);
 
@@ -72,6 +74,7 @@ function Body({ c }: { c: CompanyDetail }) {
 
   const tabs: { value: Tab; label: string }[] = [
     { value: 'overview', label: 'Overview' },
+    { value: 'categories', label: 'Categories' },
     { value: 'members', label: 'Members' },
     ...(can.manageCompanies ? [{ value: 'settings' as const, label: 'Settings' }] : []),
   ];
@@ -119,6 +122,8 @@ function Body({ c }: { c: CompanyDetail }) {
           </Button>
         </View>
       ) : null}
+
+      {tab === 'categories' ? <CompanyCategories companyId={c.id} /> : null}
 
       {tab === 'members' ? (
         <View>
@@ -196,6 +201,41 @@ function Body({ c }: { c: CompanyDetail }) {
         </View>
       </BottomSheet>
     </>
+  );
+}
+
+function CompanyCategories({ companyId }: { companyId: string }) {
+  const { colors } = useTheme();
+  const categories = useCategories({ companyId });
+  const list = categories.data ?? [];
+  return (
+    <View style={{ gap: 12 }}>
+      {list.length ? (
+        <Card padding={0} style={{ overflow: 'hidden' }}>
+          {categoryTree(list).map(({ category: k, depth }, i) => (
+            <ListItem
+              key={k.id}
+              divider={i > 0}
+              leading={<View style={{ paddingLeft: depth ? 18 : 0 }}><CategoryIcon icon={k.icon} size={depth ? 28 : 34} /></View>}
+              title={k.name}
+              subtitle={`${k.billCount} bill${k.billCount === 1 ? '' : 's'}`}
+            />
+          ))}
+        </Card>
+      ) : (
+        <Text variant="body" tone="muted">
+          No categories yet.
+        </Text>
+      )}
+      <Button
+        full
+        variant="secondary"
+        icon={<Tags size={18} color={colors.primaryStrong} />}
+        onPress={() => router.push({ pathname: '/settings/categories', params: { companyId } })}
+      >
+        Manage categories and custom fields
+      </Button>
+    </View>
   );
 }
 

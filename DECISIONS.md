@@ -325,3 +325,52 @@ the master prompt, the brief wins.
   "All companies". The Bills tab uses the switcher unless its own company filter is set.
 - The company detail screen has Overview, Members and Settings. Its Bills tab opens the Bills list filtered by the
   switcher, and its Categories tab waits for per-company categories (Part 3).
+
+## D36 — Categories belong to a company; nothing is seeded
+- `Category.companyId` (required) and one level of sub-categories (`parentId`; a parent never has a parent), with
+  description, sort order, archive and bill defaults (frequency, fixed/variable, reminders, payment method).
+  Names are unique per company.
+- The 11 shared built-ins are gone. Suggestions live in `backend/src/config/categorySuggestions.ts` and are only
+  copied when someone picks them: a new company starts empty (API default), with picked suggestions, or as a copy
+  of another company. A new workspace's first company starts with the suggestions so the first bill needs no setup.
+- Migration (`20261112100000_company_categories_cycles`, hand-written for SQLite and Postgres): every
+  (category, company) pair used by a bill becomes that company's own copy; unused custom categories and
+  budget-only categories go to the workspace's oldest company; a category budget points at the copy in the
+  company with the most bills in it; the shared rows are then dropped. Verified on sample data for both databases.
+- Deleting a category with bills needs a target (`?moveToId=`); merge moves bills, sub-categories and the budget.
+  Archiving a parent archives its sub-categories, and restoring brings back the ones archived with it.
+- The company detail screen's Categories tab (Part 2) now lists them and links to More → Categories.
+
+## D37 — Custom fields per company
+- At most 10 per company: TEXT, NUMBER, DATE or DROPDOWN, on all bills or chosen categories, optionally required.
+  Values live on the bill as JSON keyed by field id (`Bill.customValues`): no extra table, and bill listing and
+  filtering already happen in memory after the indexed query. Deleting a field leaves old values unused.
+
+## D38 — Variable amounts and stored cycles
+- `Bill.amountType` (FIXED | VARIABLE; for VARIABLE `amountCents` is the estimate) and `BillCycle` (one row per
+  cycle that has its own amount or has closed: expected amount, isActual, paid, closedAt).
+- Cycles are written when a cycle closes (with the amount it expected), when a real amount is set
+  (`PUT /bills/:id/cycles/:dueDate`), and by "paid in full" (closes at the paid amount). History stays exact when the
+  bill's amount changes later. Cycles without a row use the bill's current amount.
+- The pure cycle engine (`backend/src/domain/cycles.ts`) lists closed, current, **missed** and future cycles. Missed
+  cycles (after the open one, already past due) are all overdue: a monthly bill unpaid since August owes August,
+  September, October and November. Payments still go to the oldest open cycle, which then advances.
+- The dashboard, tracking views, reports, summaries and reminders all use the engine, so every screen agrees.
+
+## D39 — Tracking views and reports are computed on the server
+- `GET /views/:view` (upcoming 7/30/60/90, this month, next month, outstanding, overdue with ageing, paid,
+  obligations with the next reminder), each with totals and a per-company breakdown. The Bills tab segments use it.
+- Reports add an `analysis`: the payment report (on time = the cycle's last payment on or before its due date;
+  still unpaid; by method; estimate vs actual; vs the period before; per company), ageing, upcoming 30/60/90 and the
+  category report with sub-categories rolled up. Exports carry the company, period and generated date; "All
+  companies" Excel exports add one sheet per company, with custom fields as columns.
+
+## D40 — Company-aware notifications
+- A company with its own reminder hour is its own daily run scope (`WorkspaceReminderRun.scope` = company id;
+  "" = the workspace hour), so its reminders go out at that hour, once a day. Summaries and budget alerts ride on
+  the workspace scope.
+- New: AMOUNT_NEEDED (a variable bill without its real amount, 5 days before, to the company's managers) and
+  NEXT_MONTH_PREVIEW (the 25th, per company). The monthly summary says the report is ready and lists this month's
+  obligations per company; the weekly digest lists what is still owed per company.
+- Per-company switches (`NotificationPreference.companyPrefs`: reminders, events, summaries); all three off = muted.
+  Summaries are grouped by what each person sees after their switches.

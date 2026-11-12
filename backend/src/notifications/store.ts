@@ -88,9 +88,20 @@ export interface Prefs {
   budgetAlerts: boolean;
   teamActivity: boolean;
   muted: Set<string>;
+  /** Per-company switches (missing = on). */
+  companies: Record<string, CompanyPrefs>;
 }
 
-export const DEFAULT_PREFS: Omit<Prefs, 'muted'> = {
+export type CompanyNotificationKind = 'reminders' | 'events' | 'summaries';
+export type CompanyPrefs = Partial<Record<CompanyNotificationKind, boolean>>;
+
+/** May this user hear about this company (for this kind of notification)? */
+export function companyAllows(prefs: Pick<Prefs, 'companies'>, companyId: string | null | undefined, kind: CompanyNotificationKind): boolean {
+  if (!companyId) return true;
+  return prefs.companies[companyId]?.[kind] !== false;
+}
+
+export const DEFAULT_PREFS: Omit<Prefs, 'muted' | 'companies'> = {
   pushEnabled: true,
   emailEnabled: true,
   inAppEnabled: true,
@@ -103,7 +114,7 @@ export const DEFAULT_PREFS: Omit<Prefs, 'muted'> = {
 
 export async function prefsFor(ctx: AppContext, userId: string, workspaceId: string): Promise<Prefs> {
   const p = await ctx.db.notificationPreference.findUnique({ where: { userId_workspaceId: { userId, workspaceId } } });
-  if (!p) return { ...DEFAULT_PREFS, muted: new Set() };
+  if (!p) return { ...DEFAULT_PREFS, muted: new Set(), companies: {} };
   return {
     pushEnabled: p.pushEnabled,
     emailEnabled: p.emailEnabled,
@@ -114,6 +125,7 @@ export async function prefsFor(ctx: AppContext, userId: string, workspaceId: str
     budgetAlerts: p.budgetAlerts,
     teamActivity: p.teamActivity,
     muted: new Set(p.mutedBillIds as string[]),
+    companies: (p.companyPrefs as Record<string, CompanyPrefs> | null) ?? {},
   };
 }
 

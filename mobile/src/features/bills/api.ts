@@ -26,7 +26,11 @@ export interface CategoryRef {
   name: string;
   icon: string;
   color: string;
+  parentId?: string | null;
+  parent?: { id: string; name: string } | null;
 }
+
+export type AmountType = 'FIXED' | 'VARIABLE';
 
 /** Masked account reference; the plain value only comes from useRevealReference (ADMIN/FINANCE). */
 export interface MaskedKey {
@@ -40,8 +44,14 @@ export interface Bill {
   name: string;
   provider: string | null;
   description: string | null;
-  /** US dollars, integer cents. */
+  /** US dollars, integer cents. For a VARIABLE bill: the estimate. */
   amountCents: number;
+  amountType: AmountType;
+  /** This cycle's amount (a variable bill's actual once set). */
+  cycleAmountCents: number;
+  isEstimate: boolean;
+  /** { [customFieldId]: value } */
+  customValues: Record<string, string | number>;
   frequencyUnit: FrequencyUnit;
   frequencyInterval: number;
   frequencyLabel: string;
@@ -59,6 +69,13 @@ export interface Bill {
   cycleLengthDays: number;
   paidCents: number;
   remainingCents: number;
+  /** Days the open cycle is past due. */
+  daysOverdue: number;
+  /** Everything due on or before today, including cycles missed after the open one. */
+  outstandingCents: number;
+  overdueCents: number;
+  overdueCycles: number;
+  missedCycles: number;
   accountReference: MaskedKey | null;
   company: CompanyRef;
   category: CategoryRef;
@@ -121,6 +138,7 @@ export interface BillQuery {
   companyIds?: string[];
   categoryIds?: string[];
   frequencies?: string[];
+  amountType?: AmountType;
   dueFrom?: string;
   dueTo?: string;
 }
@@ -144,6 +162,22 @@ export interface BillInput {
   isTrial?: boolean;
   trialEndsOn?: string | null;
   defaultPaymentMethod?: PaymentMethod | null;
+  amountType?: AmountType;
+  customValues?: Record<string, string | number | null>;
+}
+
+export type CycleState = 'PAID' | 'PARTIALLY_PAID' | 'OVERDUE' | 'DUE_TODAY' | 'DUE_SOON' | 'UPCOMING';
+
+/** One cycle of a bill (closed, the open one, a missed one or a future one). */
+export interface BillCycle {
+  dueDate: string;
+  kind: 'closed' | 'current' | 'missed' | 'future';
+  expectedCents: number;
+  isEstimate: boolean;
+  paidCents: number;
+  remainingCents: number;
+  state: CycleState;
+  daysOverdue: number;
 }
 
 const useWorkspaceId = () => useSession((s) => s.activeWorkspaceId);
@@ -175,6 +209,7 @@ export function useBillList(input: BillQuery) {
         companyId: csv(query.companyIds),
         categoryId: csv(query.categoryIds),
         frequency: csv(query.frequencies),
+        amountType: query.amountType,
         dueFrom: query.dueFrom,
         dueTo: query.dueTo,
       }),
@@ -258,6 +293,8 @@ export function useRecordPayment(billId: string) {
       method?: PaymentMethod;
       reference?: string | null;
       notes?: string | null;
+      /** Close the cycle at this amount even if it is less than expected. */
+      paidInFull?: boolean;
     }) => api.post<RecordResult>(`/bills/${billId}/payments`, input),
     onSuccess: () => invalidateMoney(queryClient, workspaceId),
   });
@@ -306,3 +343,25 @@ export const SNOOZE_CHOICES = [
   { days: 3, label: 'In 3 days' },
   { days: 7, label: 'Next week' },
 ] as const;
+
+/** A bill's cycles around today (a year back to a year ahead), with their own amounts. */
+export function useBillCycles(billId: string | undefined) {
+  const workspaceId = useWorkspaceId();
+  return useQuery({
+    queryKey: ['bills', workspaceId, 'cycles', billId],
+    queryFn: () => api.get<{ cycles: BillCycle[]; today: string }>(`/bills/${billId}/cycles`),
+    enabled: !!workspaceId && !!billId,
+  });
+}
+
+/** Set one cycle's real amount (a variable bill's actual). */
+export function useSetCycleAmount(billId: string) {
+  const queryClient = useQueryClient();
+  const workspaceId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ dueDate, amountCents }: { dueDate: string; amountCents: number }) =>
+      api.request<BillDetail>(`/bills/${billId}/cycles/${dueDate}`, { method: 'PUT', body: { amountCents } }),
+    onSuccess: () =>
+      Promise.all(['bills', 'dashboard', 'calendar', 'reports', 'views'].map((k) => queryClient.invalidateQueries({ queryKey: [k, workspaceId] }))),
+  });
+}

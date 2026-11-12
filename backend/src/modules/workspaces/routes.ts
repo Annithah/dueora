@@ -23,6 +23,13 @@ const CreateBody = z.object({
   timezone: timeZone.default('UTC'),
   /** The first company in this workspace (defaults to the workspace name). */
   firstCompanyName: z.string().trim().min(1).max(60).optional(),
+  /** The first company's categories: suggestions (default, optionally only `names`) or none. */
+  categoryStart: z
+    .discriminatedUnion('mode', [
+      z.object({ mode: z.literal('empty') }),
+      z.object({ mode: z.literal('suggestions'), names: z.array(z.string().max(60)).max(50).optional(), withSubcategories: z.boolean().optional() }),
+    ])
+    .optional(),
 });
 
 const UpdateBody = z

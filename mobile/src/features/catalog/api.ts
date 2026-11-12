@@ -47,14 +47,60 @@ export interface CompanyAccessInput {
   companies: CompanyGrant[];
 }
 
+export type FrequencyUnitValue = 'WEEK' | 'MONTH' | 'YEAR' | 'ONCE';
+export type AmountTypeValue = 'FIXED' | 'VARIABLE';
+export type PaymentMethodValue = 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'CARD' | 'CASH' | 'OTHER';
+
+export interface CategoryDefaults {
+  frequencyUnit: FrequencyUnitValue | null;
+  frequencyInterval: number | null;
+  amountType: AmountTypeValue | null;
+  reminderOffsets: number[] | null;
+  paymentMethod: PaymentMethodValue | null;
+}
+
+/** A category of one company; `parentId` is set for a sub-category (one level). */
 export interface Category {
   id: string;
+  companyId: string;
+  parentId: string | null;
+  parent: { id: string; name: string } | null;
   name: string;
   icon: string;
   color: string;
-  isDefault: boolean;
-  billCount?: number;
+  description: string | null;
+  sortOrder: number;
+  defaults: CategoryDefaults;
+  archived: boolean;
+  billCount: number;
 }
+
+export interface CategorySuggestion {
+  name: string;
+  icon: string;
+  color: string;
+  children: string[];
+}
+
+export type CustomFieldType = 'TEXT' | 'NUMBER' | 'DATE' | 'DROPDOWN';
+
+export interface CustomField {
+  id: string;
+  companyId: string;
+  name: string;
+  type: CustomFieldType;
+  options: string[] | null;
+  /** null = every bill of the company. */
+  categoryIds: string[] | null;
+  required: boolean;
+  sortOrder: number;
+}
+
+/** How a new company's categories start. */
+export type CategoryStart =
+  | { mode: 'empty' }
+  | { mode: 'suggestions'; names?: string[]; withSubcategories?: boolean }
+  | { mode: 'copy'; fromCompanyId: string };
 
 export interface Member {
   id: string;
@@ -105,14 +151,45 @@ export function useCompanyRole(companyId: string | undefined): Role | null | und
   return companies.data.find((c) => c.id === companyId)?.myRole ?? null;
 }
 
-export function useCategories() {
+/** Categories of every company the user can see, or of one company. */
+export function useCategories(options: { companyId?: string; includeArchived?: boolean } = {}) {
   const workspaceId = useWorkspaceId();
   return useQuery({
-    queryKey: ['categories', workspaceId],
-    queryFn: () => api.get<Category[]>('/categories'),
+    queryKey: ['categories', workspaceId, options.companyId ?? 'all', options.includeArchived ?? false],
+    queryFn: () =>
+      api.get<Category[]>('/categories', {
+        companyId: options.companyId,
+        includeArchived: options.includeArchived ? 'true' : undefined,
+      }),
     enabled: !!workspaceId,
-    staleTime: 5 * 60_000,
+    staleTime: 60_000,
   });
+}
+
+export function useCategorySuggestions() {
+  return useQuery({
+    queryKey: ['category-suggestions'],
+    queryFn: () => api.get<CategorySuggestion[]>('/categories/suggestions'),
+    staleTime: 24 * 60 * 60_000,
+  });
+}
+
+export function useCustomFields(companyId: string | undefined) {
+  const workspaceId = useWorkspaceId();
+  return useQuery({
+    queryKey: ['custom-fields', workspaceId, companyId],
+    queryFn: () => api.get<CustomField[]>('/custom-fields', { companyId }),
+    enabled: !!workspaceId && !!companyId,
+  });
+}
+
+/** Top-level categories followed by their sub-categories (for pickers and lists). */
+export function categoryTree(list: readonly Category[]): { category: Category; depth: 0 | 1 }[] {
+  const top = list.filter((c) => !c.parentId || !list.some((p) => p.id === c.parentId));
+  return top.flatMap((t) => [
+    { category: t, depth: 0 as const },
+    ...list.filter((c) => c.parentId === t.id).map((c) => ({ category: c, depth: 1 as const })),
+  ]);
 }
 
 export function useMembers() {
@@ -158,7 +235,7 @@ export interface CompanyFields {
   monthlyBudgetCents?: number | null;
 }
 
-export const createCompany = (body: CompanyFields) => api.post<Company>('/companies', body);
+export const createCompany = (body: CompanyFields & { categoryStart?: CategoryStart }) => api.post<Company>('/companies', body);
 export const updateCompany = ({ id, ...body }: Partial<CompanyFields> & { id: string }) =>
   api.patch<Company>(`/companies/${id}`, body);
 /** Only a company without bills; one with bills is refused (409 HAS_BILLS) — archive it instead. */
@@ -166,9 +243,36 @@ export const deleteCompany = (id: string) => api.del(`/companies/${id}`);
 export const archiveCompany = (id: string) => api.post<Company>(`/companies/${id}/archive`);
 export const unarchiveCompany = (id: string) => api.post<Company>(`/companies/${id}/unarchive`);
 
-export const createCategory = (body: { name: string; icon: string; color: string }) =>
+export interface CategoryFields {
+  name: string;
+  icon?: string;
+  color?: string;
+  parentId?: string | null;
+  description?: string | null;
+  defaultFrequencyUnit?: FrequencyUnitValue | null;
+  defaultFrequencyInterval?: number | null;
+  defaultAmountType?: AmountTypeValue | null;
+  defaultReminderOffsets?: number[] | null;
+  defaultPaymentMethod?: PaymentMethodValue | null;
+}
+
+export const createCategory = (body: CategoryFields & { companyId: string; subcategories?: string[] }) =>
   api.post<Category>('/categories', body);
-export const deleteCategory = (id: string) => api.del(`/categories/${id}`);
+export const updateCategory = ({ id, ...body }: Partial<CategoryFields> & { id: string }) =>
+  api.patch<Category>(`/categories/${id}`, body);
+export const archiveCategory = (id: string) => api.post<Category>(`/categories/${id}/archive`);
+export const unarchiveCategory = (id: string) => api.post<Category>(`/categories/${id}/unarchive`);
+export const mergeCategory = ({ id, intoId }: { id: string; intoId: string }) => api.post(`/categories/${id}/merge`, { intoId });
+export const reorderCategories = (body: { companyId: string; ids: string[] }) => api.post('/categories/reorder', body);
+/** A category with bills needs `moveToId` (the server answers 409 CATEGORY_IN_USE otherwise). */
+export const deleteCategory = (id: string, moveToId?: string) =>
+  api.request(`/categories/${id}`, { method: 'DELETE', query: { moveToId } });
+
+export const createCustomField = ({ companyId, ...body }: Omit<CustomField, 'id' | 'sortOrder'>) =>
+  api.request<CustomField>('/custom-fields', { method: 'POST', query: { companyId }, body });
+export const updateCustomField = ({ id, ...body }: Partial<Omit<CustomField, 'companyId' | 'sortOrder'>> & { id: string }) =>
+  api.patch<CustomField>(`/custom-fields/${id}`, body);
+export const deleteCustomField = (id: string) => api.del(`/custom-fields/${id}`);
 
 export const updateMember = ({ id, ...body }: { id: string; role: Role } & Partial<CompanyAccessInput>) =>
   api.patch<Member>(`/workspaces/current/members/${id}`, body);

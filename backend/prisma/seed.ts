@@ -1,25 +1,6 @@
-import 'dotenv/config';
-
-import { createDb } from '../src/db/client.js';
-import { DEFAULT_CATEGORIES, ensureDefaultCategories } from '../src/db/defaults.js';
-
 /**
- * `npm run db:seed` — inserts the default categories and nothing else.
- * DueOra never seeds demo users, workspaces, bills or payments: all data is entered in the app.
+ * `npm run db:seed` — nothing to insert. DueOra never seeds demo users, workspaces, bills or
+ * payments, and categories are per company (picked from src/config/categorySuggestions.ts
+ * when a company is created). Kept so `prisma db seed` and old docs still work.
  */
-async function main() {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL is not set');
-  const db = createDb(url);
-  try {
-    await ensureDefaultCategories(db);
-    process.stdout.write(`✅ Default categories ready (${DEFAULT_CATEGORIES.length}). No other data is seeded.\n`);
-  } finally {
-    await db.$disconnect();
-  }
-}
-
-main().catch((err: unknown) => {
-  process.stderr.write(`Seed failed: ${err instanceof Error ? err.stack : String(err)}\n`);
-  process.exit(1);
-});
+process.stdout.write('✅ Nothing to seed: all data is entered in the app.\n');

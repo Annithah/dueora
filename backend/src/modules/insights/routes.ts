@@ -6,10 +6,11 @@ import { daysBetween, todayIn } from '../../domain/schedule.js';
 import { badRequest } from '../../http/errors.js';
 import { requireAuth, requireWorkspace, requirePermission } from '../../http/middleware/auth.js';
 import { id, isoDate } from '../../http/schemas.js';
-import { parseQuery } from '../../http/validate.js';
+import { parseParams, parseQuery } from '../../http/validate.js';
 
 import { reportFileName, reportPdf, reportXlsx } from './export.js';
 import * as svc from './service.js';
+import * as views from './views.js';
 
 const ReportQuery = z
   .object({
@@ -27,6 +28,23 @@ const CalendarQuery = z.object({ from: isoDate, to: isoDate, companyId: id.optio
 export function insightsRouter(ctx: AppContext): Router {
   const router = Router();
   const guard = [requireAuth(ctx), requireWorkspace(ctx)];
+
+  /**
+   * Tracking views: upcoming (?days=7|30|60|90), this-month, next-month, outstanding, overdue,
+   * paid (?month=YYYY-MM), obligations (upcoming with the next reminder). ?companyId= narrows.
+   */
+  router.get('/views/:view', ...guard, async (req, res) => {
+    const { view } = parseParams(req, z.object({ view: z.enum(views.VIEWS) }));
+    const q = parseQuery(
+      req,
+      z.object({
+        companyId: id.optional(),
+        days: z.coerce.number().int().refine((d) => [7, 30, 60, 90].includes(d), 'Use 7, 30, 60 or 90').optional(),
+        month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+      }),
+    );
+    res.json(await views.trackingView(ctx, req, view, q));
+  });
 
   /** One aggregated call for the whole Home screen. */
   router.get('/dashboard', ...guard, async (req, res) => {

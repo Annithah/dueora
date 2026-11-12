@@ -14,6 +14,7 @@ import { dashboard, report } from '../modules/insights/service.js';
 import { listBills, workspaceToday, type BillSort } from '../modules/bills/service.js';
 import type { BillView } from '../modules/bills/view.js';
 import { addMonthsKey, monthRange, occurrencesBetween } from '../modules/insights/projection.js';
+import { periodAnalysis, trackingView } from '../modules/insights/views.js';
 
 import { searchArticles } from './knowledge.js';
 
@@ -39,6 +40,7 @@ export type ActionKind =
   | 'create_company'
   | 'create_category'
   | 'set_budget'
+  | 'set_cycle_amount'
   | 'remember';
 
 export interface ToolContext {
@@ -126,6 +128,24 @@ const READ_TOOLS: FunctionDeclaration[] = [
     parametersJsonSchema: obj({}),
   },
   { name: 'get_budgets', description: 'Monthly budgets and how much of each is used this month.', parametersJsonSchema: obj({}) },
+  {
+    name: 'get_view',
+    description:
+      'A tracking view computed by DueOra, per cycle: upcoming (next 7/30/60/90 days), this-month (total, paid, left), next-month, outstanding (everything due and unpaid, missed cycles included), overdue (with days late and ageing), paid (this month). Optionally for one company.',
+    parametersJsonSchema: obj(
+      {
+        view: str('Which view', { enum: ['upcoming', 'this-month', 'next-month', 'outstanding', 'overdue', 'paid'] }),
+        days: num('For upcoming: 7, 30, 60 or 90'),
+        companyName: str('Only this company (omit for every company the user can see)'),
+      },
+      ['view'],
+    ),
+  },
+  {
+    name: 'get_last_month_report',
+    description: "Last month's payment report: what was due, paid on time or late, still unpaid, by payment method, variable bills' estimate vs actual, per company, and the change from the month before.",
+    parametersJsonSchema: obj({ companyName: str('Only this company (omit for all)') }),
+  },
   { name: 'list_companies_and_categories', description: 'The companies and categories in this workspace.', parametersJsonSchema: obj({}) },
   {
     name: 'search_help',
@@ -193,11 +213,28 @@ const WRITE_TOOLS: FunctionDeclaration[] = [
   },
   { name: 'propose_archive', description: 'Propose archiving a bill (stops reminders for everyone, keeps history).', parametersJsonSchema: obj({ bill: billRef }, ['bill']) },
   { name: 'propose_create_company', description: 'Propose creating a company in this workspace.', parametersJsonSchema: obj({ name: str('Company name') }, ['name']) },
-  { name: 'propose_create_category', description: 'Propose creating a custom category.', parametersJsonSchema: obj({ name: str('Category name') }, ['name']) },
+  {
+    name: 'propose_create_category',
+    description: 'Propose creating a category in one company, optionally with sub-categories, or a sub-category under an existing one (one level only).',
+    parametersJsonSchema: obj(
+      {
+        name: str('Category name'),
+        companyName: str('Which company (omit if the user can manage only one)'),
+        subcategories: { type: 'array', items: { type: 'string' }, description: 'Sub-category names to create with it' },
+        parentName: str('To create a sub-category: the existing top-level category it goes under'),
+      },
+      ['name'],
+    ),
+  },
   {
     name: 'propose_set_budget',
     description: 'Propose a monthly budget for the whole workspace (omit categoryName) or one category.',
     parametersJsonSchema: obj({ categoryName: str('Category, or omit for the whole workspace'), monthlyLimitUSD: num('Monthly limit in USD'), alertAtPercent: num('Alert level, default 80') }, ['monthlyLimitUSD']),
+  },
+  {
+    name: 'propose_set_cycle_amount',
+    description: "Propose setting the real amount of one cycle of a bill (a variable bill's actual electricity or water bill). Defaults to the open cycle.",
+    parametersJsonSchema: obj({ bill: billRef, amountUSD: num('The real amount in USD'), dueDate: str('Which cycle (YYYY-MM-DD due date); omit for the current one') }, ['bill', 'amountUSD']),
   },
   {
     name: 'propose_remember',
@@ -227,6 +264,15 @@ async function allViews(t: ToolContext, includeArchived = false) {
 }
 
 /** Resolve "the hosting" / "Alpha · Hosting" / an id to one bill, or explain why not. */
+/** A visible company by (partial) name: its id, null when no name was given, false when none matches. */
+async function companyIdByName(t: ToolContext, name: unknown): Promise<string | null | false> {
+  const wanted = typeof name === 'string' ? name.trim().toLowerCase() : '';
+  if (!wanted) return null;
+  const companies = await t.ctx.db.company.findMany({ where: { workspaceId: workspaceIdOf(t.req), ...companyIdScope(t.req) }, select: { id: true, name: true } });
+  const c = companies.find((x) => x.name.toLowerCase() === wanted) ?? companies.find((x) => x.name.toLowerCase().includes(wanted));
+  return c?.id ?? false;
+}
+
 async function resolveBill(t: ToolContext, ref: unknown): Promise<BillView | string> {
   const q = String(ref ?? '').trim().toLowerCase();
   if (!q) return 'Which bill? Ask the user.';
@@ -392,9 +438,17 @@ const EXECUTORS: Record<string, Executor> = {
     const workspaceId = workspaceIdOf(t.req);
     const [companies, categories] = await Promise.all([
       t.ctx.db.company.findMany({ where: { workspaceId, archivedAt: null, ...companyIdScope(t.req) }, orderBy: { name: 'asc' } }),
-      t.ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] }, orderBy: { name: 'asc' } }),
+      t.ctx.db.category.findMany({ where: { workspaceId, archivedAt: null, ...companyScope(t.req) }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] }),
     ]);
-    return { companies: companies.map((c) => c.name), categories: categories.map((c) => c.name) };
+    // Categories belong to a company, with one level of sub-categories.
+    return {
+      companies: companies.map((c) => ({
+        name: c.name,
+        categories: categories
+          .filter((x) => x.companyId === c.id && !x.parentId)
+          .map((x) => ({ name: x.name, subcategories: categories.filter((y) => y.parentId === x.id).map((y) => y.name) })),
+      })),
+    };
   },
 
   async search_help(_t, a) {
@@ -424,13 +478,15 @@ const EXECUTORS: Record<string, Executor> = {
     if (!company && access.workspaceRole !== 'ADMIN') {
       return { error: `This user can't add bills to "${wanted}". They can add bills to: ${companies.map((c) => c.name).join(', ')}.` };
     }
-    const categories = await t.ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] } });
+    // The company's own categories; an unknown name is created in that company on confirm.
+    const categories = company ? await t.ctx.db.category.findMany({ where: { companyId: company.id, archivedAt: null } }) : [];
     const catName = typeof a.categoryName === 'string' && a.categoryName.trim() ? a.categoryName.trim() : guessCategoryName(`${name} ${String(a.provider ?? '')}`) ?? 'Other';
-    const category = categories.find((c) => c.name.toLowerCase() === catName.toLowerCase()) ?? categories.find((c) => c.name === 'Other')!;
+    const found = categories.find((c) => c.name.toLowerCase() === catName.toLowerCase());
+    const category = found ?? { id: null, name: catName.slice(0, 60) };
     const nextDueDate = typeof a.dueDayOfMonth === 'number' ? nextDayOfMonth(today, Math.min(31, Math.max(1, Math.round(a.dueDayOfMonth)))) : /^\d{4}-\d{2}-\d{2}$/.test(String(a.nextDueDate ?? '')) ? String(a.nextDueDate) : today;
     const trialEndsOn = /^\d{4}-\d{2}-\d{2}$/.test(String(a.trialEndsOn ?? '')) ? String(a.trialEndsOn) : null;
     const companyName = company?.name ?? wanted;
-    const summary = `Add ${companyName} · ${name} — ${usd(amount)} ${freq.label}, next due ${nextDueDate} (${category.name})${company ? '' : ` — creates the company "${wanted}"`}${trialEndsOn ? `, free trial until ${trialEndsOn}` : ''}${a.autoRenew ? ', renews automatically' : ''}.`;
+    const summary = `Add ${companyName} · ${name} — ${usd(amount)} ${freq.label}, next due ${nextDueDate} (${category.name}${found ? '' : ', new category'})${company ? '' : ` — creates the company "${wanted}"`}${trialEndsOn ? `, free trial until ${trialEndsOn}` : ''}${a.autoRenew ? ', renews automatically' : ''}.`;
     return propose(t, 'add_bill', summary, {
       name,
       amountCents: amount,
@@ -439,6 +495,7 @@ const EXECUTORS: Record<string, Executor> = {
       companyId: company?.id ?? null,
       newCompanyName: company ? null : wanted.slice(0, 60),
       categoryId: category.id,
+      newCategoryName: found ? null : category.name,
       provider: typeof a.provider === 'string' ? a.provider.slice(0, 120) : null,
       nextDueDate,
       startDate: nextDueDate < today ? nextDueDate : today,
@@ -523,7 +580,34 @@ const EXECUTORS: Record<string, Executor> = {
   async propose_create_category(t, a) {
     const name = String(a.name ?? '').trim().slice(0, 60);
     if (!name) return { needMoreInfo: 'Ask for the category name.' };
-    return propose(t, 'create_category', `Create the category "${name}".`, { name });
+    const access = accessOf(t.req);
+    const companies = (await t.ctx.db.company.findMany({ where: { workspaceId: workspaceIdOf(t.req), archivedAt: null }, orderBy: { name: 'asc' } })).filter((c) =>
+      canIn(access, 'categories:manage', c.id),
+    );
+    const wanted = typeof a.companyName === 'string' ? a.companyName.trim().toLowerCase() : '';
+    const company = wanted
+      ? (companies.find((c) => c.name.toLowerCase() === wanted) ?? companies.find((c) => c.name.toLowerCase().includes(wanted)))
+      : companies.length === 1
+        ? companies[0]
+        : undefined;
+    if (!company) return { needMoreInfo: `Ask which company the category is for: ${companies.map((c) => c.name).join(', ')}.` };
+    const subcategories = Array.isArray(a.subcategories)
+      ? [...new Set(a.subcategories.map((x) => String(x).trim().slice(0, 60)).filter(Boolean))].slice(0, 20)
+      : [];
+    let parentId: string | null = null;
+    if (typeof a.parentName === 'string' && a.parentName.trim()) {
+      const parent = await t.ctx.db.category.findFirst({ where: { companyId: company.id, parentId: null, name: a.parentName.trim() } });
+      if (!parent) return { needMoreInfo: `${company.name} has no top-level category called "${a.parentName}".` };
+      parentId = parent.id;
+    }
+    const what = parentId ? `the sub-category "${name}" under "${String(a.parentName).trim()}"` : `the category "${name}"`;
+    const subs = subcategories.length && !parentId ? ` with sub-categories ${subcategories.join(', ')}` : '';
+    return propose(t, 'create_category', `Create ${what} in ${company.name}${subs}.`, {
+      companyId: company.id,
+      name,
+      parentId,
+      subcategories: parentId ? [] : subcategories,
+    });
   },
 
   async propose_set_budget(t, a) {
@@ -533,13 +617,80 @@ const EXECUTORS: Record<string, Executor> = {
     let categoryId: string | null = null;
     let label = 'the whole workspace';
     if (typeof a.categoryName === 'string' && a.categoryName.trim()) {
-      const c = await t.ctx.db.category.findFirst({ where: { name: { equals: a.categoryName.trim() }, OR: [{ workspaceId }, { workspaceId: null }] } });
+      const c = await t.ctx.db.category.findFirst({ where: { name: { equals: a.categoryName.trim() }, workspaceId }, include: { company: { select: { name: true } } } });
       if (!c) return { needMoreInfo: `There is no category called "${a.categoryName}". Ask which category (or call list_companies_and_categories).` };
       categoryId = c.id;
-      label = c.name;
+      label = `${c.company.name} · ${c.name}`;
     }
     const alertAtPercent = Math.min(100, Math.max(10, Math.round(Number(a.alertAtPercent) || 80)));
     return propose(t, 'set_budget', `Set a monthly budget of ${usd(limit)} for ${label}, alerting at ${alertAtPercent}%.`, { categoryId, monthlyLimitCents: limit, alertAtPercent });
+  },
+
+  async get_view(t, a) {
+    const view = String(a.view);
+    if (!['upcoming', 'this-month', 'next-month', 'outstanding', 'overdue', 'paid'].includes(view)) return { error: 'Unknown view' };
+    const companyId = await companyIdByName(t, a.companyName);
+    if (companyId === false) return { needMoreInfo: `There is no company called "${String(a.companyName)}" that this user can see.` };
+    const days = [7, 30, 60, 90].includes(Number(a.days)) ? Number(a.days) : undefined;
+    const v = await trackingView(t.ctx, t.req, view as Parameters<typeof trackingView>[2], { companyId: companyId ?? undefined, days });
+    t.cards.push({ type: 'total', label: `${view.replace('-', ' ')}`, amountCents: view === 'this-month' || view === 'next-month' ? v.totals.expectedCents : v.totals.remainingCents });
+    return {
+      from: v.from,
+      to: v.to,
+      count: v.totals.count,
+      totalUSD: usd(v.totals.expectedCents),
+      paidUSD: usd(v.totals.paidCents),
+      leftUSD: usd(v.totals.remainingCents),
+      stillEstimatedUSD: v.totals.estimatedCents ? usd(v.totals.estimatedCents) : undefined,
+      byCompany: v.byCompany.map((c) => ({ company: c.company.name, totalUSD: usd(c.expectedCents), leftUSD: usd(c.remainingCents) })),
+      ageing: 'ageing' in v ? v.ageing?.map((b) => ({ daysLate: b.bucket, count: b.count, owedUSD: usd(b.amountCents) })) : undefined,
+      items: v.items.slice(0, 25).map((i) => ({
+        bill: `${i.bill.company.name} · ${i.bill.name}`,
+        dueDate: i.dueDate,
+        amountUSD: usd(i.expectedCents),
+        leftUSD: usd(i.remainingCents),
+        estimate: i.isEstimate || undefined,
+        daysLate: i.daysOverdue || undefined,
+        nextReminder: i.nextReminder ?? undefined,
+      })),
+    };
+  },
+
+  async get_last_month_report(t, a) {
+    const companyId = await companyIdByName(t, a.companyName);
+    if (companyId === false) return { needMoreInfo: `There is no company called "${String(a.companyName)}" that this user can see.` };
+    const today = workspaceToday(t.ctx, t.req);
+    const last = monthRange(`${addMonthsKey(today.slice(0, 7), -1)}-01`);
+    const r = await periodAnalysis(t.ctx, t.req, last.from, last.to, companyId ?? undefined);
+    return {
+      month: last.from.slice(0, 7),
+      dueCount: r.due.count,
+      dueUSD: usd(r.due.expectedCents),
+      paidUSD: usd(r.paidInPeriodCents),
+      paidOnTime: r.timing.onTime,
+      paidLate: r.timing.late,
+      stillUnpaid: r.timing.unpaid,
+      stillUnpaidUSD: usd(r.timing.unpaidCents),
+      changeFromMonthBeforePercent: r.previous.changePercent,
+      byMethod: r.byMethod.map((m) => ({ method: m.method, count: m.count, amountUSD: usd(m.amountCents) })),
+      variableBills: r.variable.map((v) => ({ bill: `${v.company} · ${v.name}`, estimateUSD: usd(v.estimateCents), actualUSD: v.actualCents === null ? 'not set' : usd(v.actualCents) })),
+      perCompany: r.perCompany.map((c) => ({ company: c.company.name, dueUSD: usd(c.expectedCents), paidUSD: usd(c.paidCents), leftUSD: usd(c.remainingCents), onTime: c.onTime, late: c.late })),
+    };
+  },
+
+  async propose_set_cycle_amount(t, a) {
+    const s = await resolveBill(t, a.bill);
+    if (typeof s === 'string') return { needMoreInfo: s };
+    const amount = cents(a.amountUSD);
+    if (!amount) return { needMoreInfo: 'Ask for the real amount in US dollars.' };
+    if (s.status !== 'ACTIVE') return { error: `${s.name} has no open cycle.` };
+    const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(a.dueDate ?? '')) ? String(a.dueDate) : s.nextDueDate;
+    if (dueDate < s.nextDueDate) return { error: 'That cycle is already closed.' };
+    return propose(t, 'set_cycle_amount', `Set ${s.company.name} · ${s.name} for ${dueDate} to ${usd(amount)}${s.amountType === 'VARIABLE' ? ` (estimate ${usd(s.amountCents)})` : ''}.`, {
+      billId: s.id,
+      dueDate,
+      amountCents: amount,
+    });
   },
 
   async propose_remember(t, a) {

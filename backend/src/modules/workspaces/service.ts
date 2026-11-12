@@ -1,5 +1,6 @@
 import type { AppContext } from '../../context.js';
-import { DEFAULT_REMINDER_OFFSETS, ensureDefaultCategories } from '../../db/defaults.js';
+import { DEFAULT_REMINDER_OFFSETS } from '../../db/defaults.js';
+import { seedCompanyCategories, type CategoryStart } from '../categories/service.js';
 import { inviteMessage, ROLE_LABELS } from '../../emails/account.js';
 import type { Prisma, Role, WorkspaceType } from '../../generated/prisma/client.js';
 import { strongestRole } from '../../domain/access.js';
@@ -13,9 +14,8 @@ const INVITE_TTL_MS = 7 * 86_400_000;
 export async function createWorkspace(
   ctx: AppContext,
   userId: string,
-  input: { name: string; type: WorkspaceType; timezone: string; firstCompanyName?: string },
+  input: { name: string; type: WorkspaceType; timezone: string; firstCompanyName?: string; categoryStart?: CategoryStart },
 ) {
-  await ensureDefaultCategories(ctx.db);
   const name = input.name.trim();
   // Every bill belongs to a company, so a workspace always starts with one.
   const firstCompany = input.firstCompanyName?.trim() || (input.type === 'PERSONAL' ? 'Personal' : name);
@@ -30,6 +30,10 @@ export async function createWorkspace(
       notificationPrefs: { create: { userId, mutedBillIds: [] } },
     },
   });
+  // The first company's categories: the suggestions unless the user chose otherwise.
+  const first = await ctx.db.company.findFirstOrThrow({ where: { workspaceId: org.id } });
+  const start = input.categoryStart?.mode === 'copy' ? ({ mode: 'suggestions' } as const) : (input.categoryStart ?? { mode: 'suggestions' });
+  await seedCompanyCategories(ctx.db, org.id, first.id, start);
   await audit(ctx, org.id, userId, 'workspace.create', 'Workspace', org.id, { name: org.name });
   return getWorkspace(ctx, org.id);
 }

@@ -113,7 +113,7 @@ beforeAll(async () => {
     const res = await as('admin').post('/api/v1/bills').send({
       name,
       companyId: fx.companies.beta,
-      categoryId: fx.categories['Technology & software'],
+      categoryId: fx.categoriesOf.beta['Technology & software'],
       amountCents: 1500,
       frequencyUnit: 'MONTH',
       startDate: '2026-12-15',

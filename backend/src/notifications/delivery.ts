@@ -25,6 +25,7 @@ export function channelFor(type: NotificationType): string {
     case 'DIGEST':
     case 'WEEKLY_DIGEST':
     case 'MONTHLY_SUMMARY':
+    case 'NEXT_MONTH_PREVIEW':
       return 'digest';
     case 'TEAM':
       return 'team';

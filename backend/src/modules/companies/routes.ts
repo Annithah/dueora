@@ -26,6 +26,12 @@ const CompanyPatch = z
   .partial()
   .strict()
   .refine((b) => Object.keys(b).length > 0, 'Nothing to update');
+/** How the new company's categories start (default: empty). */
+const CategoryStart = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('empty') }),
+  z.object({ mode: z.literal('suggestions'), names: z.array(z.string().max(60)).max(50).optional(), withSubcategories: z.boolean().optional() }),
+  z.object({ mode: z.literal('copy'), fromCompanyId: id }),
+]);
 const Query = z.object({ includeArchived: z.enum(['true', 'false']).optional() });
 const Params = z.object({ id });
 
@@ -44,7 +50,8 @@ export function companiesRouter(ctx: AppContext): Router {
   });
 
   router.post('/', admin, async (req, res) => {
-    const c = await svc.createCompany(ctx, req, parseBody(req, CompanyBody.strict()));
+    const { categoryStart, ...body } = parseBody(req, CompanyBody.extend({ categoryStart: CategoryStart.optional() }).strict());
+    const c = await svc.createCompany(ctx, req, body, categoryStart);
     res.status(201).json(svc.companyView(c, { myRole: 'ADMIN' }));
   });
 

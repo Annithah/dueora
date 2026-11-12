@@ -53,7 +53,14 @@ describe('bill form', () => {
       isTrial: false,
       trialEndsOn: null,
       defaultPaymentMethod: null,
+      amountType: 'FIXED',
+      customValues: {},
     });
+  });
+
+  it('sends a variable amount type and custom field values (empty ones cleared)', () => {
+    const input = toInput({ ...base, amount: '40', amountType: 'VARIABLE', customValues: { f1: ' M-42 ', f2: '  ' } });
+    expect(input).toMatchObject({ amountType: 'VARIABLE', amountCents: 4_000, customValues: { f1: 'M-42', f2: null } });
   });
 
   it('sends trial, auto-renew and default payment method, and needs a trial end date', () => {

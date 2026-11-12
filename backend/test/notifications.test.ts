@@ -245,7 +245,8 @@ describe('delivery reliability', () => {
   it('uses the deterministic dedupe key workspace:bill:type:cycle:offset:user:channel', async () => {
     const { fx, at, notes } = await setup();
     await at('2026-11-02T07:00:00Z');
-    const n = (await notes({ userId: fx.userIds.admin, channel: 'IN_APP' }))[0]!;
+    // The fake clock gives every row the same createdAt, so pick the Internet reminder explicitly.
+    const n = (await notes({ userId: fx.userIds.admin, channel: 'IN_APP', billId: fx.billIds.internet }))[0]!;
     expect(n.dedupeKey).toBe([fx.workspaceId, fx.billIds.internet, 'REMINDER', '2026-11-05', 3, fx.userIds.admin, 'IN_APP'].join(':'));
   });
 });
@@ -345,6 +346,7 @@ describe('notifications API', () => {
       budgetAlerts: true,
       teamActivity: true,
       mutedBillIds: [],
+      companies: {},
     });
     expect((await fx.as('viewer').patch('/api/v1/notifications/preferences').send({ nonsense: true })).status).toBe(400);
     expect((await fx.as('viewer').patch('/api/v1/notifications/preferences').send({ emailEnabled: false })).body.emailEnabled).toBe(false);

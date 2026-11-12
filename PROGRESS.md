@@ -200,57 +200,57 @@ used as its summary.
       `test/companyAccess.test.ts` covers isolation.
 
 ## Part 3 — Categories per company, custom fields
-- [!] Categories are global defaults (11 seeded at start and on every workspace creation) plus workspace custom
-      ones — hardcoded, which the brief forbids. Defaults can't be edited.
-- [ ] `Category.companyId`, icon/colour pickers, one level of sub-categories, description, bill defaults
-      (frequency, amount type, offsets, payment method), sort order/reorder, archive, merge, move-then-delete.
-- [ ] Suggestions list in a config file; "start empty / pick from suggestions / copy from another company".
-- [ ] Bill form: only the selected company's categories, "+ New category" inline (today "+ New company" only).
-- [ ] Data migration: per-company copies of used categories, re-point bills and category budgets, drop globals.
-- [ ] Custom fields (≤ 10 per company; text/number/date/dropdown; all bills or chosen categories) on form,
-      detail, filters and exports.
+- [x] Categories belong to a company (D36): no seeded or hardcoded categories; suggestions in
+      `backend/src/config/categorySuggestions.ts`.
+- [x] `Category.companyId`, icon picker, one level of sub-categories, description, bill defaults (frequency, amount
+      type, offsets, payment method), sort order/reorder, archive, merge, move-then-delete.
+- [x] "Start empty / pick from suggestions / copy from another company" when creating a company.
+- [x] Bill form: only the selected company's categories, "+ New category" inline; category defaults applied.
+- [x] Data migration: per-company copies of used categories, bills and category budgets re-pointed, globals
+      dropped (SQLite and Postgres, verified with sample data).
+- [x] Custom fields (≤ 10 per company; text/number/date/dropdown; all bills or chosen categories; required) on the
+      form, detail, filters/search and exports (D37).
+- [x] Company detail screen: Categories tab.
 
 ## Part 4 — Variable amounts, bill cycles, occurrences
-- [ ] `amountType` FIXED | VARIABLE, estimated amount, "set this cycle's actual amount", "Paid in full".
-- [ ] `BillCycle` table (stored per-cycle amount/status/paid/closed); history stays exact when the amount changes
-      (today history totals are fine, but "expected" amounts of past cycles are lost).
-- [~] `occurrencesBetween` exists (insights/projection.ts), not in the scheduling engine, no per-cycle amounts.
-- [!] A recurring bill unpaid for several cycles counts only one cycle as overdue: missed cycles between
-      `nextDueDate` and today are projected as "future" and then skipped. Outstanding must include them.
+- [x] `amountType` FIXED | VARIABLE, estimate, "set this cycle's amount", "Paid in full" (D38).
+- [x] `BillCycle` table: per-cycle amount / paid / closed; history stays exact when the amount changes.
+- [x] Cycle engine `backend/src/domain/cycles.ts` (closed, current, missed, future; per-cycle amounts).
+- [x] Fixed: a recurring bill unpaid for several cycles now owes every missed cycle (overdue counts and totals).
 
 ## Part 5 — Tracking views
-- [x] Dashboard: overdue, due this week, due this month, paid this month, needs attention, 30-day timeline, trend,
-      by category, by company, budget bar, AI insight card, quick actions.
-- [ ] Defined views computed by the backend: Upcoming (7/30/60/90), Due this month (total/paid/remaining),
-      Due next month, Outstanding, Overdue (days overdue), Paid, Upcoming obligations with next reminder.
-- [ ] Dashboard order and cards per the brief; "Last month at a glance"; 6 past + 3 projected months chart.
-- [ ] Bills tab segments (Upcoming · This month · Next month · Overdue · Outstanding · Paid · All); filters for
-      amount type, sub-categories; rows with estimated tag and next reminder.
-- [ ] Calendar follows the company switcher; day totals.
+- [x] Views computed by the backend (`GET /views/:view`): Upcoming (7/30/60/90), This month (total/paid/left),
+      Next month, Outstanding, Overdue (days overdue, ageing), Paid, Obligations with the next reminder.
+- [x] Dashboard: outstanding card, "Last month at a glance", cash flow (6 past + 3 projected months), this month by
+      company.
+- [x] Bills tab segments (Upcoming · This month · Next month · Overdue · Outstanding · Paid · All); filters for amount
+      type and sub-categories; rows with "estimated", days late and next reminder.
+- [x] Calendar follows the company switcher.
 
 ## Part 6 — Reports
-- [x] Month/year report (paid, outstanding, overdue, by category, by company, forecast) + PDF/Excel export.
-- [ ] Company selector; previous-month payment report (on time vs late, still unpaid, estimated vs actual,
-      by method, vs the month before, table per company); this month; next-month forecast; outstanding & overdue
-      ageing (0–30/31–60/61–90/90+); upcoming 30/60/90; annual; category report.
-- [ ] Exports per company or all (one sheet per company), with company, period, generated date, custom fields.
+- [x] Company selector; payment report (on time vs late, still unpaid, estimated vs actual, by method, vs the
+      period before, table per company); this month / next month (views); outstanding & overdue ageing; upcoming
+      30/60/90; annual; category report with sub-categories.
+- [x] Exports per company or all (one sheet per company), with company, period, generated date and custom fields.
 
 ## Part 7 — Notifications
-- [x] Reminders, due today, overdue follow-ups, snooze, mark-as-paid action, dedupe, digest, quiet hours, local
-      backups, push/email/in-app, weekly digest, monthly summary, budget alerts, team, price change.
-- [x] Recipients follow company access (reminders, bill events, summaries; budget and team alerts → all-companies members).
-- [ ] Copy names the company everywhere ("⏰ {Company} · {Bill} …" — reminders already do; summaries don't).
-- [ ] Per-company reminder offsets/hour; monthly report ready; this month's obligations; next-month preview (25th);
-      variable amount needed (5 days before); outstanding per company in the weekly digest.
-- [ ] Per-company notification preferences (mute a company, choose its per-company notifications).
-- [ ] Year-long simulation with several companies, restricted members, variable bills, the new notifications.
+- [x] Recipients follow company access.
+- [x] Copy names the company ("⏰ {Company} · {Bill} …"; summaries list companies).
+- [x] Per-company reminder offsets (new bills) and hour (own run scope); monthly report ready + this month's
+      obligations; next-month preview (25th); variable amount needed (5 days before); outstanding per company in the
+      weekly digest (D40).
+- [x] Per-company notification preferences (reminders / events / summaries; all off = muted).
+- [x] Year-long simulation with several companies, a restricted member, a variable bill and the new notifications
+      (`test/notifications.companies.test.ts`).
 
 ## Part 8 — AI, verification, release
 - [x] DueOra AI (tools, proposals, insights, offline evals).
 - [x] AI follows company access (tools, proposals, chat context, daily insight).
-- [ ] AI understands companies, sub-categories, variable bills, the new views; new
-      tools (period views, last-month report, create category with sub-categories, set cycle amount); eval cases.
-- [ ] `docs/FEATURE_STATUS.md`; Maestro flows in `mobile/e2e/`.
+- [x] AI understands companies, sub-categories, variable bills and the new views: new tools `get_view`,
+      `get_last_month_report` and `propose_set_cycle_amount`; `propose_create_category` takes a company and
+      sub-categories; eval cases added.
+- [x] `docs/FEATURE_STATUS.md`.
+- [ ] Maestro flows in `mobile/e2e/` (Maestro is not installed on this machine).
 - [ ] Version 1.1.0, production deploy + migration, APK, GitHub Release v1.1.0, `docs/INSTALL.md` + QR, EAS Update.
       Blockers found: no production backend is deployed yet (no hosting account connected), `gh` CLI and Maestro
       are not installed, and there is no Android emulator on this machine.

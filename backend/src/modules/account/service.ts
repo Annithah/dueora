@@ -71,7 +71,7 @@ export async function exportWorkspaceData(ctx: AppContext, workspaceId: string) 
     ctx.db.workspace.findUniqueOrThrow({ where: { id: workspaceId } }),
     ctx.db.membership.findMany({ where: { workspaceId }, include: { user: { select: { name: true, email: true } } } }),
     ctx.db.company.findMany({ where: { workspaceId }, orderBy: { name: 'asc' } }),
-    ctx.db.category.findMany({ where: { OR: [{ workspaceId }, { workspaceId: null }] }, orderBy: { name: 'asc' } }),
+    ctx.db.category.findMany({ where: { workspaceId }, include: { company: { select: { name: true } }, parent: { select: { name: true } } }, orderBy: [{ companyId: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }] }),
     ctx.db.bill.findMany({
       where: { workspaceId },
       include: { company: { select: { name: true } }, category: { select: { name: true } } },
@@ -86,6 +86,7 @@ export async function exportWorkspaceData(ctx: AppContext, workspaceId: string) 
     ctx.db.budget.findMany({ where: { workspaceId }, include: { category: { select: { name: true } } } }),
   ]);
   const usd = (cents: number) => Math.round(cents) / 100;
+  const fieldsByCompany = await ctx.db.customField.findMany({ where: { workspaceId }, orderBy: { sortOrder: 'asc' } });
   return {
     exportedAt: ctx.clock.now().toISOString(),
     workspace: {
@@ -97,10 +98,18 @@ export async function exportWorkspaceData(ctx: AppContext, workspaceId: string) 
     },
     members: members.map((m) => ({ name: m.user.name, email: m.user.email, role: m.role })),
     companies: companies.map((c) => ({ name: c.name, archived: c.archivedAt !== null })),
-    categories: categories.map((c) => ({ name: c.name, default: c.isDefault })),
+    categories: categories.map((c) => ({ company: c.company.name, name: c.name, parent: c.parent?.name ?? null, archived: c.archivedAt !== null })),
     bills: bills.map((s) => ({
       company: s.company.name,
       category: s.category.name,
+      amountType: s.amountType,
+      // Custom fields by name (only the company's current fields).
+      customFields: Object.fromEntries(
+        fieldsByCompany
+          .filter((f) => f.companyId === s.companyId)
+          .filter((f) => !(f.categoryIds as string[] | null) || (f.categoryIds as string[]).includes(s.categoryId))
+          .map((f) => [f.name, ((s.customValues as Record<string, unknown> | null) ?? {})[f.id] ?? null]),
+      ),
       name: s.name,
       provider: s.provider,
       description: s.description,
@@ -152,7 +161,12 @@ export async function exportWorkbook(data: WorkspaceExport): Promise<Buffer> {
   sheet('Members', data.members);
   sheet('Companies', data.companies);
   sheet('Categories', data.categories);
-  sheet('Bills', data.bills);
+  // Custom fields become their own columns ("Field: Meter no.").
+  const fieldNames = [...new Set(data.bills.flatMap((b) => Object.keys(b.customFields)))];
+  sheet(
+    'Bills',
+    data.bills.map(({ customFields, ...b }) => ({ ...b, ...Object.fromEntries(fieldNames.map((n) => [`Field: ${n}`, customFields[n] ?? null])) })),
+  );
   sheet('Payments', data.payments);
   sheet('Price changes', data.priceChanges);
   sheet('Budgets', data.budgets);

@@ -114,7 +114,7 @@ describe('budgets', () => {
   });
 
   it('per-category budgets only count that category', async () => {
-    const cat = fx.categories['Social media'];
+    const cat = fx.categoriesOf.beta['Social media'];
     const res = await fx.as('finance').put('/api/v1/budgets').send({ categoryId: cat, monthlyLimitCents: 5_000 });
     const social = res.body.find((b: { categoryId: string | null }) => b.categoryId === cat);
     expect(social).toMatchObject({ category: { name: 'Social media' }, paidCents: 800, percent: 16, state: 'OK' });
@@ -163,7 +163,7 @@ describe('spreadsheet import', () => {
     expect(a.parsed).toMatchObject({ category: 'Communication & internet', categoryGuessed: true, amountCents: 105_000, frequencyUnit: 'MONTH', nextDueDate: '2026-12-05' });
     expect(b.parsed).toMatchObject({ company: 'Gamma Bakery', amountCents: 4_550, frequencyUnit: 'MONTH', frequencyInterval: 3, nextDueDate: '2027-01-15' });
     expect(b.warnings).toContain('New company "Gamma Bakery" will be created');
-    expect(c.warnings).toContain('New category "Brand new cat" will be created');
+    expect(c.warnings).toContain('New category "Brand new cat" will be created in Alpha News');
     expect(bad.errors).toEqual(['Name is missing', '"abc" is not an amount', '"sometimes" is not a frequency we know (try Monthly, Quarterly, Yearly…)', '"not a date" is not a date']);
     expect(await ctx.db.bill.count()).toBe(before);
 
@@ -176,7 +176,8 @@ describe('spreadsheet import', () => {
   it('imports the valid rows, creating companies and categories', async () => {
     const res = await fx.as('admin').post('/api/v1/import/commit').send(file);
     expect(res.status).toBe(201);
-    expect(res.body).toEqual({ imported: 3, skipped: 1, createdCompanies: 1, createdCategories: 1 });
+    // Categories belong to a company: Alpha gets "Brand new cat", the new Gamma Bakery gets "Utilities".
+    expect(res.body).toEqual({ imported: 3, skipped: 1, createdCompanies: 1, createdCategories: 2 });
     const list = await fx.as('admin').get('/api/v1/bills?q=Yearbook');
     // A past date in a recurring row rolls forward to the next renewal.
     expect(list.body.items[0]).toMatchObject({ nextDueDate: '2027-03-01', category: { name: 'Brand new cat' } });
@@ -310,24 +311,12 @@ describe('email unsubscribe', () => {
   });
 });
 
-describe('default categories', () => {
-  it('are the 11 from the master prompt', async () => {
-    const res = await fx.as('viewer').get('/api/v1/categories');
-    const defaults = (res.body as { name: string; isDefault: boolean }[]).filter((c) => c.isDefault).map((c) => c.name);
-    expect(defaults.sort()).toEqual(
-      [
-        'Technology & software',
-        'Hosting & domains',
-        'Communication & internet',
-        'Social media',
-        'Office & rent',
-        'Insurance',
-        'Marketing',
-        'Utilities',
-        'Transport',
-        'Education & training',
-        'Other',
-      ].sort(),
-    );
+describe('category suggestions', () => {
+  it('lists the suggestions from the config file, and each company has its own categories', async () => {
+    const res = await fx.as('viewer').get('/api/v1/categories/suggestions');
+    expect(res.body.map((c: { name: string }) => c.name)).toContain('Hosting & domains');
+    const all = (await fx.as('viewer').get('/api/v1/categories')).body as { companyId: string }[];
+    const owners = new Set(all.map((c) => c.companyId));
+    expect(owners.has(fx.companies.alpha) && owners.has(fx.companies.beta)).toBe(true);
   });
 });
