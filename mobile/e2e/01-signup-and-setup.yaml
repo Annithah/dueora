@@ -1,0 +1,42 @@
+appId: com.dueora.app
+name: Sign up and set up a workspace
+env:
+  USER_NAME: ${USER_NAME}
+  USER_EMAIL: ${USER_EMAIL}
+  USER_PASSWORD: ${USER_PASSWORD}
+  WORKSPACE_NAME: ${WORKSPACE_NAME}
+  COMPANY_NAME: ${COMPANY_NAME}
+---
+- clearState
+- launchApp
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+- tapOn: "Create account"
+- tapOn: "Your full name"
+- inputText: ${USER_NAME}
+- tapOn: "you@company.com"
+- inputText: ${USER_EMAIL}
+- tapOn: "At least 8 characters"
+- inputText: ${USER_PASSWORD}
+- hideKeyboard
+- tapOn:
+    text: "Create account"
+    index: 0
+- extendedWaitUntil:
+    visible: "Workspace setup"
+    timeout: 20000
+- tapOn: "Company"
+- tapOn: "Workspace name"
+- inputText: ${WORKSPACE_NAME}
+- tapOn: "First company"
+- inputText: ${COMPANY_NAME}
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Continue"
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible: "Home"
+    timeout: 20000

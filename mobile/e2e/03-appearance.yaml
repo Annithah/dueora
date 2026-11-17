@@ -1,0 +1,13 @@
+appId: com.dueora.app
+name: Appearance offers Light, Dark and System (run after 01)
+---
+- launchApp
+- tapOn: "More"
+- scrollUntilVisible:
+    element: "Appearance"
+- tapOn: "Appearance"
+- assertVisible: "Light"
+- assertVisible: "Dark"
+- assertVisible: "System"
+- tapOn: "Dark"
+- tapOn: "Light"

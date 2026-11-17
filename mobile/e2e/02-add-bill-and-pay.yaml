@@ -1,0 +1,40 @@
+appId: com.dueora.app
+name: Add a bill and record a payment (run after 01)
+env:
+  BILL_NAME: ${BILL_NAME}
+  BILL_AMOUNT: ${BILL_AMOUNT}
+---
+- launchApp
+- tapOn:
+    id: "add-bill"
+    optional: true
+- runFlow:
+    when:
+      notVisible: "Add bill"
+    commands:
+      - tapOn: "Add bill"
+- extendedWaitUntil:
+    visible: "Add bill"
+    timeout: 10000
+- tapOn: "Bill name"
+- inputText: ${BILL_NAME}
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Amount (USD)"
+- tapOn: "Amount (USD)"
+- inputText: ${BILL_AMOUNT}
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Save"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: ${BILL_NAME}
+    timeout: 15000
+- tapOn: ${BILL_NAME}
+- tapOn: "Record payment"
+- scrollUntilVisible:
+    element: "Save payment"
+- tapOn: "Save payment"
+- extendedWaitUntil:
+    visible: "Payment recorded"
+    timeout: 15000
