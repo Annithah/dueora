@@ -1,12 +1,14 @@
 import { createApp } from './app.js';
 import { env as loadEnv } from './config/env.js';
 import { createContext } from './bootstrap.js';
+import { initSentry } from './lib/sentry.js';
 import { startWorker } from './worker.js';
 
 async function main() {
   const env = loadEnv();
   const ctx = createContext(env);
   const { logger, db } = ctx;
+  if (initSentry(env, process.env.npm_package_version)) logger.info('Sentry error reporting on');
 
   const app = createApp(ctx);
   const stopWorker = env.RUN_WORKER_IN_API ? startWorker(ctx, logger) : null;

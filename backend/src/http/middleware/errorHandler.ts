@@ -2,6 +2,7 @@ import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
 
 import { Prisma } from '../../generated/prisma/client.js';
+import { captureError } from '../../lib/sentry.js';
 import { AppError } from '../errors.js';
 
 export interface ErrorBody {
@@ -60,7 +61,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   }
 
   const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 500 ? err.status : 500;
-  if (status === 500) req.log?.error({ err }, 'Unhandled error');
+  if (status === 500) {
+    req.log?.error({ err }, 'Unhandled error');
+    captureError(err, requestId);
+  }
   res.status(status).json({
     error: {
       code: status === 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST',
