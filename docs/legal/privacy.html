@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DueOra Privacy Policy</title>
+<link rel="stylesheet" href="legal.css">
+</head>
+<body>
+<main>
+<p class="back"><a href="../">← DueOra</a></p>
+<h1>Privacy Policy</h1>
+<p class="muted">Last updated: 17 November 2026</p>
+
+<p>DueOra helps teams track bills and renewals and reminds them before payments are due. This page explains what we
+store, why, and the choices you have.</p>
+
+<h2>What we store</h2>
+<ul>
+  <li><strong>Your account:</strong> name, email address, a hashed password (never the password itself), language
+    and timezone.</li>
+  <li><strong>Your workspace:</strong> companies, categories, bills, amounts (in USD), due dates, payments and notes
+    that you or your team enter.</li>
+  <li><strong>Bill reference / account numbers:</strong> encrypted at rest (AES-256-GCM), shown masked in the app,
+    readable only by Admin and Finance members, never written to logs and never sent to the AI assistant.</li>
+  <li><strong>Devices:</strong> a push notification token for each phone where you allow notifications.</li>
+  <li><strong>Activity:</strong> an audit log of important changes (for example, who recorded a payment), and
+    notification delivery records so you never get the same reminder twice.</li>
+</ul>
+<p>DueOra has no ads and does not sell or share your data for marketing.</p>
+
+<h2>Who can see your data</h2>
+<p>Only the members of your workspace, and only the companies an admin gives them access to. Viewers can read but
+not change anything.</p>
+
+<h2>Services we use</h2>
+<ul>
+  <li><strong>Hosting</strong> for the DueOra server and database.</li>
+  <li><strong>Email delivery</strong> for reminders, invitations and password reset codes.</li>
+  <li><strong>Expo and Firebase Cloud Messaging</strong> to deliver push notifications to your phone.</li>
+  <li><strong>Google Gemini</strong> for the optional DueOra AI assistant. Admins can switch it off for the
+    workspace. It only receives the bill details needed to answer a question, limited to the companies you can
+    access, and never reference/account numbers.</li>
+  <li><strong>Error reporting</strong> (when enabled) receives technical error details only, with request bodies,
+    headers and user details removed.</li>
+</ul>
+
+<h2>Your choices</h2>
+<ul>
+  <li>Turn notifications on or off per channel and per company in <em>Settings → Notifications</em>.</li>
+  <li>Export your data (Excel or JSON) in <em>Settings → Data &amp; privacy</em>.</li>
+  <li>Delete your account in <em>Settings → Data &amp; privacy</em>. Your personal details are removed; bills stay
+    with the workspace they belong to.</li>
+  <li>Sign out of every device in <em>Settings → Security</em>.</li>
+</ul>
+
+<h2>Security</h2>
+<p>All traffic uses HTTPS. Passwords are hashed, sign-in is rate limited, and sessions use short-lived tokens.</p>
+
+<h2>Contact</h2>
+<p>Questions or requests: use <em>Settings → Help → Send feedback</em> in the app.</p>
+</main>
+</body>
+</html>
