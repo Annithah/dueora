@@ -289,13 +289,11 @@ emulator not installed.
 
 ## Waiting on Anii
 
-1. Decide how to share the pages and the APK: the repo is **private**, and on a free GitHub plan Pages and public Release downloads need a **public** repo. Options: (a) make `Annithah/dueora` public (no secrets are in git), (b) GitHub Pro (about US$4/month) for Pages, though Release downloads would still need a sign-in, or (c) host `docs/` and the APK on Vercel instead (connector already linked).
-2. Log in the GitHub CLI once: type `! & "$env:LOCALAPPDATA\gh-cli\bin\gh.exe" auth login` in Claude Code (choose GitHub.com → HTTPS → browser). Needed to switch on GitHub Pages and create the v1.1.0 Release.
-3. Hosting for the backend: create a Render account and deploy the `render.yaml` blueprint (Starter + 1 GB disk, about US$7.25/month) — or say which host to use. `docs/DEPLOYMENT.md` §4. This blocks the APK.
-4. Decide the production database: SQLite on Render's disk (ready now, D14) or managed Postgres (D25).
-5. Secrets on the host: `RESEND_API_KEY` + a verified sending domain (`EMAIL_FROM`), `GEMINI_API_KEY`, `EXPO_ACCESS_TOKEN`, optional `SENTRY_DSN`. (`JWT_ACCESS_SECRET` and `ACCOUNT_REF_SECRET` Render generates.)
-6. Firebase project for Android push: upload `google-services.json` to EAS as the `GOOGLE_SERVICES_JSON` file variable.
-7. Later, for the Play Store only: a Google Play Console account (US$25) — see `docs/PLAY_STORE.md`.
+1. Switch on GitHub Pages: sign in on github.com → `Annithah/dueora` → Settings → Pages → Source: **GitHub Actions** (or log in `gh` with `! & "$env:LOCALAPPDATA\gh-cli\bin\gh.exe" auth login` and Claude does it). The repo is already public.
+2. Keep this PC on and online, and run `scripts\start-server.ps1` after every restart — the backend (SQLite) runs here behind a free Cloudflare tunnel (D41).
+3. Optional keys in `%USERPROFILE%\DueOraServer\server.env`: `RESEND_API_KEY` + a verified sending domain (`EMAIL_FROM`) so password-reset codes and invites are emailed, `GEMINI_API_KEY` for DueOra AI, optional `SENTRY_DSN`.
+4. Firebase project for Android push: upload `google-services.json` to EAS as the `GOOGLE_SERVICES_JSON` file variable, then rebuild the APK.
+5. Later, for the Play Store only: a Google Play Console account (US$25) — see `docs/PLAY_STORE.md`.
 
 ## Done this session (17 Nov 2026)
 - [x] Sentry on the backend (`SENTRY_DSN`, off when empty; events scrubbed of bodies, headers, query, user) — `76f7135`

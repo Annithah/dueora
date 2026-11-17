@@ -26,15 +26,15 @@ Bills & renewals tracker: `backend/` (Express 5, Prisma, SQLite by default / Pos
 - **Progress:** see https://annithah.github.io/dueora/progress/ (or `docs/progress/index.html` after
   `npm run progress`). All Finalize Parts 1–7 done; Part 8 AI done; Sentry, legal pages, Play Store notes, Maestro
   flows (not run), progress page, install page and QR code done.
-- **Blocked on the owner** (full list in `PROGRESS.md` → "Waiting on Anii"): the repo is private, so GitHub Pages
-  and public APK downloads need it made public (or Pro / Vercel instead); `gh auth login`; a hosting account for
-  the backend (Render blueprint ready); production DB choice; production secrets; Firebase for push.
+- **Hosting (D41):** SQLite only, no Render. The backend runs on the owner's PC via `scripts/start-server.ps1`
+  (data in `%USERPROFILE%\DueOraServer`, free Cloudflare quick tunnel, address published to `docs/api.json`, which
+  the app reads). EAS `preview` has `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_API_DISCOVERY_URL`.
+- **Blocked on the owner** (full list in `PROGRESS.md` → "Waiting on Anii"): switch on GitHub Pages or `gh auth
+  login`; keep the PC on; optional email/AI keys; Firebase for push.
 - **Next session:**
   1. Once `gh` is logged in: enable Pages with source "GitHub Actions"
      (`gh api -X POST repos/Annithah/dueora/pages -f build_type=workflow`) and re-run the Progress workflow.
-  2. Once the backend is deployed: `eas env:create --name EXPO_PUBLIC_API_URL --value https://<api> --environment
-     preview --visibility plaintext`, then `eas build --platform android --profile preview`, download the APK,
-     `gh release create v1.1.0 DueOra-v1.1.0.apk`, set `"published": true` plus the EAS build URL/ID in
-     `docs/progress/release.json`, run `npm run progress`.
+  2. If not done yet: `gh release create v1.1.0 DueOra-v1.1.0.apk` with the APK from EAS, set `"published": true`
+     plus the EAS build URL/ID in `docs/progress/release.json`, run `npm run progress`.
   3. Run the Maestro flows in `mobile/e2e/` against the preview APK and fix any label mismatches; verify push on a
      real phone.

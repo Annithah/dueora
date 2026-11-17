@@ -374,3 +374,17 @@ the master prompt, the brief wins.
   obligations per company; the weekly digest lists what is still owed per company.
 - Per-company switches (`NotificationPreference.companyPrefs`: reminders, events, summaries); all three off = muted.
   Summaries are grouped by what each person sees after their switches.
+
+## D41 — Production runs on the owner's PC with SQLite behind a Cloudflare tunnel (supersedes D25; 17 Nov 2026)
+**Context:** the owner wants SQLite and does not want to deploy the backend on Render or any paid host.
+**Decision:**
+- `scripts/start-server.ps1` runs the API and the reminder worker on the owner's PC. SQLite and the secrets live in
+  `%USERPROFILE%\DueOraServer` (outside OneDrive, which corrupts live SQLite files); a daily backup keeps 14 copies.
+- A free Cloudflare quick tunnel (no account) gives the API a public HTTPS address. ngrok was dropped because Windows
+  Defender flags it.
+- The quick-tunnel address changes on every start, so the script commits it to `docs/api.json` (`[skip ci]`). The app
+  reads that file (`EXPO_PUBLIC_API_DISCOVERY_URL`, raw GitHub URL), remembers the last address, and re-reads it when
+  the API can't be reached. Only https addresses are accepted.
+**Consequences:** the app works and reminders are sent only while the PC is on and online. After a restart phones find
+the new address within about 5 minutes (GitHub's raw-file cache). Links in emails sent before a restart stop working.
+`render.yaml` and the Postgres build stay in the repo as unused options.

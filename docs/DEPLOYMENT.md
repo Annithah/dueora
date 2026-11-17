@@ -255,3 +255,24 @@ App identity (already configured): name **DueOra**, Android package **`com.dueor
 * **Scaling:** SQLite means one instance. If you outgrow it, switch to the Postgres build (section 0) and then
   split the worker into its own service (`node dist/worker.js`, `RUN_WORKER_IN_API=false` on the API);
   several workers can run safely at the same time.
+
+---
+
+## Current setup (17 Nov 2026): this PC + SQLite + Cloudflare tunnel (D41)
+
+No hosting account is used. From the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1
+```
+
+- First run creates `%USERPROFILE%\DueOraServer\server.env` with new secrets (back this file up; never change
+  `ACCOUNT_REF_SECRET` once there is data). Add `RESEND_API_KEY`, `EMAIL_FROM`, `GEMINI_API_KEY` there when you have them,
+  then restart the script.
+- Database: `%USERPROFILE%\DueOraServer\dueora.db`; backups in `…\backups`; logs in `…\logs`.
+- Needs `cloudflared` at `%LOCALAPPDATA%\cloudflared\cloudflared.exe` (official, signed download from
+  github.com/cloudflare/cloudflared/releases).
+- Each start publishes the address to `docs/api.json`; the APK finds it there. Keep the PC on and awake (Settings →
+  System → Power → Sleep: Never while plugged in) or reminders stop.
+- EAS `preview` variables: `EXPO_PUBLIC_API_URL` (fallback address) and
+  `EXPO_PUBLIC_API_DISCOVERY_URL=https://raw.githubusercontent.com/Annithah/dueora/main/docs/api.json`.
