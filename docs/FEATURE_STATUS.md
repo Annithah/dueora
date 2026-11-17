@@ -46,8 +46,8 @@ Details and reasons are in `DECISIONS.md`; the day-by-day checklist is in `PROGR
 | Legal pages (privacy policy, terms) | 8 | release | Done | `docs/legal/` |
 | Maestro end-to-end flows | 8 | mobile | In progress | flows written in `mobile/e2e/`; not run (no emulator on the build machine) |
 | Production backend over HTTPS (this PC, SQLite, Cloudflare tunnel) | 8 | release | Done | D41, `scripts/start-server.ps1`, `/health` ok |
-| Android APK 1.1.0 (EAS preview build) | 8 | release | In progress | EAS build `b44ba31b` |
-| GitHub Release v1.1.0 with the APK | 8 | release | Blocked | needs the APK, then `gh` login |
+| Android APK 1.1.0 (EAS preview build) | 8 | release | Done | EAS build `b44ba31b`, APK link in `docs/INSTALL.md` |
+| GitHub Release v1.1.0 with the APK | 8 | release | Blocked | needs `gh` login; the EAS APK link is used meanwhile |
 | Install guide and QR code | 8 | release | Done | `docs/INSTALL.md`, `docs/install-qr.png` |
 | App finds the server when its address changes | 8 | mobile | Done | `src/api/discovery.ts`, client tests |
 | Progress page on GitHub Pages, rebuilt on every push | 8 | release | Done | `.github/workflows/progress.yml` |

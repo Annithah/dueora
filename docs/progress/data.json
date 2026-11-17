@@ -1,10 +1,10 @@
 {
-  "updatedAt": "2026-11-17T19:57:33.456Z",
+  "updatedAt": "2026-11-17T22:12:40.024Z",
   "version": "1.1.0",
-  "overall": 90,
+  "overall": 91,
   "counts": {
-    "Done": 36,
-    "In progress": 2,
+    "Done": 37,
+    "In progress": 1,
     "Not started": 0,
     "Blocked": 3
   },
@@ -61,9 +61,9 @@
     {
       "key": "8",
       "label": "Part 8 — AI, verification and release",
-      "done": 12,
+      "done": 12.5,
       "total": 15,
-      "percent": 80
+      "percent": 83
     }
   ],
   "byArea": [
@@ -98,9 +98,9 @@
     {
       "key": "release",
       "label": "Release",
-      "done": 5.5,
+      "done": 6,
       "total": 7,
-      "percent": 79
+      "percent": 86
     }
   ],
   "waiting": [
@@ -360,15 +360,15 @@
       "name": "Android APK 1.1.0 (EAS preview build)",
       "part": 8,
       "area": "release",
-      "status": "In progress",
-      "proof": "EAS build `b44ba31b`"
+      "status": "Done",
+      "proof": "EAS build `b44ba31b`, APK link in `docs/INSTALL.md`"
     },
     {
       "name": "GitHub Release v1.1.0 with the APK",
       "part": 8,
       "area": "release",
       "status": "Blocked",
-      "proof": "needs the APK, then `gh` login"
+      "proof": "needs `gh` login; the EAS APK link is used meanwhile"
     },
     {
       "name": "Install guide and QR code",
@@ -400,6 +400,16 @@
     }
   ],
   "commits": [
+    {
+      "hash": "49a7898",
+      "date": "2026-11-18T00:11:42+02:00",
+      "subject": "chore: server address 2026-11-17T22:11:41Z [skip ci]"
+    },
+    {
+      "hash": "1522a4d",
+      "date": "2026-11-17T21:57:34+02:00",
+      "subject": "docs: SQLite on this PC behind a Cloudflare tunnel (D41), updated status"
+    },
     {
       "hash": "d9d904e",
       "date": "2026-11-17T21:43:07+02:00",
@@ -439,16 +449,6 @@
       "hash": "d57fb96",
       "date": "2026-11-17T19:44:20+02:00",
       "subject": "docs: privacy policy, terms of use and Play Store preparation"
-    },
-    {
-      "hash": "76f7135",
-      "date": "2026-11-17T19:44:18+02:00",
-      "subject": "feat(backend): optional Sentry error reporting with scrubbed events"
-    },
-    {
-      "hash": "4159181",
-      "date": "2026-11-17T19:37:41+02:00",
-      "subject": "chore(mobile): add expo-dev-client for development builds"
     }
   ],
   "tests": {
@@ -469,11 +469,11 @@
   },
   "release": {
     "version": "1.1.0",
-    "published": false,
-    "releaseUrl": "https://github.com/Annithah/dueora/releases/tag/v1.1.0",
-    "apkUrl": "https://github.com/Annithah/dueora/releases/download/v1.1.0/DueOra-v1.1.0.apk",
-    "easBuildUrl": null,
-    "easBuildId": null
+    "published": true,
+    "releaseUrl": "https://expo.dev/accounts/anitha_dev/projects/dueora/builds/b44ba31b-ceec-4d8c-9e9c-0af41ce0c98c",
+    "apkUrl": "https://expo.dev/artifacts/eas/M0hXtJnmaYojV1wPTHJngkhc-HG11HnlVCFnWQT5Iwc.apk",
+    "easBuildUrl": "https://expo.dev/accounts/anitha_dev/projects/dueora/builds/b44ba31b-ceec-4d8c-9e9c-0af41ce0c98c",
+    "easBuildId": "b44ba31b-ceec-4d8c-9e9c-0af41ce0c98c"
   },
   "links": {
     "progress": "https://annithah.github.io/dueora/progress/",
