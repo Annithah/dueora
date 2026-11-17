@@ -1,11 +1,12 @@
 import { useSession } from '@/state/session';
 
 import { createApiClient } from './client';
-import { API_URL } from './config';
+import { getApiUrl, rediscoverApiUrl } from './discovery';
 
 /** App-wide API client wired to the session store. */
 export const api = createApiClient({
-  baseUrl: API_URL,
+  baseUrl: getApiUrl,
+  rediscover: () => rediscoverApiUrl(),
   getTokens: () => useSession.getState().tokens,
   setTokens: (tokens) => useSession.getState().setTokens(tokens),
   getOrgId: () => useSession.getState().activeWorkspaceId,

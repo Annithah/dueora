@@ -3,7 +3,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { api } from '@/api';
-import { API_URL } from '@/api/config';
+import { getApiUrl } from '@/api/discovery';
 import { PAGE_SIZE, type Page, type PaymentMethod, type Bill } from '@/features/bills/api';
 import { useSelectedCompanyId } from '@/state/companyFilter';
 import { useSession } from '@/state/session';
@@ -236,7 +236,7 @@ export async function downloadAndShare(path: string, fileName: string, mimeType:
   const { tokens, activeWorkspaceId } = useSession.getState();
   const target = new File(Paths.cache, fileName);
   if (target.exists) target.delete();
-  const file = await File.downloadFileAsync(`${API_URL}/api/v1${path}`, target, {
+  const file = await File.downloadFileAsync(`${getApiUrl()}/api/v1${path}`, target, {
     headers: {
       Authorization: `Bearer ${tokens?.accessToken ?? ''}`,
       ...(activeWorkspaceId ? { 'X-Workspace-Id': activeWorkspaceId } : {}),

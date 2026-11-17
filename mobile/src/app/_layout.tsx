@@ -17,6 +17,7 @@ import { useCompanyFilter } from '@/state/companyFilter';
 import { usePreferences } from '@/state/preferences';
 import { useSession } from '@/state/session';
 import { ThemeProvider, useNativeAppearance, useTheme } from '@/theme';
+import { loadSavedApiUrl, rediscoverApiUrl } from '@/api/discovery';
 import { appFonts } from '@/theme/fonts';
 
 void SplashScreen.preventAutoHideAsync();
@@ -70,7 +71,11 @@ export default function RootLayout() {
   const hydrateLocale = useLocale((s) => s.hydrate);
   const hydrateCompanyFilter = useCompanyFilter((s) => s.hydrate);
   useEffect(() => {
-    void hydrate();
+    // The API address may have moved since last launch; restore it before the session calls the API.
+    void loadSavedApiUrl().finally(() => {
+      void hydrate();
+      void rediscoverApiUrl();
+    });
     void hydratePrefs();
     void hydrateLocale();
     void hydrateCompanyFilter();

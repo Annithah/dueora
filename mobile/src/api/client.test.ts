@@ -32,6 +32,29 @@ function setup(responder: (url: string, init: RequestInit) => Response | Promise
 const header = (init: RequestInit, name: string) => (init.headers as Record<string, string>)[name];
 
 describe('createApiClient', () => {
+  it('retries once on the new address when the server has moved', async () => {
+    let base = 'https://old.example';
+    const urls: string[] = [];
+    const api = createApiClient({
+      baseUrl: () => base,
+      rediscover: async () => {
+        base = 'https://new.example';
+        return true;
+      },
+      getTokens: () => null,
+      setTokens: () => undefined,
+      getOrgId: () => null,
+      onSessionExpired: () => undefined,
+      fetchImpl: (async (input: RequestInfo | URL) => {
+        urls.push(String(input));
+        if (String(input).startsWith('https://old.example')) throw new TypeError('Network request failed');
+        return json(200, { ok: true });
+      }) as typeof fetch,
+    });
+    await expect(api.get('/health-check')).resolves.toEqual({ ok: true });
+    expect(urls).toEqual(['https://old.example/api/v1/health-check', 'https://new.example/api/v1/health-check']);
+  });
+
   it('sends JSON with auth and org headers under /api/v1', async () => {
     const { api, calls } = setup(() => json(200, { ok: true }));
     await expect(api.post('/bills', { name: 'Hosting' })).resolves.toEqual({ ok: true });

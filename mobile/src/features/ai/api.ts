@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetch as expoFetch } from 'expo/fetch';
 
 import { ApiError, api } from '@/api';
-import { API_URL } from '@/api/config';
+import { getApiUrl } from '@/api/discovery';
 import { useSession } from '@/state/session';
 
 import { createSseParser, createUtf8Decoder } from './sse';
@@ -170,7 +170,7 @@ export async function streamChat(
   const { tokens, activeWorkspaceId } = useSession.getState();
   let res: Awaited<ReturnType<typeof expoFetch>>;
   try {
-    res = await expoFetch(`${API_URL}/api/v1/ai/chat`, {
+    res = await expoFetch(`${getApiUrl()}/api/v1/ai/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

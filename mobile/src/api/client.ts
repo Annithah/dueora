@@ -28,7 +28,9 @@ export interface Tokens {
 }
 
 export interface ApiClientDeps {
-  baseUrl: string;
+  baseUrl: string | (() => string);
+  /** Called once when the API can't be reached; resolve true if the base URL changed (then retried). */
+  rediscover?: () => Promise<boolean>;
   getTokens: () => Tokens | null;
   setTokens: (tokens: Tokens) => Promise<void> | void;
   getOrgId: () => string | null;
@@ -87,7 +89,24 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   const timeoutMs = deps.timeoutMs ?? 20_000;
   let refreshing: Promise<boolean> | null = null;
 
+  const baseUrl = () => (typeof deps.baseUrl === 'function' ? deps.baseUrl() : deps.baseUrl);
+
   async function send(
+    path: string,
+    options: RequestOptions,
+    accessToken: string | null,
+  ): Promise<Response> {
+    try {
+      return await sendOnce(path, options, accessToken);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'NETWORK' && (await deps.rediscover?.())) {
+        return sendOnce(path, options, accessToken);
+      }
+      throw err;
+    }
+  }
+
+  async function sendOnce(
     path: string,
     options: RequestOptions,
     accessToken: string | null,
@@ -106,7 +125,7 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     options.signal?.addEventListener('abort', () => controller.abort());
     try {
-      return await doFetch(buildUrl(deps.baseUrl, path, options.query), {
+      return await doFetch(buildUrl(baseUrl(), path, options.query), {
         method: options.method ?? 'GET',
         headers,
         body,
