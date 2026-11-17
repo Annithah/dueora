@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-17T17:58:26.525Z",
+  "updatedAt": "2026-11-17T18:00:17.025Z",
   "version": "1.1.0",
   "overall": 86,
   "counts": {
@@ -104,6 +104,7 @@
     }
   ],
   "waiting": [
+    "Decide how to share the pages and the APK: the repo is **private**, and on a free GitHub plan Pages and public Release downloads need a **public** repo. Options: (a) make `Annithah/dueora` public (no secrets are in git), (b) GitHub Pro (about US$4/month) for Pages, though Release downloads would still need a sign-in, or (c) host `docs/` and the APK on Vercel instead (connector already linked).",
     "Log in the GitHub CLI once: type `! & \"$env:LOCALAPPDATA\\gh-cli\\bin\\gh.exe\" auth login` in Claude Code (choose GitHub.com → HTTPS → browser). Needed to switch on GitHub Pages and create the v1.1.0 Release.",
     "Hosting for the backend: create a Render account and deploy the `render.yaml` blueprint (Starter + 1 GB disk, about US$7.25/month) — or say which host to use. `docs/DEPLOYMENT.md` §4. This blocks the APK.",
     "Decide the production database: SQLite on Render's disk (ready now, D14) or managed Postgres (D25).",
@@ -395,6 +396,11 @@
   ],
   "commits": [
     {
+      "hash": "0ea8bcf",
+      "date": "2026-11-17T19:58:38+02:00",
+      "subject": "feat: progress page, install page and QR code published via GitHub Pages"
+    },
+    {
       "hash": "b5522de",
       "date": "2026-11-17T19:44:21+02:00",
       "subject": "test(mobile): Maestro end-to-end flows for sign-up, bills, payments and appearance"
@@ -438,11 +444,6 @@
       "hash": "a17a11f",
       "date": "2026-11-11T14:01:12+02:00",
       "subject": "feat(ai): DueOra AI assistant with tools, confirmations, insights and evals"
-    },
-    {
-      "hash": "638e132",
-      "date": "2026-11-10T14:34:15+02:00",
-      "subject": "feat(mobile): complete screens and UX polish"
     }
   ],
   "tests": {

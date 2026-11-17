@@ -26,7 +26,8 @@ Bills & renewals tracker: `backend/` (Express 5, Prisma, SQLite by default / Pos
 - **Progress:** see https://annithah.github.io/dueora/progress/ (or `docs/progress/index.html` after
   `npm run progress`). All Finalize Parts 1–7 done; Part 8 AI done; Sentry, legal pages, Play Store notes, Maestro
   flows (not run), progress page, install page and QR code done.
-- **Blocked on the owner** (full list in `PROGRESS.md` → "Waiting on Anii"): `gh auth login`; a hosting account for
+- **Blocked on the owner** (full list in `PROGRESS.md` → "Waiting on Anii"): the repo is private, so GitHub Pages
+  and public APK downloads need it made public (or Pro / Vercel instead); `gh auth login`; a hosting account for
   the backend (Render blueprint ready); production DB choice; production secrets; Firebase for push.
 - **Next session:**
   1. Once `gh` is logged in: enable Pages with source "GitHub Actions"
