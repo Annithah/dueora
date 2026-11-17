@@ -1,0 +1,477 @@
+{
+  "updatedAt": "2026-11-17T17:58:26.525Z",
+  "version": "1.1.0",
+  "overall": 86,
+  "counts": {
+    "Done": 34,
+    "In progress": 1,
+    "Not started": 0,
+    "Blocked": 5
+  },
+  "byPart": [
+    {
+      "key": "1",
+      "label": "Part 1 — Bills (rename, reference numbers)",
+      "done": 3,
+      "total": 3,
+      "percent": 100
+    },
+    {
+      "key": "2",
+      "label": "Part 2 — Companies and access",
+      "done": 4,
+      "total": 4,
+      "percent": 100
+    },
+    {
+      "key": "3",
+      "label": "Part 3 — Categories and custom fields",
+      "done": 4,
+      "total": 4,
+      "percent": 100
+    },
+    {
+      "key": "4",
+      "label": "Part 4 — Fixed and variable amounts",
+      "done": 3,
+      "total": 3,
+      "percent": 100
+    },
+    {
+      "key": "5",
+      "label": "Part 5 — Tracking views",
+      "done": 4,
+      "total": 4,
+      "percent": 100
+    },
+    {
+      "key": "6",
+      "label": "Part 6 — Reports and exports",
+      "done": 2,
+      "total": 2,
+      "percent": 100
+    },
+    {
+      "key": "7",
+      "label": "Part 7 — Notifications",
+      "done": 5,
+      "total": 6,
+      "percent": 83
+    },
+    {
+      "key": "8",
+      "label": "Part 8 — AI, verification and release",
+      "done": 9.5,
+      "total": 14,
+      "percent": 68
+    }
+  ],
+  "byArea": [
+    {
+      "key": "backend",
+      "label": "Backend",
+      "done": 14,
+      "total": 14,
+      "percent": 100
+    },
+    {
+      "key": "mobile",
+      "label": "Mobile",
+      "done": 8.5,
+      "total": 9,
+      "percent": 94
+    },
+    {
+      "key": "ai",
+      "label": "Ai",
+      "done": 3,
+      "total": 4,
+      "percent": 75
+    },
+    {
+      "key": "notifications",
+      "label": "Notifications",
+      "done": 5,
+      "total": 6,
+      "percent": 83
+    },
+    {
+      "key": "release",
+      "label": "Release",
+      "done": 4,
+      "total": 7,
+      "percent": 57
+    }
+  ],
+  "waiting": [
+    "Log in the GitHub CLI once: type `! & \"$env:LOCALAPPDATA\\gh-cli\\bin\\gh.exe\" auth login` in Claude Code (choose GitHub.com → HTTPS → browser). Needed to switch on GitHub Pages and create the v1.1.0 Release.",
+    "Hosting for the backend: create a Render account and deploy the `render.yaml` blueprint (Starter + 1 GB disk, about US$7.25/month) — or say which host to use. `docs/DEPLOYMENT.md` §4. This blocks the APK.",
+    "Decide the production database: SQLite on Render's disk (ready now, D14) or managed Postgres (D25).",
+    "Secrets on the host: `RESEND_API_KEY` + a verified sending domain (`EMAIL_FROM`), `GEMINI_API_KEY`, `EXPO_ACCESS_TOKEN`, optional `SENTRY_DSN`. (`JWT_ACCESS_SECRET` and `ACCOUNT_REF_SECRET` Render generates.)",
+    "Firebase project for Android push: upload `google-services.json` to EAS as the `GOOGLE_SERVICES_JSON` file variable.",
+    "Later, for the Play Store only: a Google Play Console account (US$25) — see `docs/PLAY_STORE.md`."
+  ],
+  "features": [
+    {
+      "name": "\"Subscription\" renamed to Bill in the database, API, app, emails and AI",
+      "part": 1,
+      "area": "backend",
+      "status": "Done",
+      "proof": "`fb41a4d`, backend tests"
+    },
+    {
+      "name": "Bill reference / account number encrypted (AES-256-GCM), masked, reveal for Admin/Finance only",
+      "part": 1,
+      "area": "backend",
+      "status": "Done",
+      "proof": "`test/subscriptionKey.security.test.ts`"
+    },
+    {
+      "name": "Bills screens and copy say \"Bill\" (tabs, forms, en/fr/rw strings)",
+      "part": 1,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "mobile tests"
+    },
+    {
+      "name": "Companies: name, initials, colour, description, archive vs delete, admin-only",
+      "part": 2,
+      "area": "backend",
+      "status": "Done",
+      "proof": "D35, company route tests"
+    },
+    {
+      "name": "Company detail: Overview, Categories, Members, Settings",
+      "part": 2,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "More → Companies"
+    },
+    {
+      "name": "Company switcher on Home, Bills, Calendar, Reports (remembered on the phone)",
+      "part": 2,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "mobile tests"
+    },
+    {
+      "name": "Company access: all companies or chosen ones (Finance/Viewer per company), enforced everywhere",
+      "part": 2,
+      "area": "backend",
+      "status": "Done",
+      "proof": "`test/companyAccess.test.ts`"
+    },
+    {
+      "name": "Categories per company, nothing seeded or hardcoded",
+      "part": 3,
+      "area": "backend",
+      "status": "Done",
+      "proof": "D36, `npm run check:no-sample-data`"
+    },
+    {
+      "name": "Sub-categories, category defaults, reorder, archive, merge, move-then-delete",
+      "part": 3,
+      "area": "backend",
+      "status": "Done",
+      "proof": "category route tests"
+    },
+    {
+      "name": "Start empty / suggestions / copy from another company at company creation",
+      "part": 3,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "D36"
+    },
+    {
+      "name": "Custom fields (≤ 10 per company) on form, detail, filters, search and exports",
+      "part": 3,
+      "area": "backend",
+      "status": "Done",
+      "proof": "D37, custom field tests"
+    },
+    {
+      "name": "Fixed or variable amount bills, estimate, \"set this cycle's amount\", \"Paid in full\"",
+      "part": 4,
+      "area": "backend",
+      "status": "Done",
+      "proof": "D38, cycle tests"
+    },
+    {
+      "name": "Stored bill cycles: exact history when amounts change; missed cycles all overdue",
+      "part": 4,
+      "area": "backend",
+      "status": "Done",
+      "proof": "`domain/cycles` tests"
+    },
+    {
+      "name": "Scheduling engine (month-end, leap years, timezone) with ≥ 95% coverage",
+      "part": 4,
+      "area": "backend",
+      "status": "Done",
+      "proof": "schedule tests + coverage gate"
+    },
+    {
+      "name": "Tracking views: Upcoming, This month, Next month, Outstanding, Overdue, Paid, Obligations",
+      "part": 5,
+      "area": "backend",
+      "status": "Done",
+      "proof": "D39, views tests"
+    },
+    {
+      "name": "Bills tab segments, amount-type and sub-category filters, 10 per page",
+      "part": 5,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "mobile list tests"
+    },
+    {
+      "name": "Dashboard: outstanding, last month at a glance, cash flow, per company",
+      "part": 5,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "Home screen"
+    },
+    {
+      "name": "Gentle pulse on overdue rows (off with reduced motion)",
+      "part": 5,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "`StatusBadge` pulse on `OVERDUE`"
+    },
+    {
+      "name": "Reports: payment report, per company, estimate vs actual, ageing, upcoming, annual, categories",
+      "part": 6,
+      "area": "backend",
+      "status": "Done",
+      "proof": "report tests"
+    },
+    {
+      "name": "Exports PDF/Excel per company or all, with period, generated date and custom fields",
+      "part": 6,
+      "area": "backend",
+      "status": "Done",
+      "proof": "export tests"
+    },
+    {
+      "name": "Recipients follow company access; copy names the company",
+      "part": 7,
+      "area": "notifications",
+      "status": "Done",
+      "proof": "`test/notifications.companies.test.ts`"
+    },
+    {
+      "name": "No duplicates (dedupe key, unique constraint) and digest instead of spam",
+      "part": 7,
+      "area": "notifications",
+      "status": "Done",
+      "proof": "dedupe + digest tests"
+    },
+    {
+      "name": "Per-company reminder hour and offsets, amount needed, next-month preview, report ready",
+      "part": 7,
+      "area": "notifications",
+      "status": "Done",
+      "proof": "D40"
+    },
+    {
+      "name": "Per-company notification switches (reminders, activity, summaries, mute)",
+      "part": 7,
+      "area": "notifications",
+      "status": "Done",
+      "proof": "Settings → Notifications"
+    },
+    {
+      "name": "Year-long simulation in 3 timezones with several companies and a restricted member",
+      "part": 7,
+      "area": "notifications",
+      "status": "Done",
+      "proof": "year simulation tests"
+    },
+    {
+      "name": "Push on a physical Android phone",
+      "part": 7,
+      "area": "notifications",
+      "status": "Blocked",
+      "proof": "needs Firebase `google-services.json` and an installed APK"
+    },
+    {
+      "name": "DueOra AI on the backend only (`GEMINI_API_KEY`), tools, confirmations, insights",
+      "part": 8,
+      "area": "ai",
+      "status": "Done",
+      "proof": "`backend/src/ai`, AI tests"
+    },
+    {
+      "name": "AI follows company access; reference numbers never sent to the AI",
+      "part": 8,
+      "area": "ai",
+      "status": "Done",
+      "proof": "AI access tests"
+    },
+    {
+      "name": "AI offline eval suite",
+      "part": 8,
+      "area": "ai",
+      "status": "Done",
+      "proof": "AI eval tests"
+    },
+    {
+      "name": "Live AI answers in production",
+      "part": 8,
+      "area": "ai",
+      "status": "Blocked",
+      "proof": "needs `GEMINI_API_KEY` on the deployed backend"
+    },
+    {
+      "name": "Light mode default; Settings → Appearance: Light / Dark / System",
+      "part": 8,
+      "area": "mobile",
+      "status": "Done",
+      "proof": "theme tests"
+    },
+    {
+      "name": "Error reporting with Sentry (off without a DSN)",
+      "part": 8,
+      "area": "backend",
+      "status": "Done",
+      "proof": "`backend/src/lib/sentry.ts`, sentry test"
+    },
+    {
+      "name": "Legal pages (privacy policy, terms)",
+      "part": 8,
+      "area": "release",
+      "status": "Done",
+      "proof": "`docs/legal/`"
+    },
+    {
+      "name": "Maestro end-to-end flows",
+      "part": 8,
+      "area": "mobile",
+      "status": "In progress",
+      "proof": "flows written in `mobile/e2e/`; not run (no emulator on the build machine)"
+    },
+    {
+      "name": "Production backend over HTTPS",
+      "part": 8,
+      "area": "release",
+      "status": "Blocked",
+      "proof": "needs a Render or Railway account — `docs/DEPLOYMENT.md`"
+    },
+    {
+      "name": "Android APK 1.1.0 (EAS preview build)",
+      "part": 8,
+      "area": "release",
+      "status": "Blocked",
+      "proof": "needs the production API URL in EAS"
+    },
+    {
+      "name": "GitHub Release v1.1.0 with the APK",
+      "part": 8,
+      "area": "release",
+      "status": "Blocked",
+      "proof": "needs the APK"
+    },
+    {
+      "name": "Install guide and QR code",
+      "part": 8,
+      "area": "release",
+      "status": "Done",
+      "proof": "`docs/INSTALL.md`, `docs/install-qr.png`"
+    },
+    {
+      "name": "Progress page on GitHub Pages, rebuilt on every push",
+      "part": 8,
+      "area": "release",
+      "status": "Done",
+      "proof": "`.github/workflows/progress.yml`"
+    },
+    {
+      "name": "Play Store preparation notes (no publishing)",
+      "part": 8,
+      "area": "release",
+      "status": "Done",
+      "proof": "`docs/PLAY_STORE.md`"
+    }
+  ],
+  "commits": [
+    {
+      "hash": "b5522de",
+      "date": "2026-11-17T19:44:21+02:00",
+      "subject": "test(mobile): Maestro end-to-end flows for sign-up, bills, payments and appearance"
+    },
+    {
+      "hash": "d57fb96",
+      "date": "2026-11-17T19:44:20+02:00",
+      "subject": "docs: privacy policy, terms of use and Play Store preparation"
+    },
+    {
+      "hash": "76f7135",
+      "date": "2026-11-17T19:44:18+02:00",
+      "subject": "feat(backend): optional Sentry error reporting with scrubbed events"
+    },
+    {
+      "hash": "4159181",
+      "date": "2026-11-17T19:37:41+02:00",
+      "subject": "chore(mobile): add expo-dev-client for development builds"
+    },
+    {
+      "hash": "4b80ff7",
+      "date": "2026-11-12T15:52:41+02:00",
+      "subject": "feat: per-company categories, variable bills, tracking views, reports and notifications"
+    },
+    {
+      "hash": "d83b156",
+      "date": "2026-11-12T12:49:29+02:00",
+      "subject": "feat(companies): admin-managed companies, per-company access and company switcher"
+    },
+    {
+      "hash": "fb41a4d",
+      "date": "2026-11-11T14:26:28+02:00",
+      "subject": "refactor: rename Subscription to Bill"
+    },
+    {
+      "hash": "113171f",
+      "date": "2026-11-11T14:04:52+02:00",
+      "subject": "docs: audit for the finalize brief"
+    },
+    {
+      "hash": "a17a11f",
+      "date": "2026-11-11T14:01:12+02:00",
+      "subject": "feat(ai): DueOra AI assistant with tools, confirmations, insights and evals"
+    },
+    {
+      "hash": "638e132",
+      "date": "2026-11-10T14:34:15+02:00",
+      "subject": "feat(mobile): complete screens and UX polish"
+    }
+  ],
+  "tests": {
+    "ranAt": "2026-11-17T17:50:08.006Z",
+    "source": "local run",
+    "backend": {
+      "passed": 706,
+      "failed": 0,
+      "total": 706,
+      "failedTests": []
+    },
+    "mobile": {
+      "passed": 164,
+      "failed": 0,
+      "total": 164,
+      "failedTests": []
+    }
+  },
+  "release": {
+    "version": "1.1.0",
+    "published": false,
+    "releaseUrl": "https://github.com/Annithah/dueora/releases/tag/v1.1.0",
+    "apkUrl": "https://github.com/Annithah/dueora/releases/download/v1.1.0/DueOra-v1.1.0.apk",
+    "easBuildUrl": null,
+    "easBuildId": null
+  },
+  "links": {
+    "progress": "https://annithah.github.io/dueora/progress/",
+    "install": "https://annithah.github.io/dueora/",
+    "qr": "https://annithah.github.io/dueora/install-qr.png"
+  }
+}

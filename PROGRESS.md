@@ -177,10 +177,11 @@ used as its summary.
 - [!] `npm run check:no-sample-data` fails: the AI system prompt's formatting example uses a design amount ($1,523.00).
 
 ## Part 1 — "Subscription" → "Bill"
-- [ ] Model `Subscription`, enum `SubscriptionStatus`, columns `subscriptionId`, `mutedSubscriptionIds`, the
+- [x] Model `Subscription`, enum `SubscriptionStatus`, columns `subscriptionId`, `mutedSubscriptionIds`, the
       `subscriptionKey*` columns, routes `/subscriptions`, services, mobile types/hooks/screens, tab label,
       notification/email copy, report labels, AI prompt/tools/knowledge base, en/fr/rw strings all say "subscription".
-- [ ] Subscription key → bill's optional "Reference / account number" (named `accountReference` in code because
+      Done in `fb41a4d refactor: rename Subscription to Bill` (model is now `Bill`).
+- [x] Subscription key → bill's optional "Reference / account number" (named `accountReference` in code because
       payments already have a `reference` field), same encryption, masking, reveal rules.
 
 ## Part 2 — Companies
@@ -254,3 +255,55 @@ used as its summary.
 - [ ] Version 1.1.0, production deploy + migration, APK, GitHub Release v1.1.0, `docs/INSTALL.md` + QR, EAS Update.
       Blockers found: no production backend is deployed yet (no hosting account connected), `gh` CLI and Maestro
       are not installed, and there is no Android emulator on this machine.
+
+---
+
+# Session 17 Nov 2026
+
+## Status check (session start)
+
+`CLAUDE.md`, `DUEORA_FINALIZE_PROMPT.md` and `DUEORA_MASTER_PROMPT.md` are not in the repo or on this machine; the
+audits above (10 and 11 Nov) are used as their summary. One uncommitted change (`expo-dev-client` for the
+development build profile) was sound and committed (`4159181`).
+
+**Checks:** backend lint ✓, type-check ✓, tests **704/704** ✓ · mobile lint ✓, type-check ✓, tests **162/164**
+in the full run — the 2 failures are timeouts in `listControls.test.tsx` on this OneDrive disk; the file passes
+5/5 when run alone (flaky, not a bug).
+
+**Finalize brief**
+- Done: Part 1 (Bill rename), Part 2 (companies, access), Part 3 (categories per company, custom fields),
+  Part 4 (variable amounts, cycles), Part 5 (tracking views), Part 6 (reports), Part 7 (notifications),
+  Part 8 AI work and `docs/FEATURE_STATUS.md`.
+- Half-done: Part 8 release — version is already 1.1.0 and EAS profiles exist, but no production backend,
+  no `EXPO_PUBLIC_API_URL` in EAS, no APK, no GitHub Release, no QR, no `docs/INSTALL.md`.
+- Not started: Maestro flows (`mobile/e2e/`), progress page, GitHub Pages, progress workflow.
+
+**Master prompt leftovers**
+- Not started: Sentry (only `SENTRY_DSN` in env), legal pages (`docs/legal/`), `docs/PLAY_STORE.md`,
+  gentle pulse on overdue rows.
+- Decision pending: production database SQLite (D14) vs managed Postgres (D25).
+- Half-done: i18n (main screens only), push on a physical device unverified.
+
+**Tooling:** EAS CLI logged in (`anitha_dev`), `gh` not installed (installing), Docker / Maestro / Android
+emulator not installed.
+
+## Waiting on Anii
+
+1. Log in the GitHub CLI once: type `! & "$env:LOCALAPPDATA\gh-cli\bin\gh.exe" auth login` in Claude Code (choose GitHub.com → HTTPS → browser). Needed to switch on GitHub Pages and create the v1.1.0 Release.
+2. Hosting for the backend: create a Render account and deploy the `render.yaml` blueprint (Starter + 1 GB disk, about US$7.25/month) — or say which host to use. `docs/DEPLOYMENT.md` §4. This blocks the APK.
+3. Decide the production database: SQLite on Render's disk (ready now, D14) or managed Postgres (D25).
+4. Secrets on the host: `RESEND_API_KEY` + a verified sending domain (`EMAIL_FROM`), `GEMINI_API_KEY`, `EXPO_ACCESS_TOKEN`, optional `SENTRY_DSN`. (`JWT_ACCESS_SECRET` and `ACCOUNT_REF_SECRET` Render generates.)
+5. Firebase project for Android push: upload `google-services.json` to EAS as the `GOOGLE_SERVICES_JSON` file variable.
+6. Later, for the Play Store only: a Google Play Console account (US$25) — see `docs/PLAY_STORE.md`.
+
+## Done this session (17 Nov 2026)
+- [x] Sentry on the backend (`SENTRY_DSN`, off when empty; events scrubbed of bodies, headers, query, user) — `76f7135`
+- [x] Legal pages `docs/legal/privacy.html` + `terms.html` (the URLs the app already links to); `docs/PLAY_STORE.md` — `d57fb96`
+- [x] Maestro flows in `mobile/e2e/` (written, not run: no emulator) — `b5522de`
+- [x] `docs/FEATURE_STATUS.md` rebuilt as one row per feature (Part, area, status, proof)
+- [x] `scripts/progress.ts` + `npm run progress` → `docs/progress/index.html`, `data.json`, `test-results.json`, the install page `docs/index.html` and `docs/install-qr.png`
+- [x] `.github/workflows/progress.yml`: runs the tests and deploys `docs/` to GitHub Pages on every push to `main`
+- [x] `docs/INSTALL.md` (WhatsApp-sized); `render.yaml` now asks for `GEMINI_API_KEY` and `SENTRY_DSN`
+- [x] Overdue pulse was already in `StatusBadge` (reduced-motion aware)
+- [ ] GitHub Pages switched on — needs `gh auth login`
+- [ ] Backend deploy → APK → GitHub Release v1.1.0 — needs hosting (see Waiting on Anii)

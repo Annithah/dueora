@@ -2,13 +2,18 @@
   "name": "dueora",
   "private": true,
   "description": "DueOra — Your dues, on time. Bills & renewals tracker.",
+  "type": "module",
   "scripts": {
-    "install:all": "npm --prefix backend install && npm --prefix mobile install",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix mobile install",
     "lint": "npm --prefix backend run lint && npm --prefix mobile run lint",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix mobile run typecheck",
     "test": "npm --prefix backend test && npm --prefix mobile test",
     "check": "npm run lint && npm run typecheck && npm test && npm run check:no-sample-data",
     "format": "npm --prefix backend run format && npm --prefix mobile run format",
-    "check:no-sample-data": "node scripts/check-no-sample-data.mjs"
+    "check:no-sample-data": "node scripts/check-no-sample-data.mjs",
+    "progress": "node scripts/progress.ts"
+  },
+  "devDependencies": {
+    "qrcode": "^1.5.4"
   }
 }

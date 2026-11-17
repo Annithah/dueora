@@ -1,29 +1,53 @@
 # Feature status — DueOra 1.1.0
 
-What the app does today, against the Finalize brief (company-based bills, tracking, reports and notifications).
-Details and reasons are in `DECISIONS.md` (D34–D40); the checklist is in `PROGRESS.md`.
+One row per feature from the Finalize brief and the master prompt. `scripts/progress.ts` reads this table to build
+the progress page (`npm run progress`), so keep the columns as they are.
 
-| Area | Status | Where |
-|---|---|---|
-| "Subscription" renamed to **Bill**; account reference per bill | ✅ Done | D34 |
-| Companies: initials, description, reminder defaults and hour, monthly budget; admin-only; archive vs delete | ✅ Done | D35 · More → Companies |
-| Company detail: Overview, Categories, Members, Settings | ✅ Done | More → Companies → a company |
-| Company switcher on Home, Bills, Calendar, Reports (remembered on the phone) | ✅ Done | Top of each screen |
-| Company access: all companies, or chosen ones with Finance/Viewer per company | ✅ Done | Team & roles · enforced on every endpoint, notification and AI tool |
-| Categories per company, one level of sub-categories, defaults, reorder, archive, merge, move-then-delete | ✅ Done | D36 · More → Categories |
-| Category suggestions (config file), start empty / suggestions / copy at company creation | ✅ Done | `backend/src/config/categorySuggestions.ts` |
-| Custom fields (≤ 10 per company) on form, detail, filters, search, exports | ✅ Done | D37 |
-| Variable amounts: estimate, set this cycle's amount, "Paid in full" | ✅ Done | D38 · bill detail |
-| Stored cycles: exact history when amounts change | ✅ Done | D38 |
-| Missed cycles of an unpaid recurring bill all count as overdue | ✅ Fixed | D38 |
-| Tracking views: Upcoming 7/30/60/90, This month, Next month, Outstanding, Overdue (ageing), Paid, Obligations | ✅ Done | D39 · Bills tab segments |
-| Dashboard: outstanding, last month at a glance, cash flow 6 + 3 months, per company | ✅ Done | Home |
-| Reports: payment report, per company, estimate vs actual, ageing, upcoming, category report | ✅ Done | D39 · More → Reports |
-| Exports per company or all (one sheet per company), company / period / generated date / custom fields | ✅ Done | Reports → Export |
-| Notifications follow company access; per-company hour; amount needed; next-month preview; report ready | ✅ Done | D40 |
-| Per-company notification switches (reminders, activity, summaries; mute) | ✅ Done | Settings → Notifications → Companies |
-| DueOra AI: company access, views, last-month report, set cycle amount, categories with sub-categories | ✅ Done | `backend/src/ai` |
-| Automated tests | ✅ Backend 700+, mobile 160+ | `npm test` |
-| Maestro end-to-end flows | ⏳ Not done | Maestro and an Android emulator are not installed on the build machine |
-| Production backend (HTTPS) | ⏳ Waiting for hosting | `render.yaml` is ready — see `docs/DEPLOYMENT.md` |
-| Android APK (EAS preview build), QR code, GitHub Release | ⏳ Waiting for the backend URL | EAS project `@anitha_dev/dueora` is linked |
+- **Status**: `Done` · `In progress` · `Not started` · `Blocked`
+- **Part**: the Finalize part (1–8) the feature belongs to
+- **Area**: `backend` · `mobile` · `ai` · `notifications` · `release`
+
+Details and reasons are in `DECISIONS.md`; the day-by-day checklist is in `PROGRESS.md`.
+
+| Feature | Part | Area | Status | Proof |
+|---|---|---|---|---|
+| "Subscription" renamed to Bill in the database, API, app, emails and AI | 1 | backend | Done | `fb41a4d`, backend tests |
+| Bill reference / account number encrypted (AES-256-GCM), masked, reveal for Admin/Finance only | 1 | backend | Done | `test/subscriptionKey.security.test.ts` |
+| Bills screens and copy say "Bill" (tabs, forms, en/fr/rw strings) | 1 | mobile | Done | mobile tests |
+| Companies: name, initials, colour, description, archive vs delete, admin-only | 2 | backend | Done | D35, company route tests |
+| Company detail: Overview, Categories, Members, Settings | 2 | mobile | Done | More → Companies |
+| Company switcher on Home, Bills, Calendar, Reports (remembered on the phone) | 2 | mobile | Done | mobile tests |
+| Company access: all companies or chosen ones (Finance/Viewer per company), enforced everywhere | 2 | backend | Done | `test/companyAccess.test.ts` |
+| Categories per company, nothing seeded or hardcoded | 3 | backend | Done | D36, `npm run check:no-sample-data` |
+| Sub-categories, category defaults, reorder, archive, merge, move-then-delete | 3 | backend | Done | category route tests |
+| Start empty / suggestions / copy from another company at company creation | 3 | mobile | Done | D36 |
+| Custom fields (≤ 10 per company) on form, detail, filters, search and exports | 3 | backend | Done | D37, custom field tests |
+| Fixed or variable amount bills, estimate, "set this cycle's amount", "Paid in full" | 4 | backend | Done | D38, cycle tests |
+| Stored bill cycles: exact history when amounts change; missed cycles all overdue | 4 | backend | Done | `domain/cycles` tests |
+| Scheduling engine (month-end, leap years, timezone) with ≥ 95% coverage | 4 | backend | Done | schedule tests + coverage gate |
+| Tracking views: Upcoming, This month, Next month, Outstanding, Overdue, Paid, Obligations | 5 | backend | Done | D39, views tests |
+| Bills tab segments, amount-type and sub-category filters, 10 per page | 5 | mobile | Done | mobile list tests |
+| Dashboard: outstanding, last month at a glance, cash flow, per company | 5 | mobile | Done | Home screen |
+| Gentle pulse on overdue rows (off with reduced motion) | 5 | mobile | Done | `StatusBadge` pulse on `OVERDUE` |
+| Reports: payment report, per company, estimate vs actual, ageing, upcoming, annual, categories | 6 | backend | Done | report tests |
+| Exports PDF/Excel per company or all, with period, generated date and custom fields | 6 | backend | Done | export tests |
+| Recipients follow company access; copy names the company | 7 | notifications | Done | `test/notifications.companies.test.ts` |
+| No duplicates (dedupe key, unique constraint) and digest instead of spam | 7 | notifications | Done | dedupe + digest tests |
+| Per-company reminder hour and offsets, amount needed, next-month preview, report ready | 7 | notifications | Done | D40 |
+| Per-company notification switches (reminders, activity, summaries, mute) | 7 | notifications | Done | Settings → Notifications |
+| Year-long simulation in 3 timezones with several companies and a restricted member | 7 | notifications | Done | year simulation tests |
+| Push on a physical Android phone | 7 | notifications | Blocked | needs Firebase `google-services.json` and an installed APK |
+| DueOra AI on the backend only (`GEMINI_API_KEY`), tools, confirmations, insights | 8 | ai | Done | `backend/src/ai`, AI tests |
+| AI follows company access; reference numbers never sent to the AI | 8 | ai | Done | AI access tests |
+| AI offline eval suite | 8 | ai | Done | AI eval tests |
+| Live AI answers in production | 8 | ai | Blocked | needs `GEMINI_API_KEY` on the deployed backend |
+| Light mode default; Settings → Appearance: Light / Dark / System | 8 | mobile | Done | theme tests |
+| Error reporting with Sentry (off without a DSN) | 8 | backend | Done | `backend/src/lib/sentry.ts`, sentry test |
+| Legal pages (privacy policy, terms) | 8 | release | Done | `docs/legal/` |
+| Maestro end-to-end flows | 8 | mobile | In progress | flows written in `mobile/e2e/`; not run (no emulator on the build machine) |
+| Production backend over HTTPS | 8 | release | Blocked | needs a Render or Railway account — `docs/DEPLOYMENT.md` |
+| Android APK 1.1.0 (EAS preview build) | 8 | release | Blocked | needs the production API URL in EAS |
+| GitHub Release v1.1.0 with the APK | 8 | release | Blocked | needs the APK |
+| Install guide and QR code | 8 | release | Done | `docs/INSTALL.md`, `docs/install-qr.png` |
+| Progress page on GitHub Pages, rebuilt on every push | 8 | release | Done | `.github/workflows/progress.yml` |
+| Play Store preparation notes (no publishing) | 8 | release | Done | `docs/PLAY_STORE.md` |

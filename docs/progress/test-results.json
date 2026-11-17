@@ -1,0 +1,16 @@
+{
+  "ranAt": "2026-11-17T17:50:08.006Z",
+  "source": "local run",
+  "backend": {
+    "passed": 706,
+    "failed": 0,
+    "total": 706,
+    "failedTests": []
+  },
+  "mobile": {
+    "passed": 164,
+    "failed": 0,
+    "total": 164,
+    "failedTests": []
+  }
+}
