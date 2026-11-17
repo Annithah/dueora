@@ -18,6 +18,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # prisma.config.ts requires it for `prisma generate`; tests use their own temp databases.
+      DATABASE_URL: file:./ci.db
     steps:
       - uses: actions/checkout@v4
         with:
